@@ -323,9 +323,13 @@ module.exports = async (req, res) => {
         diag.gridview = /grid-view|yiiGridView|kv-grid/i.test(rh);
         diag.summary = (rh.match(/summary[^>]*>([^<]{0,200})/i) || [])[1] || null;
         if (body.full) {
-          // strip scripts/styles/nav to keep the payload small
+          // strip scripts/styles/nav to keep the payload small, then return the
+          // region around the result grid (or the search form if no grid)
           let slim = rh.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
-          diag.fullHtml = slim.slice(0, 60000);
+          const gi = slim.search(/grid-view|yiiGridView|kv-grid|no results|No results/i);
+          diag.gridCtx = gi >= 0 ? slim.slice(Math.max(0, gi - 1500), gi + 4000) : null;
+          const fi = slim.indexOf('id="student-attendance-register"');
+          diag.formCtx = fi >= 0 ? slim.slice(Math.max(0, fi - 500), fi + 3000) : null;
         } else diag.snippet = rh.slice(0, 3000);
       }
       diag.cookies = r.jar || page.jar;
