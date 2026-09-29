@@ -202,33 +202,35 @@ module.exports = async (req, res) => {
     // ---- known ERP routes (verified 2026-09-29 against live dashboard) ----
     const KNOWN_URLS = {
       attendance: ERP_BASE + '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput',
+      // the search form submits via AJAX to this action; the response HTML is
+      // the attendance table (rendered into #get-list on the page)
+      attendanceList: ERP_BASE + '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fcourselist',
       timetable: ERP_BASE + '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findexstudentindisearch',
     };
-    // attendance register is a search form: GET the page, pick latest academic
-    // year + odd sem, POST it back. Returns the result HTML or null.
+    // attendance register: GET the search page for a fresh CSRF token, then
+    // POST the search to the courselist AJAX action. Returns the result HTML.
     async function fetchAttendanceTable(cookies) {
       const page = await erpFetch(KNOWN_URLS.attendance, { jar: cookies });
       if (page.netError || page.status !== 200) return null;
       let html = page.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
-      const csrf = (html.match(/id="student-attendance-register"[\s\S]*?name="_csrf" value="([^"]+)"/)
-        || html.match(/name="_csrf" value="([^"]+)"/) || [])[1];
+      const csrf = (html.match(/name="_csrf" value="([^"]+)"/) || [])[1];
       const yearSel = (html.match(/name="DynamicModel\[academicyear\]"[\s\S]*?<\/select>/) || [''])[0];
-      const yearVal = (yearSel.match(/<option value="(\d+)">/) || [])[1];
+      const yearVal = (yearSel.match(/<option value="(\d+)">/) || [])[1] || '29';
       const semSel = (html.match(/name="DynamicModel\[semesterid\]"[\s\S]*?<\/select>/) || [''])[0];
       const semVal = (semSel.match(/<option value="1">/) ? '1'
-        : (semSel.match(/<option value="(\d+)">/) || [])[1]);
-      if (!csrf || !yearVal || !semVal) return null;
+        : (semSel.match(/<option value="(\d+)">/) || [])[1]) || '1';
+      if (!csrf) return null;
       const params = new URLSearchParams({
         _csrf: csrf, 'DynamicModel[academicyear]': yearVal, 'DynamicModel[semesterid]': semVal });
-      const r = await erpFetch(KNOWN_URLS.attendance, { method: 'POST', jar: page.jar,
+      const r = await erpFetch(KNOWN_URLS.attendanceList, { method: 'POST', jar: page.jar,
         body: params, headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': KNOWN_URLS.attendance } });
+        'Referer': KNOWN_URLS.attendance, 'X-Requested-With': 'XMLHttpRequest' } });
       if (r.netError || r.status !== 200) return null;
       html = r.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
       if (!/conducted|\bcond\b/i.test(html)) return null;
-      return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
+      return { html, url: KNOWN_URLS.attendanceList, cookies: r.jar };
     }
 
     // ---- discover + fetch a report page (attendance / timetable) ----
