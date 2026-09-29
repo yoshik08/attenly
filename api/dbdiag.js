@@ -1,37 +1,28 @@
-// api/dbdiag.js — TEMPORARY diagnostic. Is TLS broken Vercel-wide or Atlas-only?
+// api/dbdiag.js — TEMPORARY diagnostic. DNS + per-shard TLS.
 const tls = require('tls');
-const https = require('https');
+const dns = require('dns').promises;
 
-function rawTls(host, port, servername) {
+function rawTls(host, servername) {
   return new Promise((resolve) => {
-    const s = tls.connect({ host, port, servername: servername || host,
+    const s = tls.connect({ host, port: 27017, servername,
       rejectUnauthorized: false, timeout: 8000 }, () => {
-      resolve('OK proto=' + s.getProtocol());
-      s.end();
+      resolve('OK proto=' + s.getProtocol()); s.end();
     });
     s.on('timeout', () => { s.destroy(); resolve('timeout'); });
-    s.on('error', (e) => resolve('ERR ' + String(e.message).split('\n')[0].slice(0, 120)));
-  });
-}
-
-function httpsGet(host) {
-  return new Promise((resolve) => {
-    const r = https.get({ host, timeout: 8000, rejectUnauthorized: false }, (res) => {
-      resolve('OK status=' + res.statusCode); res.resume();
-    });
-    r.on('timeout', () => { r.destroy(); resolve('timeout'); });
-    r.on('error', (e) => resolve('ERR ' + String(e.message).split('\n')[0].slice(0, 120)));
+    s.on('error', (e) => resolve('ERR ' + String(e.message).split('\n')[0].slice(0, 100)));
   });
 }
 
 module.exports = async (req, res) => {
-  const out = { node: process.version };
+  const out = {};
   const uri = process.env.MONGODB_URI || '';
-  const host = (((uri.split('@')[1] || '').split('?')[0]).split(',')[0] || '').split(':')[0];
-  out.atlasTls = await rawTls(host, 27017, host);
-  out.googleTls = await rawTls('google.com', 443, 'google.com');
-  out.atlasCloudTls = await rawTls('cloud.mongodb.com', 443, 'cloud.mongodb.com');
-  out.atlasCloudHttps = await httpsGet('cloud.mongodb.com');
-  out.googleHttps = await httpsGet('google.com');
+  const hosts = ((uri.split('@')[1] || '').split('?')[0]).split(',').map(h => h.split(':')[0]);
+  for (const h of hosts) {
+    const r = { host: h };
+    try { r.a = await dns.resolve4(h); } catch (e) { r.aErr = e.message.slice(0, 80); }
+    try { r.aaaa = await dns.resolve6(h); } catch (e) { r.aaaaErr = e.message.slice(0, 80); }
+    r.tlsSNI = await rawTls(h, h);
+    out[h] = r;
+  }
   res.json(out);
 };
