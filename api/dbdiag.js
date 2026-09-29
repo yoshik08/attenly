@@ -1,48 +1,49 @@
-// api/dbdiag.js — TEMPORARY diagnostic. Tries Mongo connect strategies and
-// reports DNS + TLS level detail. Never leaks credentials.
-const dns = require('dns').promises;
+// api/dbdiag.js — TEMPORARY diagnostic. Raw TLS vs driver TLS comparison.
 const { MongoClient } = require('mongodb');
+const tls = require('tls');
+const net = require('net');
+
+function rawTls(host, servername) {
+  return new Promise((resolve) => {
+    const s = tls.connect({ host, port: 27017, servername,
+      rejectUnauthorized: false, timeout: 8000 }, () => {
+      const cert = s.getPeerCertificate();
+      resolve('OK proto=' + s.getProtocol() + ' cn=' +
+        ((cert && cert.subject && cert.subject.CN) || '?'));
+      s.end();
+    });
+    s.on('timeout', () => { s.destroy(); resolve('tcp/tls timeout'); });
+    s.on('error', (e) => resolve('ERR ' + String(e.message).split('\n')[0].slice(0, 160)));
+  });
+}
+
+function tcp(host) {
+  return new Promise((resolve) => {
+    const s = net.connect(27017, host);
+    s.setTimeout(6000);
+    s.on('connect', () => { s.end(); resolve('OK'); });
+    s.on('timeout', () => { s.destroy(); resolve('timeout'); });
+    s.on('error', (e) => resolve('ERR ' + e.message.slice(0, 120)));
+  });
+}
 
 module.exports = async (req, res) => {
-  const out = { node: process.version, driver: require('mongodb/package.json').version };
+  const out = { node: process.version };
   const uri = process.env.MONGODB_URI || '';
   out.uriScheme = uri.split('://')[0] || null;
-  const afterAt = (uri.split('@')[1] || '').split('?')[0];
-  out.uriHostPart = afterAt.slice(0, 80) || null;
+  const hosts = ((uri.split('@')[1] || '').split('?')[0]).split(',');
+  const host = (hosts[0] || '').split(':')[0] || null;
+  out.host = host;
 
-  // 1. SRV resolution (what +srv:// depends on)
+  out.tcp = host ? await tcp(host) : 'no host';
+  out.tlsWithSNI = host ? await rawTls(host, host) : 'no host';
+  out.tlsNoSNI = host ? await rawTls(host, undefined) : 'no host';
+
+  const c = new MongoClient(uri, { serverSelectionTimeoutMS: 9000 });
   try {
-    const m = uri.match(/mongodb\+srv:\/\/[^@]+@([^\/\?]+)/);
-    out.srvTarget = m ? m[1] : null;
-    if (m) out.srv = await dns.resolveSrv('_mongodb._tcp.' + m[1]);
-  } catch (e) { out.srvError = String(e && e.message || e).slice(0, 200); }
-
-  // 2. plain TCP to 27017 on first SRV host (is it even reachable?)
-  try {
-    const host = (out.srv && out.srv[0] && out.srv[0].name) || null;
-    out.tcpHost = host;
-    if (host) {
-      const net = require('net');
-      await new Promise((resolve, reject) => {
-        const s = net.connect(27017, host);
-        s.setTimeout(6000);
-        s.on('connect', () => { s.end(); resolve(); });
-        s.on('timeout', () => { s.destroy(); reject(new Error('tcp timeout')); });
-        s.on('error', reject);
-      });
-      out.tcp = 'OK';
-    }
-  } catch (e) { out.tcp = String(e && e.message || e).slice(0, 200); }
-
-  // 3. driver connect attempts
-  for (const [name, opts] of [['default', {}], ['ipv4', { family: 4 }]]) {
-    const c = new MongoClient(uri, { serverSelectionTimeoutMS: 9000, ...opts });
-    try {
-      await c.connect();
-      await c.db('klu_attendance').listCollections().toArray();
-      out[name] = 'OK';
-    } catch (e) { out[name] = String(e && e.message || e).split('\n')[0].slice(0, 300); }
-    finally { try { await c.close(); } catch {} }
-  }
+    await c.connect();
+    out.driver = 'OK';
+  } catch (e) { out.driver = String(e && e.message || e).split('\n')[0].slice(0, 200); }
+  finally { try { await c.close(); } catch {} }
   res.json(out);
 };
