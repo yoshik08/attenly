@@ -1,28 +1,24 @@
-// api/dbdiag.js — TEMPORARY diagnostic. DNS + per-shard TLS.
+// api/dbdiag.js — TEMPORARY diagnostic. ClientHello bisection.
 const tls = require('tls');
-const dns = require('dns').promises;
 
-function rawTls(host, servername) {
+function t(host, opts, label) {
   return new Promise((resolve) => {
-    const s = tls.connect({ host, port: 27017, servername,
-      rejectUnauthorized: false, timeout: 8000 }, () => {
-      resolve('OK proto=' + s.getProtocol()); s.end();
+    const s = tls.connect({ host, port: 27017, servername: host,
+      rejectUnauthorized: false, timeout: 8000, ...opts }, () => {
+      resolve(label + ': OK ' + s.getProtocol()); s.end();
     });
-    s.on('timeout', () => { s.destroy(); resolve('timeout'); });
-    s.on('error', (e) => resolve('ERR ' + String(e.message).split('\n')[0].slice(0, 100)));
+    s.on('timeout', () => { s.destroy(); resolve(label + ': timeout'); });
+    s.on('error', (e) => resolve(label + ': ' + String(e.message).split(':').pop().slice(0, 60).trim()));
   });
 }
 
 module.exports = async (req, res) => {
-  const out = {};
   const uri = process.env.MONGODB_URI || '';
-  const hosts = ((uri.split('@')[1] || '').split('?')[0]).split(',').map(h => h.split(':')[0]);
-  for (const h of hosts) {
-    const r = { host: h };
-    try { r.a = await dns.resolve4(h); } catch (e) { r.aErr = e.message.slice(0, 80); }
-    try { r.aaaa = await dns.resolve6(h); } catch (e) { r.aaaaErr = e.message.slice(0, 80); }
-    r.tlsSNI = await rawTls(h, h);
-    out[h] = r;
-  }
+  const host = (((uri.split('@')[1] || '').split('?')[0]).split(',')[0] || '').split(':')[0];
+  const out = {};
+  out.tls12only = await t(host, { minVersion: 'TLSv1.2', maxVersion: 'TLSv1.2' }, 'tls12');
+  out.tls13only = await t(host, { minVersion: 'TLSv1.3', maxVersion: 'TLSv1.3' }, 'tls13');
+  out.oneCipher = await t(host, { ciphers: 'ECDHE-RSA-AES128-GCM-SHA256' }, '1cipher');
+  out.noSessTicket = await t(host, { session: undefined }, 'noticket');
   res.json(out);
 };
