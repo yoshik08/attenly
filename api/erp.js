@@ -201,7 +201,7 @@ module.exports = async (req, res) => {
 
     // ---- known ERP routes (verified 2026-09-29 against live dashboard) ----
     const KNOWN_URLS = {
-      attendance: ERP_BASE + '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput',
+      attendance: ERP_BASE + '/index.php?r=studentattendance/studentdailyattendance/searchgetinput',
       timetable: ERP_BASE + '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findexstudentindisearch',
     };
     // attendance register is a search form: GET the page, pick latest academic
