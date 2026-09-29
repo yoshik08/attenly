@@ -292,14 +292,19 @@ module.exports = async (req, res) => {
 
     // ---- TEMP: raw page fetch for inspection ----
     if (body.action === 'debugRaw' && body.url) {
-      const r = await erpFetch(body.url, { jar: body.cookies || {} });
+      const r = body.post
+        ? await erpFetch(body.url, { method: 'POST', jar: body.cookies || {},
+            body: new URLSearchParams(body.post),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': body.url } })
+        : await erpFetch(body.url, { jar: body.cookies || {} });
       if (r.netError) return res.json({ netError: r.netError });
       const html = r.buf.toString('utf8');
       const txt = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'')
         .replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
       const tables = [...html.matchAll(/<table[\s\S]{0,300}/gi)].map(m => m[0].slice(0,300));
-      return res.json({ status: r.status, bytes: html.length, textLen: txt.length,
-        head: txt.slice(0, 1500), tables });
+      const loc = r.headers.get('location');
+      return res.json({ status: r.status, loc, bytes: html.length, textLen: txt.length,
+        head: txt.slice(0, 1500), mid: txt.slice(3000, 6000), tables });
     }
 
     return res.status(400).json({ error: 'unknown action' });
