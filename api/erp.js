@@ -246,8 +246,19 @@ module.exports = async (req, res) => {
       if (dash.netError) return res.status(502).json({ error: dash.netError });
       const dhtml = dash.buf.toString('utf8');
       const title = (dhtml.match(/<title>([^<]*)/i) || [])[1] || null;
-      return res.json({ title, loggedOut: /id="login-form"/.test(dhtml),
-        bytes: dhtml.length, hrefs: extractHrefs(dhtml).slice(0, 80) });
+      const loc = dash.headers.get('location');
+      let final = { title, loggedOut: /id="login-form"/.test(dhtml),
+        bytes: dhtml.length, hrefs: extractHrefs(dhtml).slice(0, 80),
+        dashStatus: dash.status, dashLocation: loc };
+      if (loc && dash.status >= 300 && dash.status < 400) {
+        const u2 = loc.startsWith('/') ? ERP_BASE + loc : loc;
+        const r2 = await erpFetch(u2, { jar: dash.jar });
+        const h2 = r2.buf.toString('utf8');
+        final.afterRedirect = { url: u2, status: r2.status,
+          title: (h2.match(/<title>([^<]*)/i) || [])[1] || null,
+          bytes: h2.length, hrefs: extractHrefs(h2).slice(0, 80) };
+      }
+      return res.json(final);
     }
 
     return res.status(400).json({ error: 'unknown action' });
