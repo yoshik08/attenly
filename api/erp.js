@@ -317,7 +317,13 @@ module.exports = async (req, res) => {
         diag.helpBlocks = [...rh.matchAll(/help-block[^>]*>([^<]{0,120})/gi)].map(m => m[1].trim()).slice(0, 5);
         // selected options preserved?
         diag.selYear = (rh.match(/name="DynamicModel\[academicyear\]"[\s\S]*?<option value="(\d+)" selected/) || [])[1] || null;
-        diag.snippet = rh.slice(0, 3000);
+        diag.h2s = [...rh.matchAll(/<h2[^>]*>(.*?)<\/h2>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 8);
+        diag.alerts = [...rh.matchAll(/alert[^>]*>([^<]{0,200})/gi)].map(m => m[1].trim()).slice(0, 8);
+        diag.hasSearchForm = /id="student-attendance-register"/.test(rh);
+        diag.gridview = /grid-view|yiiGridView|kv-grid/i.test(rh);
+        diag.summary = (rh.match(/summary[^>]*>([^<]{0,200})/i) || [])[1] || null;
+        if (body.full) diag.fullHtml = rh;
+        else diag.snippet = rh.slice(0, 3000);
       }
       diag.cookies = r.jar || page.jar;
       return res.json(diag);
