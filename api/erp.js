@@ -238,6 +238,18 @@ module.exports = async (req, res) => {
       return res.json({ notFound: true, tried: cands.map(c => c.u) });
     }
 
+
+    // ---- TEMP debug: dashboard links (no personal data) ----
+    if (body.action === 'debugDash') {
+      const { cookies = {} } = body;
+      const dash = await erpFetch(ERP_LOGIN_PAGE, { jar: cookies });
+      if (dash.netError) return res.status(502).json({ error: dash.netError });
+      const dhtml = dash.buf.toString('utf8');
+      const title = (dhtml.match(/<title>([^<]*)/i) || [])[1] || null;
+      return res.json({ title, loggedOut: /id="login-form"/.test(dhtml),
+        bytes: dhtml.length, hrefs: extractHrefs(dhtml).slice(0, 80) });
+    }
+
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
     return res.status(500).json({ error: 'proxy error: ' + e.message });
