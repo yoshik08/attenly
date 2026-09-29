@@ -239,26 +239,20 @@ module.exports = async (req, res) => {
     }
 
 
-    // ---- TEMP debug: dashboard links (no personal data) ----
-    if (body.action === 'debugDash') {
-      const { cookies = {} } = body;
-      const dash = await erpFetch(ERP_LOGIN_PAGE, { jar: cookies });
-      if (dash.netError) return res.status(502).json({ error: dash.netError });
-      const dhtml = dash.buf.toString('utf8');
-      const title = (dhtml.match(/<title>([^<]*)/i) || [])[1] || null;
-      const loc = dash.headers.get('location');
-      let final = { title, loggedOut: /id="login-form"/.test(dhtml),
-        bytes: dhtml.length, hrefs: extractHrefs(dhtml).slice(0, 80),
-        dashStatus: dash.status, dashLocation: loc };
-      if (loc && dash.status >= 300 && dash.status < 400) {
-        const u2 = loc.startsWith('/') ? ERP_BASE + loc : loc;
-        const r2 = await erpFetch(u2, { jar: dash.jar });
-        const h2 = r2.buf.toString('utf8');
-        final.afterRedirect = { url: u2, status: r2.status,
-          title: (h2.match(/<title>([^<]*)/i) || [])[1] || null,
-          bytes: h2.length, hrefs: extractHrefs(h2).slice(0, 80) };
-      }
-      return res.json(final);
+    // ---- TEMP debug: inspect any ERP page structure (no personal data) ----
+    if (body.action === 'debugPage') {
+      const { cookies = {}, url } = body;
+      const r = await erpFetch(url, { jar: cookies });
+      if (r.netError) return res.json({ netError: r.netError });
+      const html = r.buf.toString('utf8');
+      const forms = [...html.matchAll(/<form[^>]*>/gi)].map(m => m[0].slice(0, 200));
+      const inputs = [...html.matchAll(/<input[^>]*name="([^"]*)"[^>]*>/gi)].map(m => m[1]).slice(0, 30);
+      const text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500);
+      return res.json({ status: r.status, loc: r.headers.get('location'),
+        title: (html.match(/<title>([^<]*)/i) || [])[1] || null,
+        bytes: html.length, forms, inputs, textSnippet: text,
+        markers: { conducted: /conducted/i.test(html), table: (html.match(/<table/gi) || []).length } });
     }
 
     return res.status(400).json({ error: 'unknown action' });
