@@ -206,9 +206,9 @@ module.exports = async (req, res) => {
     };
     // attendance register is a search form: GET the page, pick latest academic
     // year + odd sem, POST it back. Returns the result HTML or null.
-    async function fetchAttendanceTable(cookies) {
+    async function fetchAttendanceTable(cookies, dbg) {
       const page = await erpFetch(KNOWN_URLS.attendance, { jar: cookies });
-      if (page.netError || page.status !== 200) return null;
+      if (page.netError || page.status !== 200) return dbg ? { dbgStep: 'get-failed', status: page.status } : null;
       let html = page.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
       const csrf = (html.match(/id="student-attendance-register"[\s\S]*?name="_csrf" value="([^"]+)"/)
@@ -218,16 +218,20 @@ module.exports = async (req, res) => {
       const semSel = (html.match(/name="DynamicModel\[semesterid\]"[\s\S]*?<\/select>/) || [''])[0];
       const semVal = (semSel.match(/<option value="1">/) ? '1'
         : (semSel.match(/<option value="(\d+)">/) || [])[1]);
+      if (dbg && (!csrf || !yearVal || !semVal))
+        return { dbgStep: 'parse-failed', hasCsrf: !!csrf, yearVal, semVal };
       if (!csrf || !yearVal || !semVal) return null;
       const params = new URLSearchParams({
         _csrf: csrf, 'DynamicModel[academicyear]': yearVal, 'DynamicModel[semesterid]': semVal });
       const r = await erpFetch(KNOWN_URLS.attendance, { method: 'POST', jar: page.jar,
         body: params, headers: { 'Content-Type': 'application/x-www-form-urlencoded',
         'Referer': KNOWN_URLS.attendance } });
-      if (r.netError || r.status !== 200) return null;
+      if (r.netError || r.status !== 200) return dbg ? { dbgStep: 'post-failed', status: r.status } : null;
       html = r.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
-      if (!/conducted|\bcond\b/i.test(html)) return null;
+      if (!/conducted|\bcond\b/i.test(html))
+        return dbg ? { dbgStep: 'marker-miss', bytes: html.length,
+          snippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) } : null;
       return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
     }
 
@@ -236,9 +240,10 @@ module.exports = async (req, res) => {
       const { cookies = {}, kind = 'attendance', url: urlOverride = null } = body;
       const knownUrl = urlOverride || KNOWN_URLS[kind];
       if (kind === 'attendance' && knownUrl) {
-        const hit = await fetchAttendanceTable(cookies);
+        const hit = await fetchAttendanceTable(cookies, body.debug === 1);
         if (hit && hit.html) return res.json({ ...hit });
         if (hit && hit.loggedOut) return res.json({ loggedOut: true });
+        if (hit && hit.dbgStep) return res.json(hit);
       }
       const kw = kind === 'timetable'
         ? [['timetable', 3], ['time-table', 3], ['schedule', 1], ['class-time', 2]]
