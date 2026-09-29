@@ -330,6 +330,10 @@ module.exports = async (req, res) => {
           diag.gridCtx = gi >= 0 ? slim.slice(Math.max(0, gi - 1500), gi + 4000) : null;
           const fi = slim.indexOf('id="student-attendance-register"');
           diag.formCtx = fi >= 0 ? slim.slice(Math.max(0, fi - 500), fi + 3000) : null;
+          // find the JS that drives #get-list (search raw html incl. scripts)
+          const gl = [...rh.matchAll(/get-list/g)].map(m => m.index);
+          diag.getListHits = gl.length;
+          diag.getListCtx = gl.slice(0, 4).map(i => rh.slice(Math.max(0, i - 1200), i + 800));
         } else diag.snippet = rh.slice(0, 3000);
       }
       diag.cookies = r.jar || page.jar;
