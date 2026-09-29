@@ -214,14 +214,16 @@ async function api(path, body){
 
 /* ================= setup & unlock ================= */
 $('btn-setup').onclick = async () => {
-  const uid = $('su-uid').value.trim(), pass = $('su-pass').value, pin = $('su-pin').value;
-  if(!uid || !pass || pin.length < 4) return alert('fill all fields, pin min 4 chars');
-  const uidHash = await sha256hex('kluatt:'+uid);
-  const blob = await encCreds(pin, {uid, pass});
-  await api('/api/vault', {action:'store', uidHash, ...blob});
-  localStorage.setItem('kluatt_uidhash', uidHash);
-  S.uid = uid; S.pass = pass;
-  show('view-app'); syncNow();
+  try {
+    const uid = $('su-uid').value.trim(), pass = $('su-pass').value, pin = $('su-pin').value;
+    if(!uid || !pass || pin.length < 4) return alert('fill all fields, pin min 4 chars');
+    const uidHash = await sha256hex('kluatt:'+uid);
+    const blob = await encCreds(pin, {uid, pass});
+    await api('/api/vault', {action:'store', uidHash, ...blob});
+    localStorage.setItem('kluatt_uidhash', uidHash);
+    S.uid = uid; S.pass = pass;
+    show('view-app'); syncNow();
+  } catch(e){ alert('setup failed: ' + (e.message || e)); }
 };
 $('btn-unlock').onclick = async () => {
   const pin = $('un-pin').value, uidHash = localStorage.getItem('kluatt_uidhash');
