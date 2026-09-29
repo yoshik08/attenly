@@ -338,7 +338,11 @@ $('btn-auto').onclick = () => {
 };
 function stopAuto(){ if(S.autoTimer) clearInterval(S.autoTimer); S.auto=false; const b=$('btn-auto'); if(b) b.textContent='auto: off'; }
 
-/* ================= attendance parser ================= */
+/* ================= attendance parser =================
+   Real ERP table (courselist action) has one row per course-component:
+   # | Coursecode | Coursedesc | Ltps | ... | Total Conducted |
+   Total Attended | Total Absent | Tcbr | Percentage | ...
+   Rows are grouped by course code; Ltps holds L/T/P/S. */
 function parseAttendance(html){
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const tables = [...doc.querySelectorAll('table')];
@@ -346,25 +350,43 @@ function parseAttendance(html){
   for(const t of tables){
     const txt = t.textContent.toLowerCase();
     let s = 0;
-    if(/course|subject|code/.test(txt)) s += 2;
-    if(/conducted|\bcond\b/.test(txt)) s += 2;
-    if(/attended|\batt\b/.test(txt)) s += 2;
-    if(/lecture|tutorial|practical/.test(txt)) s += 1;
-    if(t.rows.length > (best?.rows.length || 0)) s += 1;
+    if(/course\s*code/.test(txt)) s += 4;
+    if(/\bltps\b/.test(txt)) s += 4;
+    if(/total conducted/.test(txt)) s += 3;
+    if(/total attended/.test(txt)) s += 3;
     if(s > bestScore){ bestScore = s; best = t; }
   }
-  if(!best || bestScore < 4) throw new Error('attendance table not found in ERP html');
-  const rows = [...best.rows], subs = [];
-  for(let i=1;i<rows.length;i++){
-    const cells = [...rows[i].cells].map(c=>c.textContent.trim());
-    if(cells.length < 6) continue;
-    const code = cells[0], name = cells[1];
-    if(!code || /total/i.test(code)) continue;
-    const nums = cells.slice(2).map(c=>{ const n=parseFloat(c.replace(/[^0-9.]/g,'')); return isNaN(n)?0:n; });
-    const comp = ['L','T','P','S'].map((k,j)=>({ cond:nums[j*2]||0, att:nums[j*2+1]||0 }));
-    const tcbr = nums[8] || 0;
-    subs.push({ code, name, comp, tcbr });
+  if(!best || bestScore < 8) throw new Error('attendance table not found in ERP html');
+  const hCells = [...best.rows[0].cells].map(c=>c.textContent.trim().toLowerCase().replace(/\s+/g,' '));
+  const col = (re) => hCells.findIndex(h=>re.test(h));
+  const iCode = col(/course\s*code/), iDesc = col(/course\s*desc/),
+        iLtps = col(/^ltps$/), iCond = col(/total conducted/),
+        iAtt = col(/total attended/), iTcbr = col(/^tcbr$/),
+        iPct = col(/percentage/);
+  if(iCode < 0 || iLtps < 0 || iCond < 0 || iAtt < 0)
+    throw new Error('attendance columns not recognized');
+  const num = (v)=>{ const n = parseFloat(String(v==null?'':v).replace(/[^0-9.]/g,'')); return isNaN(n)?0:n; };
+  const byCode = {};
+  for(let i=1;i<best.rows.length;i++){
+    const cells = [...best.rows[i].cells].map(c=>c.textContent.trim());
+    const code = cells[iCode] || '';
+    const lt = (cells[iLtps] || '').toUpperCase();
+    if(!code || !/^[LTPS]$/.test(lt)) continue;
+    const desc = iDesc >= 0 ? cells[iDesc] : '';
+    if(!byCode[code])
+      byCode[code] = { code, name: desc,
+        comp: { L:{cond:0,att:0}, T:{cond:0,att:0}, P:{cond:0,att:0}, S:{cond:0,att:0} },
+        tcbr: 0, erp: {} };
+    const s = byCode[code];
+    s.comp[lt].cond += num(cells[iCond]);
+    s.comp[lt].att += num(cells[iAtt]);
+    if(iTcbr >= 0) s.tcbr = Math.max(s.tcbr, num(cells[iTcbr]));
+    if(iPct >= 0) s.erp[lt] = num(cells[iPct]);
+    if(desc && desc.length > s.name.length) s.name = desc;
   }
+  const subs = Object.values(byCode).map(s =>
+    ({ code: s.code, name: s.name, tcbr: s.tcbr, erp: s.erp,
+       comp: ['L','T','P','S'].map(k => s.comp[k]) }));
   if(!subs.length) throw new Error('no subject rows parsed');
   return subs;
 }
