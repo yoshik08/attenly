@@ -1,24 +1,21 @@
-// api/dbdiag.js — TEMPORARY diagnostic. ClientHello bisection.
-const tls = require('tls');
-
-function t(host, opts, label) {
-  return new Promise((resolve) => {
-    const s = tls.connect({ host, port: 27017, servername: host,
-      rejectUnauthorized: false, timeout: 8000, ...opts }, () => {
-      resolve(label + ': OK ' + s.getProtocol()); s.end();
-    });
-    s.on('timeout', () => { s.destroy(); resolve(label + ': timeout'); });
-    s.on('error', (e) => resolve(label + ': ' + String(e.message).split(':').pop().slice(0, 60).trim()));
-  });
-}
+// api/dbdiag.js — TEMPORARY diagnostic. Plaintext MongoDB probe (no TLS).
+const { MongoClient } = require('mongodb');
 
 module.exports = async (req, res) => {
-  const uri = process.env.MONGODB_URI || '';
-  const host = (((uri.split('@')[1] || '').split('?')[0]).split(',')[0] || '').split(':')[0];
   const out = {};
-  out.tls12only = await t(host, { minVersion: 'TLSv1.2', maxVersion: 'TLSv1.2' }, 'tls12');
-  out.tls13only = await t(host, { minVersion: 'TLSv1.3', maxVersion: 'TLSv1.3' }, 'tls13');
-  out.oneCipher = await t(host, { ciphers: 'ECDHE-RSA-AES128-GCM-SHA256' }, '1cipher');
-  out.noSessTicket = await t(host, { session: undefined }, 'noticket');
+  const uri = process.env.MONGODB_URI || '';
+  const m = uri.match(/mongodb:\/\/([^@]+)@([^\/\?]+)/);
+  if (!m) { res.json({ err: 'no uri' }); return; }
+  const creds = m[1], hosts = m[2].split(',');
+  for (const h of hosts) {
+    const u = `mongodb://${creds}@${h}/?tls=false&directConnection=true&serverSelectionTimeoutMS=8000`;
+    const c = new MongoClient(u);
+    try {
+      await c.connect();
+      out[h] = 'CONNECTED(no tls!)';
+    } catch (e) {
+      out[h] = String(e && e.message || e).split('\n')[0].slice(0, 160);
+    } finally { try { await c.close(); } catch {} }
+  }
   res.json(out);
 };
