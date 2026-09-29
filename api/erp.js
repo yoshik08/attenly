@@ -237,7 +237,9 @@ module.exports = async (req, res) => {
           tables: (html.match(/<table/gi) || []).length,
           keywords: { present: /present/i.test(html), percent: /percent/i.test(html),
             course: /course/i.test(html), norecords: /no result|no record|no data/i.test(html),
-            studentName: /2520030574/.test(html) } } : null;
+            studentName: /2520030574/.test(html),
+            norecordCtx: (html.match(/.{0,100}no (?:result|records|record|data).{0,100}/i) || [''])[0].replace(/\s+/g,' ').trim(),
+            bodyText: html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(2500, 4000) } } : null;
       return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
     }
 
