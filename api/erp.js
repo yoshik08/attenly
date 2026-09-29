@@ -277,6 +277,52 @@ module.exports = async (req, res) => {
     }
 
 
+    // ---- TEMP DEBUG: formpost — fetch a page, extract its form, POST fields back.
+    // Lets us iterate on the attendance search submission without redeploying.
+    // REMOVE BEFORE SHIPPING.
+    if (body.action === 'debugform') {
+      const { cookies = {}, url, fields = {}, ajax = false } = body;
+      if (!url) return res.status(400).json({ error: 'url required' });
+      const diag = { url };
+      const page = await erpFetch(url, { jar: cookies });
+      diag.getStatus = page.status || page.netError;
+      if (page.netError || page.status !== 200) return res.json(diag);
+      let html = page.buf.toString('utf8');
+      diag.loggedOut = /id="login-form"/.test(html);
+      // dump every form on the page: action, method, field names
+      diag.forms = [...html.matchAll(/<form([^>]*)>([\s\S]*?)<\/form>/gi)].map(m => {
+        const attrs = m[1];
+        const names = [...m[2].matchAll(/name="([^"]+)"/g)].map(x => x[1]);
+        return { attrs: attrs.slice(0, 160), fields: [...new Set(names)] };
+      });
+      // csrf + selects as seen by the current parser
+      diag.csrf = (html.match(/name="_csrf"\s+value="([^"]+)"/) || [])[1] || null;
+      const yearSel = (html.match(/name="DynamicModel\[academicyear\]"[\s\S]*?<\/select>/) || [''])[0];
+      diag.yearOptions = [...yearSel.matchAll(/<option value="([^"]*)">([^<]*)</g)].map(x => x[1] + '=' + x[2].trim());
+      const semSel = (html.match(/name="DynamicModel\[semesterid\]"[\s\S]*?<\/select>/) || [''])[0];
+      diag.semOptions = [...semSel.matchAll(/<option value="([^"]*)">([^<]*)</g)].map(x => x[1] + '=' + x[2].trim());
+      // POST it back
+      const params = new URLSearchParams({ _csrf: diag.csrf || '', ...fields });
+      const r = await erpFetch(url, { method: 'POST', jar: page.jar, body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': url,
+          ...(ajax ? { 'X-Requested-With': 'XMLHttpRequest' } : {}) } });
+      diag.postStatus = r.status || r.netError;
+      if (!r.netError && r.status === 200) {
+        const rh = r.buf.toString('utf8');
+        diag.respBytes = rh.length;
+        diag.respLoggedOut = /id="login-form"/.test(rh);
+        diag.hasConducted = /conducted/i.test(rh);
+        diag.tables = (rh.match(/<table/gi) || []).length;
+        diag.h1s = [...rh.matchAll(/<h1[^>]*>(.*?)<\/h1>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 5);
+        diag.helpBlocks = [...rh.matchAll(/help-block[^>]*>([^<]{0,120})/gi)].map(m => m[1].trim()).slice(0, 5);
+        // selected options preserved?
+        diag.selYear = (rh.match(/name="DynamicModel\[academicyear\]"[\s\S]*?<option value="(\d+)" selected/) || [])[1] || null;
+        diag.snippet = rh.slice(0, 3000);
+      }
+      diag.cookies = r.jar || page.jar;
+      return res.json(diag);
+    }
+
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
     return res.status(500).json({ error: 'proxy error: ' + e.message });
