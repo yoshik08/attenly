@@ -201,14 +201,14 @@ module.exports = async (req, res) => {
 
     // ---- known ERP routes (verified 2026-09-29 against live dashboard) ----
     const KNOWN_URLS = {
-      attendance: ERP_BASE + '/index.php?r=studentattendance/studentdailyattendance/searchgetinput',
+      attendance: ERP_BASE + '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput',
       timetable: ERP_BASE + '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findexstudentindisearch',
     };
     // attendance register is a search form: GET the page, pick latest academic
     // year + odd sem, POST it back. Returns the result HTML or null.
-    async function fetchAttendanceTable(cookies, dbg) {
+    async function fetchAttendanceTable(cookies) {
       const page = await erpFetch(KNOWN_URLS.attendance, { jar: cookies });
-      if (page.netError || page.status !== 200) return dbg ? { dbgStep: 'get-failed', status: page.status } : null;
+      if (page.netError || page.status !== 200) return null;
       let html = page.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
       const csrf = (html.match(/id="student-attendance-register"[\s\S]*?name="_csrf" value="([^"]+)"/)
@@ -218,30 +218,16 @@ module.exports = async (req, res) => {
       const semSel = (html.match(/name="DynamicModel\[semesterid\]"[\s\S]*?<\/select>/) || [''])[0];
       const semVal = (semSel.match(/<option value="1">/) ? '1'
         : (semSel.match(/<option value="(\d+)">/) || [])[1]);
-      if (dbg && (!csrf || !yearVal || !semVal))
-        return { dbgStep: 'parse-failed', hasCsrf: !!csrf, yearVal, semVal };
       if (!csrf || !yearVal || !semVal) return null;
       const params = new URLSearchParams({
         _csrf: csrf, 'DynamicModel[academicyear]': yearVal, 'DynamicModel[semesterid]': semVal });
       const r = await erpFetch(KNOWN_URLS.attendance, { method: 'POST', jar: page.jar,
         body: params, headers: { 'Content-Type': 'application/x-www-form-urlencoded',
         'Referer': KNOWN_URLS.attendance } });
-      if (r.netError || r.status !== 200) return dbg ? { dbgStep: 'post-failed', status: r.status } : null;
+      if (r.netError || r.status !== 200) return null;
       html = r.buf.toString('utf8');
       if (/id="login-form"/.test(html)) return { loggedOut: true };
-      if (!/conducted|\bcond\b/i.test(html))
-        return dbg ? { dbgStep: 'marker-miss', bytes: html.length,
-          snippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500),
-          hasError: /help-block|has-error|invalid|required/i.test(html),
-          formEcho: (html.match(/id="student-attendance-register"[\s\S]{0,2000}/) || ['']).slice(0,300),
-          tables: (html.match(/<table/gi) || []).length,
-          keywords: { present: /present/i.test(html), percent: /percent/i.test(html),
-            course: /course/i.test(html), norecords: /no result|no record|no data/i.test(html),
-            studentName: /2520030574/.test(html),
-            helpBlocks: [...html.matchAll(/<div class="help-block">([^<]*)<\/div>/gi)].map(m=>m[1].trim()).filter(Boolean),
-            selectedOpts: [...html.matchAll(/<option value="(\d+)" selected/gi)].map(m=>m[1]),
-            norecordCtx: (html.match(/.{0,100}no (?:result|records|record|data).{0,100}/i) || [''])[0].replace(/\s+/g,' ').trim(),
-            bodyText: html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(2500, 4000) } } : null;
+      if (!/conducted|\bcond\b/i.test(html)) return null;
       return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
     }
 
@@ -250,10 +236,9 @@ module.exports = async (req, res) => {
       const { cookies = {}, kind = 'attendance', url: urlOverride = null } = body;
       const knownUrl = urlOverride || KNOWN_URLS[kind];
       if (kind === 'attendance' && knownUrl) {
-        const hit = await fetchAttendanceTable(cookies, body.debug === 1);
+        const hit = await fetchAttendanceTable(cookies);
         if (hit && hit.html) return res.json({ ...hit });
         if (hit && hit.loggedOut) return res.json({ loggedOut: true });
-        if (hit && hit.dbgStep) return res.json(hit);
       }
       const kw = kind === 'timetable'
         ? [['timetable', 3], ['time-table', 3], ['schedule', 1], ['class-time', 2]]
@@ -291,23 +276,6 @@ module.exports = async (req, res) => {
       return res.json({ notFound: true, tried: cands.map(c => c.u) });
     }
 
-
-    // ---- TEMP: raw page fetch for inspection ----
-    if (body.action === 'debugRaw' && body.url) {
-      const r = body.post
-        ? await erpFetch(body.url, { method: 'POST', jar: body.cookies || {},
-            body: new URLSearchParams(body.post),
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': body.url } })
-        : await erpFetch(body.url, { jar: body.cookies || {} });
-      if (r.netError) return res.json({ netError: r.netError });
-      const html = r.buf.toString('utf8');
-      const txt = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'')
-        .replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-      const tables = [...html.matchAll(/<table[\s\S]{0,300}/gi)].map(m => m[0].slice(0,300));
-      const loc = r.headers.get('location');
-      return res.json({ status: r.status, loc, bytes: html.length, textLen: txt.length,
-        head: txt.slice(0, 1500), mid: txt.slice(3000, 6000), tables });
-    }
 
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
