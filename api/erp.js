@@ -322,8 +322,11 @@ module.exports = async (req, res) => {
         diag.hasSearchForm = /id="student-attendance-register"/.test(rh);
         diag.gridview = /grid-view|yiiGridView|kv-grid/i.test(rh);
         diag.summary = (rh.match(/summary[^>]*>([^<]{0,200})/i) || [])[1] || null;
-        if (body.full) diag.fullHtml = rh;
-        else diag.snippet = rh.slice(0, 3000);
+        if (body.full) {
+          // strip scripts/styles/nav to keep the payload small
+          let slim = rh.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+          diag.fullHtml = slim.slice(0, 60000);
+        } else diag.snippet = rh.slice(0, 3000);
       }
       diag.cookies = r.jar || page.jar;
       return res.json(diag);
