@@ -125,7 +125,7 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
         <div style="flex:1"><label>attended (manual)</label><input id="man-att" type="number" min="0" placeholder="e.g. 32"></div>
       </div>
       <div class="row" style="margin-top:10px">
-        <div style="flex:1"><label>target %</label><input id="pred-target" type="number" value="75" min="1" max="100"></div>
+        <div style="flex:1"><label>target %</label><input id="pred-target" type="number" value="85" min="1" max="100"></div>
         <div style="flex:1"><label>bunk next n classes</label><input id="pred-bunk" type="number" value="3" min="0"></div>
       </div>
       <button id="btn-predict">calculate</button>
@@ -389,8 +389,8 @@ function overallPct(){
   }));
   return wc ? Math.ceil(100*wa/wc) : 100;
 }
-function badge(p){ return p>=75?'<span class="badge b-safe">safe</span>':p>=65?'<span class="badge b-risk">at risk</span>':'<span class="badge b-low">short</span>'; }
-function pctCls(p){ return p>=75?'ok':p>=65?'warn':'bad'; }
+function badge(p){ return p>=85?'<span class="badge b-safe">eligible</span>':p>=75?'<span class="badge b-risk">condonation</span>':'<span class="badge b-low">detention</span>'; }
+function pctCls(p){ return p>=85?'ok':p>=75?'warn':'bad'; }
 
 /* ================= dashboard render ================= */
 function renderAll(){
@@ -413,7 +413,7 @@ $('btn-tcbr').onclick = () => { S.tcbr=!S.tcbr; $('btn-tcbr').textContent='tcbr:
 
 /* ================= calculator ================= */
 $('btn-predict').onclick = () => {
-  const target = +$('pred-target').value || 75, bunkN = +$('pred-bunk').value || 0;
+  const target = +$('pred-target').value || 85, bunkN = +$('pred-bunk').value || 0;
   let cond, att, label;
   const si = $('pred-subj').value;
   if(si !== ''){
