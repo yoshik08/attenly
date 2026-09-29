@@ -246,12 +246,14 @@ module.exports = async (req, res) => {
       if (r.netError) return res.json({ netError: r.netError });
       const html = r.buf.toString('utf8');
       const forms = [...html.matchAll(/<form[^>]*>/gi)].map(m => m[0].slice(0, 200));
+      const attForm = (html.match(/<form[^>]*id="student-attendance-register"[\s\S]*?<\/form>/i) || [''])[0]
+        .replace(/<script[\s\S]*?<\/script>/gi, '').slice(0, 3000);
       const inputs = [...html.matchAll(/<input[^>]*name="([^"]*)"[^>]*>/gi)].map(m => m[1]).slice(0, 30);
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
         .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500);
       return res.json({ status: r.status, loc: r.headers.get('location'),
         title: (html.match(/<title>([^<]*)/i) || [])[1] || null,
-        bytes: html.length, forms, inputs, textSnippet: text,
+        bytes: html.length, forms, inputs, attFormHtml: attForm, textSnippet: text,
         markers: { conducted: /conducted/i.test(html), table: (html.match(/<table/gi) || []).length } });
     }
 
