@@ -234,7 +234,10 @@ module.exports = async (req, res) => {
           snippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500),
           hasError: /help-block|has-error|invalid|required/i.test(html),
           formEcho: (html.match(/id="student-attendance-register"[\s\S]{0,2000}/) || ['']).slice(0,300),
-          tables: (html.match(/<table/gi) || []).length } : null;
+          tables: (html.match(/<table/gi) || []).length,
+          keywords: { present: /present/i.test(html), percent: /percent/i.test(html),
+            course: /course/i.test(html), norecords: /no result|no record|no data/i.test(html),
+            studentName: /2520030574/.test(html) } } : null;
       return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
     }
 
