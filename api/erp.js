@@ -199,9 +199,47 @@ module.exports = async (req, res) => {
       return res.json({ ok: false, reason, cookies: r.jar, mfaRequired: reason === 'mfa' });
     }
 
+    // ---- known ERP routes (verified 2026-09-29 against live dashboard) ----
+    const KNOWN_URLS = {
+      attendance: ERP_BASE + '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput',
+      timetable: ERP_BASE + '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findexstudentindisearch',
+    };
+    // attendance register is a search form: GET the page, pick latest academic
+    // year + odd sem, POST it back. Returns the result HTML or null.
+    async function fetchAttendanceTable(cookies) {
+      const page = await erpFetch(KNOWN_URLS.attendance, { jar: cookies });
+      if (page.netError || page.status !== 200) return null;
+      let html = page.buf.toString('utf8');
+      if (/id="login-form"/.test(html)) return { loggedOut: true };
+      const csrf = (html.match(/id="student-attendance-register"[\s\S]*?name="_csrf" value="([^"]+)"/)
+        || html.match(/name="_csrf" value="([^"]+)"/) || [])[1];
+      const yearSel = (html.match(/name="DynamicModel\[academicyear\]"[\s\S]*?<\/select>/) || [''])[0];
+      const yearVal = (yearSel.match(/<option value="(\d+)">/) || [])[1];
+      const semSel = (html.match(/name="DynamicModel\[semesterid\]"[\s\S]*?<\/select>/) || [''])[0];
+      const semVal = (semSel.match(/<option value="1">/) ? '1'
+        : (semSel.match(/<option value="(\d+)">/) || [])[1]);
+      if (!csrf || !yearVal || !semVal) return null;
+      const params = new URLSearchParams({
+        _csrf: csrf, 'DynamicModel[academicyear]': yearVal, 'DynamicModel[semesterid]': semVal });
+      const r = await erpFetch(KNOWN_URLS.attendance, { method: 'POST', jar: page.jar,
+        body: params, headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': KNOWN_URLS.attendance } });
+      if (r.netError || r.status !== 200) return null;
+      html = r.buf.toString('utf8');
+      if (/id="login-form"/.test(html)) return { loggedOut: true };
+      if (!/conducted|\bcond\b/i.test(html)) return null;
+      return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
+    }
+
     // ---- discover + fetch a report page (attendance / timetable) ----
     if (body.action === 'report') {
-      const { cookies = {}, kind = 'attendance', url: knownUrl = null } = body;
+      const { cookies = {}, kind = 'attendance', url: urlOverride = null } = body;
+      const knownUrl = urlOverride || KNOWN_URLS[kind];
+      if (kind === 'attendance' && knownUrl) {
+        const hit = await fetchAttendanceTable(cookies);
+        if (hit && hit.html) return res.json({ ...hit });
+        if (hit && hit.loggedOut) return res.json({ loggedOut: true });
+      }
       const kw = kind === 'timetable'
         ? [['timetable', 3], ['time-table', 3], ['schedule', 1], ['class-time', 2]]
         : [['attendance', 3], ['attd', 2], ['attnd', 2]];
@@ -238,24 +276,6 @@ module.exports = async (req, res) => {
       return res.json({ notFound: true, tried: cands.map(c => c.u) });
     }
 
-
-    // ---- TEMP debug: inspect any ERP page structure (no personal data) ----
-    if (body.action === 'debugPage') {
-      const { cookies = {}, url } = body;
-      const r = await erpFetch(url, { jar: cookies });
-      if (r.netError) return res.json({ netError: r.netError });
-      const html = r.buf.toString('utf8');
-      const forms = [...html.matchAll(/<form[^>]*>/gi)].map(m => m[0].slice(0, 200));
-      const attForm = (html.match(/<form[^>]*id="student-attendance-register"[\s\S]*?<\/form>/i) || [''])[0]
-        .replace(/<script[\s\S]*?<\/script>/gi, '').slice(0, 3000);
-      const inputs = [...html.matchAll(/<input[^>]*name="([^"]*)"[^>]*>/gi)].map(m => m[1]).slice(0, 30);
-      const text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500);
-      return res.json({ status: r.status, loc: r.headers.get('location'),
-        title: (html.match(/<title>([^<]*)/i) || [])[1] || null,
-        bytes: html.length, forms, inputs, attFormHtml: attForm, textSnippet: text,
-        markers: { conducted: /conducted/i.test(html), table: (html.match(/<table/gi) || []).length } });
-    }
 
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
