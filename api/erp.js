@@ -231,7 +231,10 @@ module.exports = async (req, res) => {
       if (/id="login-form"/.test(html)) return { loggedOut: true };
       if (!/conducted|\bcond\b/i.test(html))
         return dbg ? { dbgStep: 'marker-miss', bytes: html.length,
-          snippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) } : null;
+          snippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500),
+          hasError: /help-block|has-error|invalid|required/i.test(html),
+          formEcho: (html.match(/id="student-attendance-register"[\s\S]{0,2000}/) || ['']).slice(0,300),
+          tables: (html.match(/<table/gi) || []).length } : null;
       return { html, url: KNOWN_URLS.attendance, cookies: r.jar };
     }
 
