@@ -12,8 +12,10 @@ let client = null;
 async function db() {
   if (!client) {
     if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI not set');
-    client = new MongoClient(process.env.MONGODB_URI);
-    await client.connect();
+    const c = new MongoClient(process.env.MONGODB_URI);
+    try { await c.connect(); }
+    catch (e) { throw new Error('mongo connect failed: ' + e.message); }
+    client = c;
   }
   return client.db('klu_attendance').collection('vault');
 }
