@@ -11,6 +11,18 @@
 const A = require('./_auth');
 const E = require('./_erp');
 
+function selectsOf(html) {
+  const out = [];
+  const w0 = (html.match(/<form\b[^>]*id="w0"[^>]*>([\s\S]*?)<\/form>/i) || [])[1] || '';
+  for (const m of w0.matchAll(/<select[^>]*name="([^"]+)"[^>]*>([\s\S]*?)<\/select>/gi)) {
+    const opts = [];
+    for (const o of m[2].matchAll(/<option\b[^>]*value="([^"]*)"[^>]*>([^<]*)<\/option>/gi))
+      opts.push({ v: o[1], t: o[2].replace(/\s+/g, ' ').trim().slice(0, 50) });
+    out.push({ name: m[1], options: opts.slice(0, 30) });
+  }
+  return out;
+}
+
 function formsOf(html) {
   const out = [];
   for (const m of html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)) {
@@ -60,8 +72,8 @@ module.exports = async (req, res) => {
       url: E.KNOWN_URLS.timetable, status: page.status, len: html.length,
       title: (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '',
       loginForm: /id="login-form"/.test(html),
-      forms: formsOf(html), scripts, dataUrls, links,
-      w0form: (html.match(/<form\b[^>]*id="w0"[^>]*>([\s\S]*?)<\/form>/i) || [])[1] || '',
+      forms: formsOf(html), scripts: scripts.slice(0, 12), dataUrls, links,
+      selects: selectsOf(html),
     });
   } catch (e) { res.status(500).json({ error: String(e.message || e).slice(0, 300) }); }
 };
