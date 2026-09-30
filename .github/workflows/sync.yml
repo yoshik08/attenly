@@ -4,6 +4,7 @@
 # latest attendance + timetable in Atlas. The app then loads instantly.
 
 name: attenly-cloud-sync
+# schedule-keepalive: re-registers the 5-min cron with github's scheduler
 
 on:
   schedule:
