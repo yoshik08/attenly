@@ -122,6 +122,7 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
     <label>erp id</label><input id="ob-uid" inputmode="numeric" placeholder="2520030574">
     <label>erp password</label><input id="ob-pass" type="password" placeholder="erp password">
     <button id="btn-onboard">save &amp; sync</button>
+    <button id="btn-ob-back" class="ghost hidden" style="margin-top:8px">← back without saving</button>
     <p class="note">stored as-is on the server. wrong id/password just fails the sync, nothing breaks. captcha is solved automatically.</p>
   </div>
 </div>
@@ -372,6 +373,7 @@ function buildAcctMenu(){
       + '<button class="ghost sm acct-x" data-sub="' + esc(a.sub) + '" style="padding:6px 10px">×</button></div>';
   });
   h += '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px">'
+     + '<button class="ghost sm" id="btn-acct-creds" style="width:100%;margin-bottom:10px">update erp login</button>'
      + '<div style="font-size:12px;color:var(--dim);margin-bottom:8px">add another google account</div>'
      + '<div id="gsi-btn-add" style="display:flex;justify-content:center"></div></div>';
   m.innerHTML = h;
@@ -386,6 +388,8 @@ function buildAcctMenu(){
   m.querySelectorAll('.acct-x').forEach(b => {
     b.onclick = ev => { ev.stopPropagation(); removeAccount(b.dataset.sub); };
   });
+  const bc = $('btn-acct-creds');
+  if(bc) bc.onclick = () => { closeAcctMenu(); openCredsForm(); };
   if(window.google && google.accounts && google.accounts.id){
     $('gsi-btn-add').innerHTML = '';
     google.accounts.id.renderButton($('gsi-btn-add'), { theme:'filled_black', size:'medium', width: 220 });
@@ -419,6 +423,19 @@ async function removeAccount(sub){
   } else renderAcctChip();
 }
 
+/* re-enter erp id/password (manual update or after a sync failure) */
+function openCredsForm(){
+  S.updatingCreds = true;
+  $('ob-uid').value = ''; $('ob-pass').value = '';
+  $('btn-ob-back').classList.remove('hidden');
+  show('view-onboard');
+  setTimeout(() => $('ob-uid').focus(), 50);
+}
+$('btn-ob-back').onclick = () => {
+  S.updatingCreds = false;
+  $('btn-ob-back').classList.add('hidden');
+  show('view-app');
+};
 /* ================= onboarding ================= */
 $('btn-onboard').onclick = async () => {
   const uid = $('ob-uid').value.trim(), pass = $('ob-pass').value;
@@ -427,6 +444,8 @@ $('btn-onboard').onclick = async () => {
   try{
     await api('/api/vault', { idToken: S.idToken, action:'store', erpUid: uid, erpPass: pass });
     $('ob-pass').value = '';
+    S.updatingCreds = false; $('btn-ob-back').classList.add('hidden');
+    const ca = $('creds-alert'); if(ca) ca.remove();
     show('view-app');
     await forceSync(true);
   }catch(e){ alert('setup failed: ' + e.message); }
@@ -476,7 +495,7 @@ function showCredsAlert(){
   d.style.borderColor = 'var(--red)';
   d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">re-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
   $('tab-dash').prepend(d);
-  $('btn-creds-again').onclick = () => { d.remove(); show('view-onboard'); };
+  $('btn-creds-again').onclick = () => openCredsForm();
 }
 function startPoll(){
   stopPoll();
