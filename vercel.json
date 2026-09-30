@@ -1,1 +1,1 @@
-{"functions":{"api/*.js":{"regions":["bom1"]},"api/sync.js":{"maxDuration":60,"regions":["bom1"]}},"headers":[{"headers":[{"key":"Cache-Control","value":"no-store"}],"source":"/"},{"headers":[{"key":"Cache-Control","value":"no-store"}],"source":"/index.html"}]}
+{"functions":{"api/*.js":{"maxDuration":60,"regions":["bom1"]}},"headers":[{"headers":[{"key":"Cache-Control","value":"no-store"}],"source":"/"},{"headers":[{"key":"Cache-Control","value":"no-store"}],"source":"/index.html"}]}
