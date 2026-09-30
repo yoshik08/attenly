@@ -190,7 +190,8 @@ function ttSelectOpts(w0, selName) {
     .map(o => ({ v: o[1], t: o[2].replace(/\s+/g, ' ').trim() })).filter(o => o.v);
 }
 function hasWeekdayTable(html) {
-  return /monday|tuesday|wednesday/i.test(html) && /<table/i.test(html);
+  // ERP day labels are abbreviated: Mon Tue Wed Thu Fri Sat
+  return /\b(mon|tue|wed|thu|fri|sat)(day)?s?\b/i.test(html) && /<table/i.test(html);
 }
 async function fetchTimetableTable(cookies) {
   const page = await erpFetch(KNOWN_URLS.timetable, { jar: cookies });
