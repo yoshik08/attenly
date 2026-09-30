@@ -97,32 +97,41 @@ async function fetchCaptchaImage(capUrl, jar) {
 
 // ---- login with automatic captcha solving (retries with fresh captchas) ----
 async function erpLogin(uid, password, maxAttempts = 6) {
+  if (!process.env.SOLVER_URL) throw new Error('captcha solver not configured');
   const init = await erpFetch(ERP_LOGIN_PAGE);
   if (init.netError) throw new Error(init.netError);
   let html = init.buf.toString('utf8');
   let csrf = extractCsrf(html);
   let jar = init.jar;
   for (let a = 0; a < maxAttempts; a++) {
-    const capSrc = extractCaptchaSrc(html);
     let captchaText = '';
+    const capSrc = extractCaptchaSrc(html);
     if (capSrc) {
       const cap = await fetchCaptchaImage(capSrc, jar);
       if (cap.cookies) jar = cap.cookies;
       if (cap.captchaB64) captchaText = await solveCloud(cap.captchaB64);
     }
     if (!captchaText || captchaText.length < 4) {
-      // solver missed: refresh captcha and retry
+      // solver missed: refresh captcha and solve the fresh image directly
       const rf = await erpFetch(ERP_CAPTCHA_REFRESH, { jar, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (!rf.netError && rf.status === 200) {
         try {
           const u = absUrl(JSON.parse(rf.buf.toString('utf8')).url);
           const cap = await fetchCaptchaImage(u, rf.jar);
-          jar = cap.cookies || jar;
-          html = init.buf.toString('utf8');
-          continue;
+          if (cap.cookies) jar = cap.cookies;
+          if (cap.captchaB64) captchaText = await solveCloud(cap.captchaB64);
         } catch {}
       }
-      throw new Error('captcha solver unavailable');
+    }
+    if (!captchaText || captchaText.length < 4) {
+      // still no usable guess: reload the login page and try again
+      const re = await erpFetch(ERP_LOGIN_PAGE, { jar });
+      if (!re.netError && re.status === 200) {
+        html = re.buf.toString('utf8');
+        csrf = extractCsrf(html) || csrf;
+        jar = re.jar;
+      }
+      continue;
     }
     const params = new URLSearchParams({
       _csrf: csrf, 'LoginForm[username]': uid,
