@@ -61,6 +61,7 @@ module.exports = async (req, res) => {
       title: (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '',
       loginForm: /id="login-form"/.test(html),
       forms: formsOf(html), scripts, dataUrls, links,
+      w0form: (html.match(/<form\b[^>]*id="w0"[^>]*>([\s\S]*?)<\/form>/i) || [])[1] || '',
     });
   } catch (e) { res.status(500).json({ error: String(e.message || e).slice(0, 300) }); }
 };
