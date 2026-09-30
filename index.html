@@ -328,7 +328,22 @@ async function onGoogleSignIn(resp){
   closeAcctMenu();
   await useAccount(rec);
 }
+/* google id tokens live ~1h. check expiry client-side before wasting a call. */
+function tokenExpired(tok){
+  try{
+    const p = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return !p.exp || p.exp*1000 < Date.now() + 60000;
+  }catch(e){ return true; }
+}
 async function useAccount(rec){
+  if(tokenExpired(rec.idToken)){
+    // drop the dead token, land on login with a clear message
+    saveAccts(getAccts().filter(a => a.idToken !== rec.idToken));
+    S.idToken = null; S.sub = null;
+    show('view-login'); renderAcctChip(); initGoogle();
+    $('login-note').textContent = 'session expired — sign in again to continue';
+    return;
+  }
   S.idToken = rec.idToken;
   S.sub = rec.sub;
   S.me = { email: rec.email, name: rec.name };
@@ -353,7 +368,9 @@ async function afterLogin(){
     S.idToken = null;
     show('view-login');
     renderAcctChip();
-    $('login-note').textContent = 'sign in failed: ' + e.message;
+    $('login-note').textContent = /expir/i.test(e.message)
+      ? 'session expired — sign in again to continue'
+      : 'sign in failed: ' + e.message;
   }
 }
 /* ---- account switcher ---- */
