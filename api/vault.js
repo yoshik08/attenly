@@ -1,5 +1,7 @@
-// api/vault.js — server-encrypted ERP credential store, keyed by Google sub.
-// The server encrypts with VAULT_KEY so the 5-min background sync can decrypt.
+// api/vault.js — ERP credential store, keyed by Google sub.
+// Plain storage per Yoshik's explicit call (2026-09-30): no encryption,
+// erpUid/erpPass are saved as-is. Legacy encrypted `blob` docs are migrated
+// to plain fields on next sync, or replaced on re-entry.
 // Old PIN-based docs (uidHash-keyed) are left untouched.
 //
 // POST {idToken, action:"store", erpUid, erpPass} -> {ok}
@@ -20,18 +22,18 @@ module.exports = async (req, res) => {
       const erpUid = String(body.erpUid || '').trim();
       const erpPass = String(body.erpPass || '');
       if (!erpUid || !erpPass) return res.status(400).json({ error: 'erp id and password required' });
-      const blob = A.encObj({ erpUid, erpPass });
       await col.updateOne(
         { sub: me.sub },
-        { $set: { sub: me.sub, email: me.email, name: me.name, blob, updatedAt: new Date() },
-          $setOnInsert: { createdAt: new Date() } },
+        { $set: { sub: me.sub, email: me.email, name: me.name, erpUid, erpPass, updatedAt: new Date() },
+          $setOnInsert: { createdAt: new Date() },
+          $unset: { blob: 1 } },
         { upsert: true }
       );
       return res.json({ ok: true });
     }
     if (body.action === 'status') {
-      const doc = await col.findOne({ sub: me.sub }, { projection: { blob: 1 } });
-      return res.json({ hasCreds: !!(doc && doc.blob), email: me.email, name: me.name });
+      const doc = await col.findOne({ sub: me.sub }, { projection: { erpUid: 1, blob: 1 } });
+      return res.json({ hasCreds: !!(doc && (doc.erpUid || doc.blob)), email: me.email, name: me.name });
     }
     if (body.action === 'delete') {
       await col.deleteOne({ sub: me.sub });
