@@ -14,6 +14,7 @@ module.exports = async (req, res) => {
     const sub = String((req.query && req.query.sub) || '');
     const year = String((req.query && req.query.year) || '29');
     const sem = String((req.query && req.query.sem) || '1');
+    const act = String((req.query && req.query.act) || 'individuals');
     const d = await A.db();
     const doc = await d.collection('users').findOne({ sub });
     if (!doc) return res.status(404).json({ error: 'no such user' });
@@ -23,7 +24,7 @@ module.exports = async (req, res) => {
     }
     if (!erpUid || !erpPass) return res.status(400).json({ error: 'no readable creds' });
     const { cookies } = await E.erpLogin(erpUid, erpPass);
-    const u = E.ERP_BASE + '/index.php?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/individuals')
+    const u = E.ERP_BASE + '/index.php?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/' + act)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[academicyear]') + '=' + encodeURIComponent(year)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[semesterid]') + '=' + encodeURIComponent(sem);
     const r = await E.erpFetch(u, { jar: cookies });
