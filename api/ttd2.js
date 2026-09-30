@@ -46,7 +46,10 @@ module.exports = async (req, res) => {
           w0js.push(js.replace(/\s+/g, ' ').slice(0, 1200));
         if (w0js.length >= 6) break;
       }
-      return res.json({ status: pg.status, len: html.length, indivCtx, w0js });
+      const formTag = (html.match(/<form\b[^>]*id="w0"[^>]*>/i) || [])[0] || '';
+      const hiddens = [...html.matchAll(/<input[^>]*type="hidden"[^>]*>/gi)]
+        .map(m => m[0].replace(/\s+/g, ' ').slice(0, 220)).slice(0, 10);
+      return res.json({ status: pg.status, len: html.length, indivCtx, w0js, formTag, hiddens });
     }
     const u = E.ERP_BASE + '/index.php?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/' + act)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[academicyear]') + '=' + encodeURIComponent(year)
