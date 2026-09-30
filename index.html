@@ -83,7 +83,18 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
   th,td{padding:7px 5px}
   .tabs{overflow-x:auto;flex-wrap:nowrap}
   .tabs button{flex:0 0 auto}
+  /* dashboard: cards instead of the wide table */
+  #tab-dash .table-wrap{display:none}
+  #subj-cards{display:block}
 }
+#subj-cards{display:none}
+.subj-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)}
+.sc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.sc-name{color:var(--dim);font-size:12px;margin-top:2px}
+.sc-right{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.sc-right .pct{font-size:20px;font-weight:800}
+.sc-comps{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:13px;color:var(--dim)}
+.sc-comps b{color:var(--txt)}
 </style>
 </head>
 <body>
@@ -139,9 +150,10 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
       <div id="overall-pct" style="font-size:34px;font-weight:800">—</div></div>
       <div id="overall-badge"></div>
     </div></div>
-    <div class="card"><table><thead><tr>
+    <div class="card"><div class="table-wrap"><table><thead><tr>
       <th>course</th><th>l</th><th>t</th><th>p</th><th>s</th><th>%</th><th>status</th>
-    </tr></thead><tbody id="subj-rows"><tr><td colspan="7" style="color:var(--dim)">loading…</td></tr></tbody></table>
+    </tr></thead><tbody id="subj-rows"><tr><td colspan="7" style="color:var(--dim)">loading…</td></tr></tbody></table></div>
+    <div id="subj-cards"></div>
     <div class="row" style="margin-top:12px"><button class="ghost sm" id="btn-paste-open">paste table manually instead</button></div>
     </div>
   </div>
@@ -439,6 +451,16 @@ function renderAll(){
     return '<tr><td><b>'+esc(s.code)+'</b><br><span style="color:var(--dim)">'+esc(s.name)+'</span></td>'+
       s.comp.map(c => '<td>'+c.att+'/'+c.cond+'</td>').join('')+
       '<td class="pct '+pctCls(p)+'">'+p+'%</td><td>'+badge(p)+'</td></tr>';
+  }).join('');
+  // mobile cards: one stacked card per subject, only components that have classes
+  $('subj-cards').innerHTML = S.subjects.map(s => {
+    const p = subjPct(s);
+    const comps = s.comp.map((c,j) => (c.cond > 0 || c.att > 0)
+      ? '<span><b>'+WL[j]+'</b> '+c.att+'/'+c.cond+'</span>' : '').join('');
+    return '<div class="subj-card"><div class="sc-head"><div><b>'+esc(s.code)+'</b>'+
+      '<div class="sc-name">'+esc(s.name)+'</div></div>'+
+      '<div class="sc-right"><span class="pct '+pctCls(p)+'">'+p+'%</span>'+badge(p)+'</div></div>'+
+      '<div class="sc-comps">'+(comps || '<span style="color:var(--dim)">no classes yet</span>')+'</div></div>';
   }).join('');
   const opts = '<option value="">— manual numbers below —</option>' +
     S.subjects.map((s,i) => '<option value="'+i+'">'+esc(s.code)+' — '+esc(s.name)+'</option>').join('');
