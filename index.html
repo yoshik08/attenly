@@ -24,6 +24,7 @@ input,textarea,select{width:100%;background:var(--input);border:1px solid var(--
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--red)}
 button{background:var(--red);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:14px}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+.acct-row:hover{background:var(--input)}
 button.sm{width:auto;padding:8px 14px;font-size:13px;margin-top:0}
 button:disabled{opacity:.5}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -121,7 +122,7 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
     <label>erp id</label><input id="ob-uid" inputmode="numeric" placeholder="2520030574">
     <label>erp password</label><input id="ob-pass" type="password" placeholder="erp password">
     <button id="btn-onboard">save &amp; sync</button>
-    <p class="note">stored encrypted. wrong id/password just fails the sync, nothing breaks. captcha is solved automatically.</p>
+    <p class="note">stored as-is on the server. wrong id/password just fails the sync, nothing breaks. captcha is solved automatically.</p>
   </div>
 </div>
 
@@ -133,7 +134,10 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
       <button class="ghost sm" id="btn-refresh">sync now</button>
       <button class="ghost sm" id="btn-tcbr">tcbr: off</button>
       <button class="ghost sm" id="btn-theme">light mode</button>
-      <button class="ghost sm" id="btn-logout">logout</button>
+      <div style="position:relative;flex:1;min-width:0">
+        <button class="ghost sm" id="btn-acct" style="width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">account</button>
+        <div id="acct-menu" class="hidden" style="position:absolute;right:0;top:calc(100% + 8px);z-index:50;min-width:260px;max-width:86vw;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:0 8px 30px rgba(0,0,0,.35)"></div>
+      </div>
     </div>
   </div>
   <div class="tabs">
@@ -284,7 +288,16 @@ setTheme(localStorage.getItem('attenly_theme') || 'dark');
   })();
 })();
 
-/* ================= google login ================= */
+/* ================= google login (multi account) ================= */
+function getAccts(){ try{ return JSON.parse(localStorage.getItem('attenly_accts') || '[]'); }catch(e){ return []; } }
+function saveAccts(a){ localStorage.setItem('attenly_accts', JSON.stringify(a)); }
+function activeAcct(){
+  const sub = localStorage.getItem('attenly_active_sub');
+  return getAccts().find(a => a.sub === sub) || null;
+}
+function jwtPayload(tok){
+  try{ return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch(e){ return {}; }
+}
 function initGoogle(){
   if(GOOGLE_CLIENT_ID.startsWith('__')){
     $('login-note').textContent = 'google login is being wired up — check back soon.';
@@ -303,28 +316,108 @@ function initGoogle(){
   google.accounts.id.prompt(); // one-tap for returning users
 }
 async function onGoogleSignIn(resp){
-  S.idToken = resp.credential;
-  sessionStorage.setItem('attenly_token', S.idToken);
+  const p = jwtPayload(resp.credential);
+  const rec = { sub: p.sub, email: p.email, name: p.name, idToken: resp.credential };
+  const accts = getAccts();
+  const i = accts.findIndex(a => a.sub === rec.sub);
+  if(i >= 0) accts[i] = rec; else accts.push(rec);
+  saveAccts(accts);
+  localStorage.setItem('attenly_active_sub', rec.sub);
+  closeAcctMenu();
+  await useAccount(rec);
+}
+async function useAccount(rec){
+  S.idToken = rec.idToken;
+  S.sub = rec.sub;
+  S.me = { email: rec.email, name: rec.name };
+  S.subjects = []; S.ttHtml = null; S.syncedAt = null; S.lastSync = null;
+  stopPoll();
+  renderAcctChip();
   await afterLogin();
 }
 async function afterLogin(){
   try{
     const st = await api('/api/vault', { idToken: S.idToken, action:'status' });
     S.me = { email: st.email, name: st.name };
+    const accts = getAccts();
+    const i = accts.findIndex(a => a.sub === S.sub);
+    if(i >= 0){ accts[i].email = st.email || accts[i].email; accts[i].name = st.name || accts[i].name; saveAccts(accts); }
+    renderAcctChip();
     if(st.hasCreds){ show('view-app'); await loadData(); }
     else { $('ob-hello').textContent = 'hey ' + (st.name || st.email) + ' — one time setup, then your attendance just appears.'; show('view-onboard'); }
   }catch(e){
-    sessionStorage.removeItem('attenly_token'); S.idToken = null;
+    // token rejected: drop this account's token, back to login
+    saveAccts(getAccts().filter(a => a.idToken !== S.idToken));
+    S.idToken = null;
     show('view-login');
+    renderAcctChip();
     $('login-note').textContent = 'sign in failed: ' + e.message;
   }
 }
-$('btn-logout').onclick = () => {
-  S.idToken = null; S.subjects = []; S.ttHtml = null;
-  sessionStorage.removeItem('attenly_token');
-  if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
-  stopPoll(); show('view-login'); initGoogle();
+/* ---- account switcher ---- */
+function renderAcctChip(){
+  const a = activeAcct();
+  $('btn-acct').textContent = a ? String(a.email || 'account').split('@')[0] : 'account';
+}
+function buildAcctMenu(){
+  const m = $('acct-menu');
+  const accts = getAccts(), cur = localStorage.getItem('attenly_active_sub');
+  let h = '';
+  accts.forEach(a => {
+    const nm = esc(a.name || a.email || 'account');
+    const em = esc(a.email || '');
+    h += '<div class="acct-row" data-sub="' + esc(a.sub) + '" style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;cursor:pointer">'
+      + '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + nm + (a.sub === cur ? ' ✓' : '') + '</div>'
+      + '<div style="font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + em + '</div></div>'
+      + '<button class="ghost sm acct-x" data-sub="' + esc(a.sub) + '" style="padding:6px 10px">×</button></div>';
+  });
+  h += '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px">'
+     + '<div style="font-size:12px;color:var(--dim);margin-bottom:8px">add another google account</div>'
+     + '<div id="gsi-btn-add" style="display:flex;justify-content:center"></div></div>';
+  m.innerHTML = h;
+  m.querySelectorAll('.acct-row').forEach(r => {
+    r.onclick = ev => {
+      if(ev.target.classList.contains('acct-x')) return;
+      const sub = r.dataset.sub;
+      const acct = getAccts().find(a => a.sub === sub);
+      if(acct && sub !== cur){ localStorage.setItem('attenly_active_sub', sub); closeAcctMenu(); useAccount(acct); }
+    };
+  });
+  m.querySelectorAll('.acct-x').forEach(b => {
+    b.onclick = ev => { ev.stopPropagation(); removeAccount(b.dataset.sub); };
+  });
+  if(window.google && google.accounts && google.accounts.id){
+    $('gsi-btn-add').innerHTML = '';
+    google.accounts.id.renderButton($('gsi-btn-add'), { theme:'filled_black', size:'medium', width: 220 });
+  }
+}
+function openAcctMenu(){
+  buildAcctMenu();
+  $('acct-menu').classList.remove('hidden');
+  setTimeout(() => document.addEventListener('click', function h(ev){
+    if(!$('acct-menu').contains(ev.target) && ev.target.id !== 'btn-acct') closeAcctMenu();
+    else document.addEventListener('click', h, { once:true });
+  }, { once:true }), 0);
+}
+function closeAcctMenu(){ const m = $('acct-menu'); if(m) m.classList.add('hidden'); }
+$('btn-acct').onclick = ev => {
+  ev.stopPropagation();
+  $('acct-menu').classList.contains('hidden') ? openAcctMenu() : closeAcctMenu();
 };
+async function removeAccount(sub){
+  const acct = getAccts().find(a => a.sub === sub);
+  if(!acct) return;
+  if(!confirm('remove ' + (acct.email || 'this account') + ' from this device and delete its synced cloud data?')) return;
+  try{ await api('/api/vault', { idToken: acct.idToken, action:'delete' }); }catch(e){ /* expired token: local removal still goes ahead */ }
+  const rest = getAccts().filter(a => a.sub !== sub);
+  saveAccts(rest);
+  closeAcctMenu();
+  if(localStorage.getItem('attenly_active_sub') === sub){
+    stopPoll();
+    if(rest.length){ localStorage.setItem('attenly_active_sub', rest[0].sub); await useAccount(rest[0]); }
+    else { localStorage.removeItem('attenly_active_sub'); S.idToken = null; show('view-login'); renderAcctChip(); initGoogle(); }
+  } else renderAcctChip();
+}
 
 /* ================= onboarding ================= */
 $('btn-onboard').onclick = async () => {
@@ -381,7 +474,7 @@ function showCredsAlert(){
   d.id = 'creds-alert';
   d.className = 'card';
   d.style.borderColor = 'var(--red)';
-  d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">the server encryption key was rotated. re-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
+  d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">re-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
   $('tab-dash').prepend(d);
   $('btn-creds-again').onclick = () => { d.remove(); show('view-onboard'); };
 }
@@ -767,8 +860,9 @@ document.querySelectorAll('.tabs button').forEach(b => {
 
 /* ================= boot ================= */
 (function(){
-  const tok = sessionStorage.getItem('attenly_token');
-  if(tok){ S.idToken = tok; show('view-app'); afterLogin(); }
+  renderAcctChip();
+  const acct = activeAcct();
+  if(acct && acct.idToken){ useAccount(acct); }
   else { show('view-login'); initGoogle(); }
 })();
 </script>
