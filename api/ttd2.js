@@ -25,6 +25,29 @@ module.exports = async (req, res) => {
     }
     if (!erpUid || !erpPass) return res.status(400).json({ error: 'no readable creds' });
     const { cookies } = await E.erpLogin(erpUid, erpPass);
+    const mode = String((req.query && req.query.mode) || 'probe');
+    if (mode === 'search') {
+      const pg = await E.erpFetch(E.KNOWN_URLS.timetable, { jar: cookies });
+      const html = pg.buf.toString('utf8');
+      const low = html.toLowerCase();
+      const indivCtx = [];
+      let idx = 0;
+      while (true) {
+        idx = low.indexOf('individuals', idx);
+        if (idx < 0 || indivCtx.length >= 15) break;
+        indivCtx.push(html.slice(Math.max(0, idx - 200), idx + 160).replace(/\s+/g, ' '));
+        idx += 11;
+      }
+      // also: any JS submit/pjax handlers tied to #w0
+      const w0js = [];
+      for (const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+        const js = m[1];
+        if (/#w0\b|w0['"]?\s*\)|beforeSubmit/.test(js))
+          w0js.push(js.replace(/\s+/g, ' ').slice(0, 1200));
+        if (w0js.length >= 6) break;
+      }
+      return res.json({ status: pg.status, len: html.length, indivCtx, w0js });
+    }
     const u = E.ERP_BASE + '/index.php?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/' + act)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[academicyear]') + '=' + encodeURIComponent(year)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[semesterid]') + '=' + encodeURIComponent(sem);
@@ -50,8 +73,19 @@ module.exports = async (req, res) => {
       if (tables.length >= 12) break;
     }
     const noTableText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    // every occurrence of "individuals" with context: how is the target actually used?
+    const indivCtx = [];
+    const low = html.toLowerCase();
+    let idx = 0;
+    while (true) {
+      idx = low.indexOf('individuals', idx);
+      if (idx < 0 || indivCtx.length >= 15) break;
+      indivCtx.push(html.slice(Math.max(0, idx - 160), idx + 120).replace(/\s+/g, ' '));
+      idx += 11;
+    }
     res.json({
       status: r.status, len: html.length, loginForm: /id="login-form"/.test(html),
+      indivCtx,
       tables, tableCount: tables.length,
       hasMon: /monday/i.test(html), hasTue: /tuesday/i.test(html),
       hasMonAbbr: /\bmon\b/i.test(noTableText),
