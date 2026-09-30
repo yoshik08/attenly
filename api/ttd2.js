@@ -71,8 +71,13 @@ module.exports = async (req, res) => {
         ? [...rows[0][1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
             .map(c => c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40)).slice(0, 10)
         : [];
+      // first column of every row = the day labels (structural, not personal)
+      const dayCol = rows.map(rr => {
+        const c = (rr[1].match(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/i) || [])[1] || '';
+        return c.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 30);
+      }).slice(0, 10);
       const txt = t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
-      tables.push({ rows: rows.length, firstRow: firstCells, textHead: txt });
+      tables.push({ rows: rows.length, firstRow: firstCells, dayCol, textHead: txt });
       if (tables.length >= 12) break;
     }
     const noTableText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
