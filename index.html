@@ -490,7 +490,7 @@ async function loadData(){
       renderAll();
       if(d.lastError){
         setStatus('last cloud sync ' + (S.syncedAt ? ago(S.syncedAt) : 'never') + ' · <b>sync failing:</b> ' + esc(d.lastError));
-        if(/re-enter your erp password/i.test(d.lastError)) showCredsAlert();
+        if(/re-enter your erp|erp rejected|mfa/i.test(d.lastError || '')) showCredsAlert(d.lastError);
       }
     } else {
       setStatus(d.lastError ? 'sync error: '+esc(d.lastError) : 'no synced data yet — hit sync now');
@@ -505,13 +505,15 @@ async function loadData(){
   }
 }
 /* poll every 60s: cloud syncs every 5 min, pick up fresh data silently */
-function showCredsAlert(){
+function showCredsAlert(detail){
   if($('creds-alert')) return;
   const d = document.createElement('div');
   d.id = 'creds-alert';
   d.className = 'card';
   d.style.borderColor = 'var(--red)';
-  d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">re-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
+  d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">' +
+    (detail ? esc(detail) + '<br>' : '') +
+    're-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
   $('tab-dash').prepend(d);
   $('btn-creds-again').onclick = () => openCredsForm();
 }
@@ -565,8 +567,11 @@ async function forceSync(first){
     await loadData();
     if(first && res.warnings && res.warnings.length) alert('synced with warnings: ' + res.warnings.join('; '));
   }catch(e){
-    setStatus('sync failed: ' + esc(e.message));
-    if(first) alert('first sync failed: ' + e.message);
+    const msg = e.message || 'sync failed';
+    const auth = /re-enter your erp|erp rejected|mfa/i.test(msg);
+    setStatus((auth ? 'erp login needs attention: ' : 'sync hiccup — will retry automatically: ') + esc(msg));
+    if(first) alert((auth ? 'erp login issue: ' : 'sync hiccup (your saved login is fine, just try again): ') + msg);
+    if(auth) showCredsAlert(msg);
   }
   btn.disabled = false;
 }
