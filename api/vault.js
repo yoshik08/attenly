@@ -1,49 +1,48 @@
-// api/vault.js — stores PIN-encrypted ERP credential blobs in Atlas.
-// The server NEVER sees the PIN or plaintext creds: the browser derives an
-// AES-GCM key from the PIN via PBKDF2 and only ciphertext ever arrives here.
+// api/vault.js — server-encrypted ERP credential store, keyed by Google sub.
+// The server encrypts with VAULT_KEY so the 5-min background sync can decrypt.
+// Old PIN-based docs (uidHash-keyed) are left untouched.
 //
-// POST {action:"store", uidHash, saltB64, ivB64, cipherB64}
-// POST {action:"load",  uidHash} -> {saltB64, ivB64, cipherB64} | 404
-//
-// Env: MONGODB_URI (Atlas). DB: klu_attendance, collection: vault.
+// POST {idToken, action:"store", erpUid, erpPass} -> {ok}
+// POST {idToken, action:"status"} -> {hasCreds, email}
+// POST {idToken, action:"delete"} -> {ok}
 
-const { MongoClient } = require('mongodb');
-let client = null;
-async function db() {
-  if (!client) {
-    if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI not set');
-    const c = new MongoClient(process.env.MONGODB_URI);
-    try { await c.connect(); }
-    catch (e) { throw new Error('mongo connect failed: ' + e.message); }
-    client = c;
-  }
-  return client.db('klu_attendance').collection('vault');
-}
+const A = require('./_auth');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  const body = A.parseBody(req);
   try {
-    const col = await db();
+    const me = await A.verifyGoogleToken(body.idToken || '');
+    const d = await A.db();
+    const col = d.collection('users');
+
     if (body.action === 'store') {
-      const { uidHash, saltB64, ivB64, cipherB64 } = body;
-      if (!uidHash || !saltB64 || !ivB64 || !cipherB64)
-        return res.status(400).json({ error: 'missing fields' });
+      const erpUid = String(body.erpUid || '').trim();
+      const erpPass = String(body.erpPass || '');
+      if (!erpUid || !erpPass) return res.status(400).json({ error: 'erp id and password required' });
+      const blob = A.encObj({ erpUid, erpPass });
       await col.updateOne(
-        { uidHash },
-        { $set: { saltB64, ivB64, cipherB64, updatedAt: new Date() } },
+        { sub: me.sub },
+        { $set: { sub: me.sub, email: me.email, name: me.name, blob, updatedAt: new Date() },
+          $setOnInsert: { createdAt: new Date() } },
         { upsert: true }
       );
       return res.json({ ok: true });
     }
-    if (body.action === 'load') {
-      const doc = await col.findOne({ uidHash: body.uidHash }, { projection: { _id: 0 } });
-      if (!doc) return res.status(404).json({ error: 'no vault for this id' });
-      return res.json(doc);
+    if (body.action === 'status') {
+      const doc = await col.findOne({ sub: me.sub }, { projection: { blob: 1 } });
+      return res.json({ hasCreds: !!(doc && doc.blob), email: me.email, name: me.name });
+    }
+    if (body.action === 'delete') {
+      await col.deleteOne({ sub: me.sub });
+      await d.collection('sync').deleteMany({ sub: me.sub });
+      return res.json({ ok: true });
     }
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
-    return res.status(500).json({ error: 'vault error: ' + e.message });
+    const msg = String(e.message || e);
+    if (/token|signature|expired|issuer|GOOGLE_CLIENT_ID/i.test(msg))
+      return res.status(401).json({ error: 'login failed: ' + msg });
+    return res.status(500).json({ error: 'vault error: ' + msg });
   }
 };
