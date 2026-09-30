@@ -15,6 +15,7 @@ module.exports = async (req, res) => {
     const year = String((req.query && req.query.year) || '29');
     const sem = String((req.query && req.query.sem) || '1');
     const act = String((req.query && req.query.act) || 'individuals');
+    const method = String((req.query && req.query.m) || 'GET').toUpperCase();
     const d = await A.db();
     const doc = await d.collection('users').findOne({ sub });
     if (!doc) return res.status(404).json({ error: 'no such user' });
@@ -27,7 +28,14 @@ module.exports = async (req, res) => {
     const u = E.ERP_BASE + '/index.php?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/' + act)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[academicyear]') + '=' + encodeURIComponent(year)
       + '&' + encodeURIComponent('UniversityMasterAcademicTimetableView[semesterid]') + '=' + encodeURIComponent(sem);
-    const r = await E.erpFetch(u, { jar: cookies });
+    const params = new URLSearchParams();
+    params.set('UniversityMasterAcademicTimetableView[academicyear]', year);
+    params.set('UniversityMasterAcademicTimetableView[semesterid]', sem);
+    const r = method === 'POST'
+      ? await E.erpFetch(u.split('?')[0] + '?r=' + encodeURIComponent('timetables/universitymasteracademictimetableview/' + act),
+          { jar: cookies, method: 'POST', body: params,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+      : await E.erpFetch(u, { jar: cookies });
     const html = r.buf.toString('utf8');
     const tables = [];
     for (const m of html.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
