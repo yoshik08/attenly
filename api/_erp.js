@@ -183,18 +183,28 @@ async function fetchAttendanceTable(cookies) {
 // ---- timetable: discover the AJAX data action from the search page's scripts ----
 function discoverAjaxUrls(searchHtml, hint) {
   const urls = new Set();
-  for (const m of searchHtml.matchAll(/url\s*:\s*['"]([^'"]+)['"]/gi)) {
-    let u = m[1].replace(/&amp;/g, '&');
+  const add = u => {
+    u = String(u || '').replace(/&amp;/g, '&');
+    if (!u) return;
     if (!/^https?:/.test(u)) u = u.startsWith('/') ? ERP_BASE + u : ERP_BASE + '/' + u;
     if (u.includes('index.php?r=') && hint.test(u)) urls.add(u);
-  }
+  };
+  for (const m of searchHtml.matchAll(/url\s*:\s*['"]([^'"]+)['"]/gi)) add(m[1]);
+  for (const m of searchHtml.matchAll(/\$\.(?:post|get)\(\s*['"]([^'"]+)['"]/gi)) add(m[1]);
+  for (const m of searchHtml.matchAll(/data-url\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
+  for (const m of searchHtml.matchAll(/<form[^>]+action\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
   return [...urls];
+}
+function hasWeekdayTable(html) {
+  return /monday|tuesday|wednesday/i.test(html) && /<table/i.test(html);
 }
 async function fetchTimetableTable(cookies) {
   const page = await erpFetch(KNOWN_URLS.timetable, { jar: cookies });
   if (page.netError || page.status !== 200) throw new Error('timetable search page unreachable');
   let html = page.buf.toString('utf8');
   if (/id="login-form"/.test(html)) throw new Error('logged out');
+  // some ERP pages render the table inline on GET with default selections
+  if (hasWeekdayTable(html)) return { html, cookies: page.jar, url: KNOWN_URLS.timetable };
   const csrf = extractCsrf(html);
   const cands = discoverAjaxUrls(html, /timetable/i);
   // also try posting back to the search page itself
@@ -213,7 +223,7 @@ async function fetchTimetableTable(cookies) {
     if (r.netError || r.status !== 200) continue;
     const rh = r.buf.toString('utf8');
     if (/id="login-form"/.test(rh)) throw new Error('logged out');
-    if (/monday|tuesday|wednesday/i.test(rh) && /<table/i.test(rh))
+    if (hasWeekdayTable(rh))
       return { html: rh, cookies: r.jar, url: u };
   }
   throw new Error('timetable data endpoint not found');
