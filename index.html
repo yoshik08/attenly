@@ -255,7 +255,8 @@ async function api(path, body){
 
 /* ================= state ================= */
 const S = { idToken:null, me:null, subjects:[], ttHtml:null, syncedAt:null,
-            tcbr:false, lastSync:null, ocrRows:[], calcMode:'simple', ltpsVals:{}, pollTimer:null };
+            tcbr:false, lastSync:null, ocrRows:[], calcMode:'simple', ltpsVals:{}, pollTimer:null,
+            syncing:false, lastAutoSync:0 };
 
 /* ================= theme ================= */
 function setTheme(t){
@@ -501,6 +502,12 @@ function startPoll(){
   stopPoll();
   S.pollTimer = setInterval(async () => {
     try{
+      // foreground auto-sync: if cloud data is older than ~5 min, sync this
+      // account silently (same endpoint as force sync). backs up the github
+      // cron so the 5-min promise holds even with the app open.
+      const stale = !S.syncedAt || (Date.now() - S.syncedAt.getTime() > 5.5*60*1000);
+      const due = !S.lastAutoSync || (Date.now() - S.lastAutoSync > 5*60*1000);
+      if(S.idToken && stale && due && !S.syncing){ autoSync(); return; }
       const d = await api('/api/data', { idToken: S.idToken });
       const sa = d.syncedAt ? new Date(d.syncedAt).getTime() : 0;
       const cur = S.syncedAt ? S.syncedAt.getTime() : 0;
@@ -516,6 +523,19 @@ function startPoll(){
 }
 function stopPoll(){ if(S.pollTimer) clearInterval(S.pollTimer); S.pollTimer = null; }
 
+/* silent foreground sync when cloud data goes stale (>~5 min).
+   same per-user /api/sync as force sync, minus the button/alerts. */
+async function autoSync(){
+  if(S.syncing || !S.idToken) return;
+  S.syncing = true; S.lastAutoSync = Date.now();
+  try{
+    const r = await api('/api/sync', { idToken: S.idToken });
+    const res = (r.results && r.results[0]) || {};
+    if(!res.ok) throw new Error(res.error || 'sync failed');
+    await loadData();
+  }catch(e){ /* stays quiet; status line keeps showing last good sync */ }
+  S.syncing = false;
+}
 /* ================= force sync ================= */
 async function forceSync(first){
   const btn = $('btn-refresh');
