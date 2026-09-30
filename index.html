@@ -93,8 +93,9 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
 
 <!-- LOGIN -->
 <div id="view-login" class="hidden">
-  <h1>attenly</h1>
-  <p class="sub">cloud attendance for klu erp. sign in once, we sync every 5 mins.</p>
+  <div class="topbar"><div><h1>attenly</h1>
+  <p class="sub">cloud attendance for klu erp. sign in once, we sync every 5 mins.</p></div>
+  <div class="row"><button class="ghost sm" id="btn-theme-login">light mode</button></div></div>
   <div class="card">
     <div id="gsi-btn"></div>
     <p class="note" id="login-note">we use your google account only to identify you. your erp password is encrypted on the server so the background sync can log in for you. the erp captcha is solved automatically, you never type it.</p>
@@ -243,9 +244,13 @@ const S = { idToken:null, me:null, subjects:[], ttHtml:null, syncedAt:null,
 function setTheme(t){
   document.documentElement.dataset.theme = t;
   localStorage.setItem('attenly_theme', t);
-  $('btn-theme').textContent = t === 'dark' ? 'light mode' : 'dark mode';
+  const lbl = t === 'dark' ? 'light mode' : 'dark mode';
+  if($('btn-theme')) $('btn-theme').textContent = lbl;
+  if($('btn-theme-login')) $('btn-theme-login').textContent = lbl;
 }
-$('btn-theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+const toggleTheme = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+if($('btn-theme')) $('btn-theme').onclick = toggleTheme;
+if($('btn-theme-login')) $('btn-theme-login').onclick = toggleTheme;
 setTheme(localStorage.getItem('attenly_theme') || 'dark');
 
 /* ================= custom cursor ================= */
