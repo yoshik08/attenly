@@ -580,7 +580,7 @@ function renderAll(){
 function renderTimetable(){
   const doc = new DOMParser().parseFromString(S.ttHtml, 'text/html');
   doc.querySelectorAll('script,style,link').forEach(n => n.remove());
-  const days = /monday|tuesday|wednesday|thursday|friday|saturday/i;
+  const days = /\b(mon|tue|wed|thu|fri|sat)(day)?s?\b/gi;
   let best = null, bestScore = 0;
   for(const t of doc.querySelectorAll('table')){
     const txt = t.textContent;
