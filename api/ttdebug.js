@@ -68,6 +68,8 @@ module.exports = async (req, res) => {
     const dataUrls = [...new Set([...html.matchAll(/data-url\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]))];
     const links = [...new Set([...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>/gi)].map(m => m[1]))]
       .filter(h => /timetable|time-table/i.test(h)).slice(0, 20);
+    const only = String((req.query && req.query.only) || '');
+    if (only === 'selects') return res.json({ selects: selectsOf(html) });
     res.json({
       url: E.KNOWN_URLS.timetable, status: page.status, len: html.length,
       title: (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '',
