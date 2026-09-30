@@ -709,7 +709,7 @@ $('btn-predict').onclick = () => {
   let cond, att, label;
   if(S.calcMode === 'ltps'){
     const si = $('ltps-subj').value;
-    if(si === '' || !Object.keys(S.ltpsVals).length) return alert('pick a subject first');
+    if(si === '' || !Object.keys(S.ltpsVals).length){ $('pred-out').innerHTML = '<span style="color:var(--red)">pick a subject first</span>'; return; }
     const s = S.subjects[+si];
     cond = 0; att = 0; label = s.code + ' (ltps)';
     for(const j of Object.keys(S.ltpsVals)){
@@ -728,7 +728,7 @@ $('btn-predict').onclick = () => {
       });
     } else {
       cond = +$('man-cond').value || 0; att = +$('man-att').value || 0;
-      if(!cond) return alert('pick a subject or type conducted/attended');
+      if(!cond){ $('pred-out').innerHTML = '<span style="color:var(--red)">pick a subject or type conducted/attended</span>'; return; }
       label = 'manual';
     }
   }
