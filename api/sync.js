@@ -1,6 +1,8 @@
 // api/sync.js — cloud sync engine.
-// Hits every user's ERP account: decrypt creds -> auto-captcha login ->
+// Hits every user's ERP account: plain creds -> auto-captcha login ->
 // attendance + timetable fetch -> parse -> store in Atlas.
+// (Credential storage is plaintext per Yoshik's explicit call 2026-09-30;
+// legacy encrypted `blob` docs are migrated to plain fields when readable.)
 //
 // Auth:  Authorization: Bearer <CRON_SECRET>   (github actions 5-min cron)
 //   or   POST {idToken}                        (per-user force sync from the app)
@@ -15,8 +17,19 @@ async function syncOne(doc, d) {
   const t0 = Date.now();
   const rec = { sub: doc.sub, email: doc.email, ok: false };
   try {
-    const creds = A.decObj(doc.blob);
-    const { cookies } = await E.erpLogin(creds.erpUid, creds.erpPass);    let attendance = null, timetableHtml = null, attErr = null, ttErr = null;
+    let erpUid = doc.erpUid, erpPass = doc.erpPass;
+    // one-time migration: decrypt legacy blob into plain fields when readable
+    if ((!erpUid || !erpPass) && doc.blob) {
+      try {
+        const c = A.decObj(doc.blob);
+        erpUid = c.erpUid; erpPass = c.erpPass;
+        await d.collection('users').updateOne({ sub: doc.sub },
+          { $set: { erpUid, erpPass, updatedAt: new Date() }, $unset: { blob: 1 } });
+      } catch (e) { /* unreadable legacy blob: falls through to re-enter */ }
+    }
+    if (!erpUid || !erpPass)
+      throw new Error('no erp login saved — re-enter your erp id and password in the app');
+    const { cookies } = await E.erpLogin(erpUid, erpPass);    let attendance = null, timetableHtml = null, attErr = null, ttErr = null;
     try {
       const a = await E.fetchAttendanceTable(cookies);
       attendance = E.parseAttendanceTable(a.html);
@@ -35,11 +48,7 @@ async function syncOne(doc, d) {
     rec.ok = true; rec.subjects = attendance ? attendance.length : 0;
     rec.warnings = [attErr, ttErr].filter(Boolean);
   } catch (e) {
-    let msg = String(e.message || e).slice(0, 200);
-    // AES-GCM auth-tag failure = blob was encrypted with a different VAULT_KEY
-    if (/unable to authenticate data|unsupported state/i.test(msg))
-      msg = 'saved erp login unreadable (encryption key changed) — re-enter your erp password in the app';
-    rec.error = msg;
+    rec.error = String(e.message || e).slice(0, 200);
     await d.collection('sync').updateOne(
       { sub: doc.sub },
       { $set: { sub: doc.sub, email: doc.email, lastError: rec.error, attemptedAt: new Date() } },
@@ -64,13 +73,13 @@ module.exports = async (req, res) => {
 
     let docs;
     if (isCron) {
-      docs = await users.find({ blob: { $exists: true } }).toArray();
+      docs = await users.find({ $or: [{ erpUid: { $exists: true } }, { blob: { $exists: true } }] }).toArray();
     } else {
       // force sync path: one user, verified google token
       const body = A.parseBody(req);
       const me = await A.verifyGoogleToken(body.idToken || '');
       const doc = await users.findOne({ sub: me.sub });
-      if (!doc || !doc.blob) return res.status(404).json({ error: 'no erp credentials saved, complete setup first' });
+      if (!doc || (!doc.erpUid && !doc.blob)) return res.status(404).json({ error: 'no erp credentials saved, complete setup first' });
       docs = [doc];
     }
 
