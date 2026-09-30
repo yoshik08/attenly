@@ -16,8 +16,7 @@ async function syncOne(doc, d) {
   const rec = { sub: doc.sub, email: doc.email, ok: false };
   try {
     const creds = A.decObj(doc.blob);
-    const { cookies } = await E.erpLogin(creds.erpUid, creds.erpPass);
-    let attendance = null, timetableHtml = null, attErr = null, ttErr = null;
+    const { cookies } = await E.erpLogin(creds.erpUid, creds.erpPass);    let attendance = null, timetableHtml = null, attErr = null, ttErr = null;
     try {
       const a = await E.fetchAttendanceTable(cookies);
       attendance = E.parseAttendanceTable(a.html);
@@ -36,7 +35,11 @@ async function syncOne(doc, d) {
     rec.ok = true; rec.subjects = attendance ? attendance.length : 0;
     rec.warnings = [attErr, ttErr].filter(Boolean);
   } catch (e) {
-    rec.error = String(e.message || e).slice(0, 200);
+    let msg = String(e.message || e).slice(0, 200);
+    // AES-GCM auth-tag failure = blob was encrypted with a different VAULT_KEY
+    if (/unable to authenticate data|unsupported state/i.test(msg))
+      msg = 'saved erp login unreadable (encryption key changed) — re-enter your erp password in the app';
+    rec.error = msg;
     await d.collection('sync').updateOne(
       { sub: doc.sub },
       { $set: { sub: doc.sub, email: doc.email, lastError: rec.error, attemptedAt: new Date() } },
