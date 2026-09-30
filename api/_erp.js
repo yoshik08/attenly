@@ -180,20 +180,14 @@ async function fetchAttendanceTable(cookies) {
   return { html, cookies: r.jar };
 }
 
-// ---- timetable: discover the AJAX data action from the search page's scripts ----
-function discoverAjaxUrls(searchHtml, hint) {
-  const urls = new Set();
-  const add = u => {
-    u = String(u || '').replace(/&amp;/g, '&');
-    if (!u) return;
-    if (!/^https?:/.test(u)) u = u.startsWith('/') ? ERP_BASE + u : ERP_BASE + '/' + u;
-    if (u.includes('index.php?r=') && hint.test(u)) urls.add(u);
-  };
-  for (const m of searchHtml.matchAll(/url\s*:\s*['"]([^'"]+)['"]/gi)) add(m[1]);
-  for (const m of searchHtml.matchAll(/\$\.(?:post|get)\(\s*['"]([^'"]+)['"]/gi)) add(m[1]);
-  for (const m of searchHtml.matchAll(/data-url\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
-  for (const m of searchHtml.matchAll(/<form[^>]+action\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
-  return [...urls];
+// ---- timetable: the search page is a GET form (id w0) that submits
+// academicyear+semesterid to the "individuals" action, which renders the
+// student's weekly table. no AJAX involved.
+function ttSelectOpts(w0, selName) {
+  const m = w0.match(new RegExp('<select[^>]*name="' + selName.replace(/[[\]]/g, '\\$&') + '"[^>]*>([\\s\\S]*?)</select>', 'i'));
+  if (!m) return [];
+  return [...m[1].matchAll(/<option\b[^>]*value="([^"]*)"[^>]*>([^<]*)<\/option>/gi)]
+    .map(o => ({ v: o[1], t: o[2].replace(/\s+/g, ' ').trim() })).filter(o => o.v);
 }
 function hasWeekdayTable(html) {
   return /monday|tuesday|wednesday/i.test(html) && /<table/i.test(html);
@@ -201,32 +195,42 @@ function hasWeekdayTable(html) {
 async function fetchTimetableTable(cookies) {
   const page = await erpFetch(KNOWN_URLS.timetable, { jar: cookies });
   if (page.netError || page.status !== 200) throw new Error('timetable search page unreachable');
-  let html = page.buf.toString('utf8');
+  const html = page.buf.toString('utf8');
   if (/id="login-form"/.test(html)) throw new Error('logged out');
   // some ERP pages render the table inline on GET with default selections
   if (hasWeekdayTable(html)) return { html, cookies: page.jar, url: KNOWN_URLS.timetable };
-  const csrf = extractCsrf(html);
-  const cands = discoverAjaxUrls(html, /timetable/i);
-  // also try posting back to the search page itself
-  const targets = [...cands, KNOWN_URLS.timetable];
-  const params = new URLSearchParams({ _csrf: csrf || '' });
-  // include any select fields with their first real option selected
-  for (const m of html.matchAll(/<select[^>]+name="([^"]+)"[\s\S]*?<\/select>/gi)) {
-    const name = m[1], sel = m[0];
-    const opt = sel.match(/<option value="(\d+)">/);
-    if (opt) params.set(name, opt[1]);
-  }
-  for (const u of targets) {
-    const r = await erpFetch(u, { method: 'POST', jar: page.jar, body: params,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': KNOWN_URLS.timetable, 'X-Requested-With': 'XMLHttpRequest' } });
-    if (r.netError || r.status !== 200) continue;
+
+  const w0 = (html.match(/<form\b[^>]*id="w0"[^>]*>([\s\S]*?)<\/form>/i) || [])[1] || '';
+  const rVal = (w0.match(/<input[^>]*name="r"[^>]*value="([^"]*)"/i) || [])[1] || '';
+  const years = ttSelectOpts(w0, 'UniversityMasterAcademicTimetableView[academicyear]');
+  const sems = ttSelectOpts(w0, 'UniversityMasterAcademicTimetableView[semesterid]');
+  if (!rVal || !years.length || !sems.length) throw new Error('timetable data endpoint not found');
+
+  // prefer the current academic year + odd/even semester by calendar
+  const now = new Date(), yy = now.getFullYear(), mo = now.getMonth() + 1;
+  const curYearText = (mo >= 7 ? yy + '-' + (yy + 1) : (yy - 1) + '-' + yy).replace(/\s/g, '');
+  const curSemRe = mo >= 7 ? /odd/i : /even/i;
+  const pickYear = years.find(o => o.t.replace(/\s/g, '') === curYearText) || years[0];
+  const pickSem = sems.find(o => curSemRe.test(o.t)) || sems[0];
+
+  const combos = [[pickYear, pickSem]];
+  for (const y of years.slice(0, 3)) for (const s of sems.slice(0, 2))
+    if (y !== pickYear || s !== pickSem) combos.push([y, s]);
+
+  const base = ERP_BASE + '/index.php?r=' + encodeURIComponent(rVal);
+  const qn = n => encodeURIComponent(n);
+  let lastErr = 'no combos';
+  for (const [y, s] of combos.slice(0, 8)) {
+    const u = base + '&' + qn('UniversityMasterAcademicTimetableView[academicyear]') + '=' + qn(y.v)
+                  + '&' + qn('UniversityMasterAcademicTimetableView[semesterid]') + '=' + qn(s.v);
+    const r = await erpFetch(u, { jar: page.jar, headers: { Referer: KNOWN_URLS.timetable } });
+    if (r.netError || r.status !== 200) { lastErr = 'http ' + r.status; continue; }
     const rh = r.buf.toString('utf8');
     if (/id="login-form"/.test(rh)) throw new Error('logged out');
-    if (hasWeekdayTable(rh))
-      return { html: rh, cookies: r.jar, url: u };
+    if (hasWeekdayTable(rh)) return { html: rh, cookies: r.jar, url: u };
+    lastErr = 'no weekday table for ' + y.t + ' / ' + s.t;
   }
-  throw new Error('timetable data endpoint not found');
+  throw new Error('timetable data endpoint not found (' + lastErr + ')');
 }
 
 // ---- server-side parse of the courselist table ----
