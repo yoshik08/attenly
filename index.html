@@ -358,6 +358,10 @@ async function loadData(){
       S.syncedAt = d.syncedAt ? new Date(d.syncedAt) : null;
       S.lastSync = S.syncedAt;
       renderAll();
+      if(d.lastError){
+        setStatus('last cloud sync ' + (S.syncedAt ? ago(S.syncedAt) : 'never') + ' · <b>sync failing:</b> ' + esc(d.lastError));
+        if(/re-enter your erp password/i.test(d.lastError)) showCredsAlert();
+      }
     } else {
       setStatus(d.lastError ? 'sync error: '+esc(d.lastError) : 'no synced data yet — hit sync now');
       $('subj-rows').innerHTML = '<tr><td colspan="7" style="color:var(--dim)">no data yet</td></tr>';
@@ -371,6 +375,16 @@ async function loadData(){
   }
 }
 /* poll every 60s: cloud syncs every 5 min, pick up fresh data silently */
+function showCredsAlert(){
+  if($('creds-alert')) return;
+  const d = document.createElement('div');
+  d.id = 'creds-alert';
+  d.className = 'card';
+  d.style.borderColor = 'var(--red)';
+  d.innerHTML = '<b>your saved erp login stopped working</b><p class="sub">the server encryption key was rotated. re-enter your erp id and password once and the 5 min sync resumes.</p><button id="btn-creds-again" style="width:auto">re-enter erp password</button>';
+  $('tab-dash').prepend(d);
+  $('btn-creds-again').onclick = () => { d.remove(); show('view-onboard'); };
+}
 function startPoll(){
   stopPoll();
   S.pollTimer = setInterval(async () => {
