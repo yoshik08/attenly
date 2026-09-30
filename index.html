@@ -1,19 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KL Attendance</title>
+<title>Attenly — KL Attendance</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;--red:#c0392b;--green:#2ea043;--amber:#d29922;--blue:#1f6feb}
+:root{
+  --bg:#0d1117;--card:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;
+  --red:#c0392b;--green:#2ea043;--amber:#d29922;--blue:#1f6feb;--input:#0d1117;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--card:#ffffff;--line:#d0d7de;--txt:#1f2328;--dim:#59636e;
+  --red:#c0392b;--green:#1a7f37;--amber:#9a6700;--blue:#0969da;--input:#f6f8fa;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh;transition:background .25s,color .25s}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
 h1{font-size:22px;margin-bottom:4px}.sub{color:var(--dim);font-size:13px;margin-bottom:20px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;transition:background .25s,border-color .25s}
 label{display:block;font-size:12px;color:var(--dim);margin:12px 0 6px}
-input,textarea,select{width:100%;background:#0d1117;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:11px 12px;font-size:15px}
-input:focus,textarea:focus{outline:none;border-color:var(--red)}
+input,textarea,select{width:100%;background:var(--input);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:11px 12px;font-size:15px}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--red)}
 button{background:var(--red);color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:14px}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
 button.sm{width:auto;padding:8px 14px;font-size:13px;margin-top:0}
@@ -36,51 +44,84 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
 .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .tabs button{width:auto;margin-top:0;padding:9px 16px;font-size:14px;background:transparent;border:1px solid var(--line);color:var(--dim)}
 .tabs button.on{background:var(--red);border-color:var(--red);color:#fff}
-.captcha-box{text-align:center}.captcha-box img{max-width:240px;border:1px solid var(--line);border-radius:8px;margin:10px 0;background:#fff}
-.ocr-row input{width:100%;padding:7px 8px;font-size:13px}
-#drop{border:2px dashed var(--line);border-radius:12px;padding:32px;text-align:center;color:var(--dim);cursor:pointer}
-#drop:hover{border-color:var(--red)}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--dim);border-top-color:var(--txt);border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-2px}
 @keyframes sp{to{transform:rotate(360deg)}}
 .tt-wrap{overflow-x:auto}
 .tt-wrap table{min-width:640px}
+.ocr-row input{width:100%;padding:7px 8px;font-size:13px}
+#drop{border:2px dashed var(--line);border-radius:12px;padding:32px;text-align:center;color:var(--dim);cursor:pointer}
+#drop:hover{border-color:var(--red)}
+/* calculator ltps boxes */
+.ltps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.ltps-box{background:var(--input);border:1px solid var(--line);border-radius:10px;padding:12px}
+.ltps-box .lt{font-weight:800;font-size:15px}
+.ltps-box .lp{font-size:12px;color:var(--dim);margin:4px 0 8px}
+.ltps-box input{padding:8px 10px;font-size:14px;margin-top:6px}
+.seg{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.seg button{width:auto;margin-top:0;padding:9px 18px;background:transparent;border:1px solid var(--line);color:var(--dim)}
+.seg button.on{background:var(--red);border-color:var(--red);color:#fff}
+/* custom cursor (fine pointers only) */
+.cursor-dot,.cursor-ring{position:fixed;top:0;left:0;pointer-events:none;z-index:9999;border-radius:50%;display:none}
+@media(pointer:fine){
+  body.cur-on, body.cur-on a, body.cur-on button, body.cur-on input,
+  body.cur-on select, body.cur-on textarea, body.cur-on #drop{cursor:none}
+  body.cur-on .cursor-dot,body.cur-on .cursor-ring{display:block}
+  .cursor-dot{width:7px;height:7px;background:var(--red);transform:translate(-50%,-50%)}
+  .cursor-ring{width:30px;height:30px;border:1.5px solid var(--red);opacity:.55;transform:translate(-50%,-50%);transition:width .15s,height .15s,opacity .15s}
+  body.cur-hot .cursor-ring{width:44px;height:44px;opacity:.9}
+}
+#gsi-btn{display:flex;justify-content:center;margin:8px 0}
+/* mobile */
+@media(max-width:640px){
+  .wrap{padding:16px 12px 48px}
+  h1{font-size:19px}
+  .card{padding:14px}
+  .topbar{align-items:flex-start;flex-direction:column}
+  .topbar .row{width:100%}
+  .topbar .row .sm{flex:1;text-align:center;padding:10px 6px}
+  table{font-size:12px}
+  th,td{padding:7px 5px}
+  .tabs{overflow-x:auto;flex-wrap:nowrap}
+  .tabs button{flex:0 0 auto}
+}
 </style>
 </head>
 <body>
+<div class="cursor-dot" id="cur-dot"></div>
+<div class="cursor-ring" id="cur-ring"></div>
 <div class="wrap">
 
-<!-- SETUP -->
-<div id="view-setup" class="hidden">
-  <h1>first time setup</h1>
-  <p class="sub">your erp login is encrypted with your pin before it ever leaves this tab</p>
+<!-- LOGIN -->
+<div id="view-login" class="hidden">
+  <h1>attenly</h1>
+  <p class="sub">cloud attendance for klu erp. sign in once, we sync every 5 mins.</p>
   <div class="card">
-    <label>student id</label><input id="su-uid" inputmode="numeric" placeholder="2520030574">
-    <label>erp password</label><input id="su-pass" type="password" placeholder="erp password">
-    <label>secret pin (you'll type this every visit, never stored)</label><input id="su-pin" type="password" inputmode="numeric" placeholder="4-8 digit pin">
-    <button id="btn-setup">encrypt &amp; save</button>
-    <p class="note">only the encrypted blob is stored. wrong pin = garbage out, nothing to steal. captcha is solved automatically, you never type it.</p>
+    <div id="gsi-btn"></div>
+    <p class="note" id="login-note">we use your google account only to identify you. your erp password is encrypted on the server so the background sync can log in for you. the erp captcha is solved automatically, you never type it.</p>
   </div>
 </div>
 
-<!-- UNLOCK -->
-<div id="view-unlock" class="hidden">
-  <h1>kl attendance</h1>
-  <p class="sub">enter your secret pin to decrypt and sync</p>
+<!-- ONBOARD -->
+<div id="view-onboard" class="hidden">
+  <h1>connect your erp</h1>
+  <p class="sub" id="ob-hello">one time setup. after this your attendance just appears.</p>
   <div class="card">
-    <label>secret pin</label><input id="un-pin" type="password" inputmode="numeric" placeholder="pin">
-    <button id="btn-unlock">unlock &amp; sync</button>
+    <label>erp id</label><input id="ob-uid" inputmode="numeric" placeholder="2520030574">
+    <label>erp password</label><input id="ob-pass" type="password" placeholder="erp password">
+    <button id="btn-onboard">save &amp; sync</button>
+    <p class="note">stored encrypted. wrong id/password just fails the sync, nothing breaks. captcha is solved automatically.</p>
   </div>
 </div>
 
 <!-- APP -->
 <div id="view-app" class="hidden">
   <div class="topbar">
-    <div><h1>kl attendance</h1><p class="synced" id="sync-info">not synced yet</p></div>
+    <div><h1>attenly</h1><p class="synced" id="sync-info">loading…</p></div>
     <div class="row">
       <button class="ghost sm" id="btn-refresh">sync now</button>
-      <button class="ghost sm" id="btn-auto">auto: off</button>
       <button class="ghost sm" id="btn-tcbr">tcbr: off</button>
-      <button class="ghost sm" id="btn-lock">lock</button>
+      <button class="ghost sm" id="btn-theme">light mode</button>
+      <button class="ghost sm" id="btn-logout">logout</button>
     </div>
   </div>
   <div class="tabs">
@@ -99,7 +140,7 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
     </div></div>
     <div class="card"><table><thead><tr>
       <th>course</th><th>l</th><th>t</th><th>p</th><th>s</th><th>%</th><th>status</th>
-    </tr></thead><tbody id="subj-rows"><tr><td colspan="7" style="color:var(--dim)">sync to load</td></tr></tbody></table>
+    </tr></thead><tbody id="subj-rows"><tr><td colspan="7" style="color:var(--dim)">loading…</td></tr></tbody></table>
     <div class="row" style="margin-top:12px"><button class="ghost sm" id="btn-paste-open">paste table manually instead</button></div>
     </div>
   </div>
@@ -109,24 +150,38 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h1 style="font-size:16px">timetable</h1>
-        <div class="row"><button class="ghost sm" id="btn-tt-load">load from erp</button><button class="ghost sm" id="btn-tt-png">download png</button></div>
+        <div class="row"><button class="ghost sm" id="btn-tt-png">download png</button></div>
       </div>
-      <div class="tt-wrap" id="tt-out"><p class="sub" style="margin-top:12px">not loaded yet</p></div>
+      <div class="tt-wrap" id="tt-out"><p class="sub" style="margin-top:12px">loading…</p></div>
     </div>
   </div>
 
   <!-- CALCULATOR -->
   <div id="tab-calc" class="hidden">
     <div class="card"><h1 style="font-size:16px">bunk predictor</h1>
-      <p class="sub">pick a synced subject, or type numbers manually</p>
-      <label>subject (synced)</label><select id="pred-subj"><option value="">— sync first —</option></select>
-      <div class="row" style="margin-top:10px">
-        <div style="flex:1"><label>conducted (manual)</label><input id="man-cond" type="number" min="0" placeholder="e.g. 40"></div>
-        <div style="flex:1"><label>attended (manual)</label><input id="man-att" type="number" min="0" placeholder="e.g. 32"></div>
+      <div class="seg" style="margin-top:12px">
+        <button id="seg-simple" class="on">simple total</button>
+        <button id="seg-ltps">ltps per component</button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <div style="flex:1"><label>target %</label><input id="pred-target" type="number" value="85" min="1" max="100"></div>
-        <div style="flex:1"><label>bunk next n classes</label><input id="pred-bunk" type="number" value="3" min="0"></div>
+      <!-- simple mode -->
+      <div id="calc-simple">
+        <label>subject (optional — fills from synced attendance)</label>
+        <select id="pred-subj"><option value="">— manual numbers below —</option></select>
+        <div class="row">
+          <div style="flex:1;min-width:120px"><label>total conducted</label><input id="man-cond" type="number" min="0" placeholder="40"></div>
+          <div style="flex:1;min-width:120px"><label>total attended</label><input id="man-att" type="number" min="0" placeholder="32"></div>
+        </div>
+      </div>
+      <!-- ltps mode -->
+      <div id="calc-ltps" class="hidden">
+        <label>subject (only its l/t/p/s components show up)</label>
+        <select id="ltps-subj"><option value="">— pick a subject —</option></select>
+        <div class="ltps-grid" id="ltps-boxes"></div>
+        <div class="pred" id="ltps-overall" style="margin-top:12px"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:1;min-width:120px"><label>target %</label><input id="pred-target" type="number" value="85" min="1" max="100"></div>
+        <div style="flex:1;min-width:120px"><label>bunk next n classes</label><input id="pred-bunk" type="number" value="1" min="0"></div>
       </div>
       <button id="btn-predict">calculate</button>
       <div class="pred" id="pred-out"></div>
@@ -135,75 +190,43 @@ th{color:var(--dim);font-size:11px;text-transform:uppercase}
 
   <!-- OCR -->
   <div id="tab-ocr" class="hidden">
-    <div class="card"><h1 style="font-size:16px">ocr attendance screenshot</h1>
-      <p class="sub">upload your erp attendance screenshot, verify the extracted rows, then calculate</p>
-      <div id="drop">tap to choose screenshot<input id="ocr-file" type="file" accept="image/*" class="hidden"></div>
-      <div id="ocr-status" class="note"></div>
+    <div class="card"><h1 style="font-size:16px">screenshot → attendance</h1>
+      <p class="sub">drop an erp attendance screenshot, we read the numbers</p>
+      <div id="drop">drop image here or tap to choose<input type="file" id="ocr-file" accept="image/*" class="hidden"></div>
+      <div class="pred" id="ocr-status" style="margin-top:10px"></div>
       <div id="ocr-edit" class="hidden">
         <table><thead><tr><th>code</th><th>conducted</th><th>attended</th><th></th></tr></thead>
         <tbody id="ocr-rows"></tbody></table>
-        <div class="row" style="margin-top:10px"><button class="ghost sm" id="btn-ocr-add">+ row</button>
-        <button class="sm" id="btn-ocr-calc" style="background:var(--red);border:none;color:#fff">calculate</button></div>
-        <div class="pred" id="ocr-out"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="ghost sm" id="btn-ocr-add">+ row</button>
+          <button class="sm" id="btn-ocr-calc" style="width:auto">calculate</button>
+        </div>
+        <div id="ocr-out" style="margin-top:10px"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- MANUAL PASTE -->
-<div id="modal-paste" class="modal hidden"><div class="card">
-  <h1 style="font-size:16px">paste attendance table</h1>
-  <p class="sub">erp → attendance report → select table → copy → paste below</p>
-  <textarea id="paste-box" rows="8" placeholder="paste table html or text here"></textarea>
-  <button id="btn-paste-go">parse</button>
-  <button class="ghost" id="btn-paste-close">cancel</button>
-</div></div>
-
-<!-- CAPTCHA MANUAL FALLBACK -->
-<div id="modal-captcha" class="modal hidden"><div class="card captcha-box">
-  <h1 style="font-size:16px">auto solve failed, type the captcha</h1>
-  <img id="captcha-img" alt="captcha">
-  <input id="captcha-text" placeholder="type the code" autocomplete="off">
-  <button id="btn-captcha-go">login</button>
-</div></div>
-
-<!-- MFA -->
-<div id="modal-mfa" class="modal hidden"><div class="card">
-  <h1 style="font-size:16px">erp wants your mfa code</h1>
-  <p class="sub">open your authenticator app and type the 6-digit code</p>
-  <input id="mfa-text" inputmode="numeric" placeholder="6-digit code" autocomplete="off">
-  <button id="btn-mfa-go">continue</button>
-  <button class="ghost" id="btn-mfa-cancel">cancel</button>
-</div></div>
+<!-- paste fallback modal -->
+<div id="modal-paste" class="modal hidden">
+  <div class="card">
+    <h1 style="font-size:16px">paste erp table</h1>
+    <p class="sub">copy the attendance table html from erp and paste it here</p>
+    <textarea id="paste-box" rows="8" placeholder="<table>…"></textarea>
+    <div class="row"><button class="sm" id="btn-paste-go" style="width:auto">parse</button>
+    <button class="ghost sm" id="btn-paste-close">cancel</button></div>
+  </div>
+</div>
 
 </div>
 <script>
-/* ================= crypto (all client-side) ================= */
-const te = new TextEncoder(), td = new TextDecoder();
-const b64e = b => btoa(String.fromCharCode(...new Uint8Array(b)));
-const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-async function sha256hex(s){ const h = await crypto.subtle.digest('SHA-256', te.encode(s)); return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
-async function keyFromPin(pin, saltB){
-  const km = await crypto.subtle.importKey('raw', te.encode(pin), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({name:'PBKDF2', salt:saltB, iterations:120000, hash:'SHA-256'}, km, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
-}
-async function encCreds(pin, obj){
-  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
-  const k = await keyFromPin(pin, salt);
-  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, te.encode(JSON.stringify(obj)));
-  return { saltB64:b64e(salt), ivB64:b64e(iv), cipherB64:b64e(ct) };
-}
-async function decCreds(pin, saltB64, ivB64, cipherB64){
-  const k = await keyFromPin(pin, b64d(saltB64));
-  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64d(ivB64)}, k, b64d(cipherB64));
-  return JSON.parse(td.decode(pt));
-}
+/* ================= config ================= */
+const GOOGLE_CLIENT_ID = '__GOOGLE_CLIENT_ID__'; // set at deploy time
 
-/* ================= state ================= */
-const S = { uid:null, pass:null, mfa:'', cookies:{}, csrf:'', subjects:[],
-            autoTimer:null, auto:false, tcbr:false, lastSync:null, attUrl:null, ttUrl:null, ocrRows:[] };
+/* ================= helpers ================= */
 const $ = id => document.getElementById(id);
-function show(id){ ['view-setup','view-unlock','view-app'].forEach(v=>$(v).classList.add('hidden')); $(id).classList.remove('hidden'); }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function show(id){ ['view-login','view-onboard','view-app'].forEach(v=>$(v).classList.add('hidden')); $(id).classList.remove('hidden'); }
 function setStatus(t){ $('sync-info').innerHTML = t; }
 async function api(path, body){
   const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
@@ -212,137 +235,378 @@ async function api(path, body){
   return j;
 }
 
-/* ================= setup & unlock ================= */
-$('btn-setup').onclick = async () => {
-  try {
-    const uid = $('su-uid').value.trim(), pass = $('su-pass').value, pin = $('su-pin').value;
-    if(!uid || !pass || pin.length < 4) return alert('fill all fields, pin min 4 chars');
-    const uidHash = await sha256hex('kluatt:'+uid);
-    const blob = await encCreds(pin, {uid, pass});
-    await api('/api/vault', {action:'store', uidHash, ...blob});
-    localStorage.setItem('kluatt_uidhash', uidHash);
-    S.uid = uid; S.pass = pass;
-    show('view-app'); syncNow();
-  } catch(e){ alert('setup failed: ' + (e.message || e)); }
-};
-$('btn-unlock').onclick = async () => {
-  const pin = $('un-pin').value, uidHash = localStorage.getItem('kluatt_uidhash');
-  if(!uidHash) return alert('no saved vault on this device, do first-time setup');
-  if(!pin) return alert('enter pin');
-  try {
-    const v = await api('/api/vault', {action:'load', uidHash});
-    const creds = await decCreds(pin, v.saltB64, v.ivB64, v.cipherB64);
-    S.uid = creds.uid; S.pass = creds.pass;
-    $('un-pin').value = '';
-    show('view-app'); syncNow();
-  } catch(e){ alert('wrong pin or corrupt vault'); }
-};
-$('btn-lock').onclick = () => { S.uid=S.pass=S.mfa=null; S.cookies={}; S.csrf=''; S.subjects=[]; S.attUrl=S.ttUrl=null; stopAuto(); show('view-unlock'); };
+/* ================= state ================= */
+const S = { idToken:null, me:null, subjects:[], ttHtml:null, syncedAt:null,
+            tcbr:false, lastSync:null, ocrRows:[], calcMode:'simple', ltpsVals:{}, pollTimer:null };
 
-/* ================= cloud captcha (solved server-side by the solver api) ================= */
-/* the proxy's init/refresh responses carry captchaText, solved by our own
-   CRNN service (solver/). the browser never loads the model. */
-function askCaptchaManual(b64){
-  return new Promise(resolve => {
-    $('captcha-img').src = 'data:image/png;base64,'+b64;
-    $('modal-captcha').classList.remove('hidden');
-    $('captcha-text').value = ''; $('captcha-text').focus();
-    $('btn-captcha-go').onclick = () => {
-      const t = $('captcha-text').value.trim().toLowerCase();
-      $('modal-captcha').classList.add('hidden');
-      resolve(t);
+/* ================= theme ================= */
+function setTheme(t){
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem('attenly_theme', t);
+  $('btn-theme').textContent = t === 'dark' ? 'light mode' : 'dark mode';
+}
+$('btn-theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+setTheme(localStorage.getItem('attenly_theme') || 'dark');
+
+/* ================= custom cursor ================= */
+(function(){
+  if(!matchMedia('(pointer:fine)').matches) return;
+  document.body.classList.add('cur-on');
+  const dot = $('cur-dot'), ring = $('cur-ring');
+  let mx = -100, my = -100, rx = -100, ry = -100;
+  addEventListener('mousemove', e => {
+    mx = e.clientX; my = e.clientY;
+    dot.style.left = mx+'px'; dot.style.top = my+'px';
+    const hot = e.target.closest('button,a,input,select,textarea,#drop');
+    document.body.classList.toggle('cur-hot', !!hot);
+  });
+  (function loop(){
+    rx += (mx-rx)*0.18; ry += (my-ry)*0.18;
+    ring.style.left = rx+'px'; ring.style.top = ry+'px';
+    requestAnimationFrame(loop);
+  })();
+})();
+
+/* ================= google login ================= */
+function initGoogle(){
+  if(GOOGLE_CLIENT_ID.startsWith('__')){
+    $('login-note').textContent = 'google login is being wired up — check back soon.';
+    return;
+  }
+  if(!window.google || !google.accounts || !google.accounts.id){
+    setTimeout(initGoogle, 300); return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: onGoogleSignIn,
+    auto_select: true,
+    itp_support: true,
+  });
+  google.accounts.id.renderButton($('gsi-btn'), { theme:'filled_black', size:'large', width: 280 });
+  google.accounts.id.prompt(); // one-tap for returning users
+}
+async function onGoogleSignIn(resp){
+  S.idToken = resp.credential;
+  sessionStorage.setItem('attenly_token', S.idToken);
+  await afterLogin();
+}
+async function afterLogin(){
+  try{
+    const st = await api('/api/vault', { idToken: S.idToken, action:'status' });
+    S.me = { email: st.email, name: st.name };
+    if(st.hasCreds){ show('view-app'); await loadData(); }
+    else { $('ob-hello').textContent = 'hey ' + (st.name || st.email) + ' — one time setup, then your attendance just appears.'; show('view-onboard'); }
+  }catch(e){
+    sessionStorage.removeItem('attenly_token'); S.idToken = null;
+    show('view-login');
+    $('login-note').textContent = 'sign in failed: ' + e.message;
+  }
+}
+$('btn-logout').onclick = () => {
+  S.idToken = null; S.subjects = []; S.ttHtml = null;
+  sessionStorage.removeItem('attenly_token');
+  if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+  stopPoll(); show('view-login'); initGoogle();
+};
+
+/* ================= onboarding ================= */
+$('btn-onboard').onclick = async () => {
+  const uid = $('ob-uid').value.trim(), pass = $('ob-pass').value;
+  if(!uid || !pass) return alert('enter your erp id and password');
+  $('btn-onboard').disabled = true; $('btn-onboard').textContent = 'saving…';
+  try{
+    await api('/api/vault', { idToken: S.idToken, action:'store', erpUid: uid, erpPass: pass });
+    $('ob-pass').value = '';
+    show('view-app');
+    await forceSync(true);
+  }catch(e){ alert('setup failed: ' + e.message); }
+  $('btn-onboard').disabled = false; $('btn-onboard').textContent = 'save & sync';
+};
+
+/* ================= data load (instant, from cloud sync) ================= */
+function ago(d){
+  const s = Math.max(0, Math.floor((Date.now() - d.getTime())/1000));
+  if(s < 60) return s + 's ago';
+  const m = Math.floor(s/60);
+  if(m < 60) return m + 'm ago';
+  return Math.floor(m/60) + 'h ago';
+}
+async function loadData(){
+  setStatus('<span class="spin"></span> loading…');
+  try{
+    const d = await api('/api/data', { idToken: S.idToken });
+    if(!d.hasCreds){ show('view-onboard'); return; }
+    if(d.attendance && d.attendance.length){
+      S.subjects = d.attendance;
+      S.syncedAt = d.syncedAt ? new Date(d.syncedAt) : null;
+      S.lastSync = S.syncedAt;
+      renderAll();
+    } else {
+      setStatus(d.lastError ? 'sync error: '+esc(d.lastError) : 'no synced data yet — hit sync now');
+      $('subj-rows').innerHTML = '<tr><td colspan="7" style="color:var(--dim)">no data yet</td></tr>';
+    }
+    if(d.timetableHtml){ S.ttHtml = d.timetableHtml; renderTimetable(); }
+    else $('tt-out').innerHTML = '<p class="sub" style="margin-top:12px">timetable not synced yet</p>';
+    if((d.warnings||[]).length) setStatus($('sync-info').textContent + ' · ' + esc(d.warnings.join('; ')));
+    startPoll();
+  }catch(e){
+    setStatus('load failed: ' + esc(e.message));
+  }
+}
+/* poll every 60s: cloud syncs every 5 min, pick up fresh data silently */
+function startPoll(){
+  stopPoll();
+  S.pollTimer = setInterval(async () => {
+    try{
+      const d = await api('/api/data', { idToken: S.idToken });
+      const sa = d.syncedAt ? new Date(d.syncedAt).getTime() : 0;
+      const cur = S.syncedAt ? S.syncedAt.getTime() : 0;
+      if(sa > cur && d.attendance && d.attendance.length){
+        S.subjects = d.attendance; S.syncedAt = new Date(d.syncedAt); S.lastSync = S.syncedAt;
+        renderAll();
+      } else if(S.syncedAt){
+        setStatus('last cloud sync ' + ago(S.syncedAt) + (S.tcbr ? ' · tcbr on' : ''));
+      }
+      if(d.timetableHtml && d.timetableHtml !== S.ttHtml){ S.ttHtml = d.timetableHtml; renderTimetable(); }
+    }catch(e){ /* silent */ }
+  }, 60000);
+}
+function stopPoll(){ if(S.pollTimer) clearInterval(S.pollTimer); S.pollTimer = null; }
+
+/* ================= force sync ================= */
+async function forceSync(first){
+  const btn = $('btn-refresh');
+  btn.disabled = true;
+  setStatus('<span class="spin"></span> syncing with erp…');
+  try{
+    const r = await api('/api/sync', { idToken: S.idToken });
+    const res = (r.results && r.results[0]) || {};
+    if(!res.ok) throw new Error(res.error || 'sync failed');
+    await loadData();
+    if(first && res.warnings && res.warnings.length) alert('synced with warnings: ' + res.warnings.join('; '));
+  }catch(e){
+    setStatus('sync failed: ' + esc(e.message));
+    if(first) alert('first sync failed: ' + e.message);
+  }
+  btn.disabled = false;
+}
+$('btn-refresh').onclick = () => forceSync(false);
+$('btn-tcbr').onclick = () => {
+  S.tcbr = !S.tcbr;
+  $('btn-tcbr').textContent = 'tcbr: ' + (S.tcbr ? 'on' : 'off');
+  if(S.subjects.length) renderAll();
+};
+
+/* ================= LTPS math ================= */
+const W = [100,100,50,25], WL = ['L','T','P','S'];
+function subjPct(s){
+  let wa = 0, wc = 0;
+  s.comp.forEach((c,j)=>{
+    let cond = c.cond;
+    if(S.tcbr && j === 0) cond = Math.max(0, cond - (s.tcbr || 0));
+    wa += c.att * W[j]; wc += cond * W[j];
+  });
+  return wc ? Math.ceil(100*wa/wc) : 100;
+}
+function overallPct(){
+  let wa = 0, wc = 0;
+  S.subjects.forEach(s => s.comp.forEach((c,j)=>{
+    let cond = c.cond;
+    if(S.tcbr && j === 0) cond = Math.max(0, cond - (s.tcbr || 0));
+    wa += c.att*W[j]; wc += cond*W[j];
+  }));
+  return wc ? Math.ceil(100*wa/wc) : 100;
+}
+const badge = p => p >= 85 ? '<span class="badge b-safe">eligible</span>'
+  : p >= 75 ? '<span class="badge b-risk">condonation</span>'
+  : '<span class="badge b-low">detention</span>';
+const pctCls = p => p >= 85 ? 'ok' : p >= 75 ? 'warn' : 'bad';
+
+/* ================= dashboard render ================= */
+function renderAll(){
+  const op = overallPct();
+  $('overall-pct').textContent = op + '%';
+  $('overall-pct').className = 'pct ' + pctCls(op);
+  $('overall-badge').innerHTML = badge(op);
+  setStatus('last cloud sync ' + (S.syncedAt ? ago(S.syncedAt) : 'never') + (S.tcbr ? ' · tcbr on' : ''));
+  $('subj-rows').innerHTML = S.subjects.map(s => {
+    const p = subjPct(s);
+    return '<tr><td><b>'+esc(s.code)+'</b><br><span style="color:var(--dim)">'+esc(s.name)+'</span></td>'+
+      s.comp.map(c => '<td>'+c.att+'/'+c.cond+'</td>').join('')+
+      '<td class="pct '+pctCls(p)+'">'+p+'%</td><td>'+badge(p)+'</td></tr>';
+  }).join('');
+  const opts = '<option value="">— manual numbers below —</option>' +
+    S.subjects.map((s,i) => '<option value="'+i+'">'+esc(s.code)+' — '+esc(s.name)+'</option>').join('');
+  $('pred-subj').innerHTML = opts;
+  $('ltps-subj').innerHTML = '<option value="">— pick a subject —</option>' +
+    S.subjects.map((s,i) => '<option value="'+i+'">'+esc(s.code)+' — '+esc(s.name)+'</option>').join('');
+}
+
+/* ================= timetable ================= */
+function renderTimetable(){
+  const doc = new DOMParser().parseFromString(S.ttHtml, 'text/html');
+  doc.querySelectorAll('script,style,link').forEach(n => n.remove());
+  const days = /monday|tuesday|wednesday|thursday|friday|saturday/i;
+  let best = null, bestScore = 0;
+  for(const t of doc.querySelectorAll('table')){
+    const txt = t.textContent;
+    const hits = (txt.match(days) || []).length;
+    const s = hits*2 + (t.rows.length > 3 ? 1 : 0);
+    if(s > bestScore){ bestScore = s; best = t; }
+  }
+  if(!best || bestScore < 4){
+    $('tt-out').innerHTML = '<p class="sub" style="margin-top:12px">timetable table not found in synced data</p>';
+    return;
+  }
+  $('tt-out').innerHTML = '';
+  $('tt-out').appendChild(best);
+}
+$('btn-tt-png').onclick = () => {
+  const t = $('tt-out').querySelector('table');
+  if(!t) return alert('timetable not loaded yet');
+  const rows = [...t.rows].map(r => [...r.cells].map(c => c.textContent.trim().replace(/\s+/g,' ')));
+  const cw = rows[0].map((_,j) => Math.max(...rows.map(r => (r[j]||'').length)));
+  const fs = 13, pad = 10, lh = 22;
+  const widths = cw.map(w => w*fs*0.62 + pad*2);
+  const cv = document.createElement('canvas');
+  cv.width = widths.reduce((a,b) => a+b, 0); cv.height = rows.length*lh + pad*2;
+  const x = cv.getContext('2d');
+  const dark = document.documentElement.dataset.theme !== 'light';
+  x.fillStyle = dark ? '#161b22' : '#ffffff'; x.fillRect(0,0,cv.width,cv.height);
+  x.font = fs+'px monospace'; x.textBaseline = 'middle';
+  let y = pad;
+  rows.forEach((r,i) => {
+    let px = 0;
+    r.forEach((cell,j) => {
+      x.fillStyle = i === 0 ? (dark ? '#0d1117' : '#f6f8fa') : (dark ? (i%2 ? '#161b22' : '#1c2330') : (i%2 ? '#ffffff' : '#f6f8fa'));
+      x.fillRect(px, y, widths[j], lh);
+      x.fillStyle = i === 0 ? (dark ? '#8b949e' : '#59636e') : (dark ? '#e6edf3' : '#1f2328');
+      x.fillText((cell||'').slice(0, cw[j]), px+pad, y+lh/2);
+      x.strokeStyle = dark ? '#30363d' : '#d0d7de'; x.strokeRect(px+.5, y+.5, widths[j]-1, lh-1);
+      px += widths[j];
+    });
+    y += lh;
+  });
+  const a = document.createElement('a');
+  a.download = 'timetable.png'; a.href = cv.toDataURL('image/png'); a.click();
+};
+
+/* ================= calculator ================= */
+$('seg-simple').onclick = () => setCalcMode('simple');
+$('seg-ltps').onclick = () => setCalcMode('ltps');
+function setCalcMode(m){
+  S.calcMode = m;
+  $('seg-simple').classList.toggle('on', m === 'simple');
+  $('seg-ltps').classList.toggle('on', m === 'ltps');
+  $('calc-simple').classList.toggle('hidden', m !== 'simple');
+  $('calc-ltps').classList.toggle('hidden', m !== 'ltps');
+  $('pred-out').innerHTML = '';
+}
+$('pred-subj').onchange = () => {
+  const si = $('pred-subj').value;
+  if(si === '') return;
+  const s = S.subjects[+si];
+  let cond = 0, att = 0;
+  s.comp.forEach((c,j) => {
+    let cd = c.cond;
+    if(S.tcbr && j === 0) cd = Math.max(0, cd - (s.tcbr || 0));
+    cond += cd*W[j]/100; att += c.att*W[j]/100;
+  });
+  $('man-cond').value = Math.round(cond*100)/100;
+  $('man-att').value = Math.round(att*100)/100;
+};
+/* ltps mode: show boxes only for components the course actually has */
+$('ltps-subj').onchange = () => {
+  const si = $('ltps-subj').value;
+  const box = $('ltps-boxes');
+  S.ltpsVals = {};
+  if(si === ''){ box.innerHTML = ''; $('ltps-overall').innerHTML = ''; return; }
+  const s = S.subjects[+si];
+  box.innerHTML = s.comp.map((c,j) => {
+    if(c.cond === 0 && c.att === 0) return '';
+    S.ltpsVals[j] = { cond: c.cond, att: c.att };
+    const p = c.cond ? Math.ceil(100*c.att/c.cond) : 100;
+    return '<div class="ltps-box"><div class="lt">'+WL[j]+'</div>'+
+      '<div class="lp">'+c.att+'/'+c.cond+' → <b class="'+pctCls(p)+'">'+p+'%</b></div>'+
+      '<label>conducted</label><input type="number" min="0" data-j="'+j+'" data-k="cond" value="'+c.cond+'">'+
+      '<label>attended</label><input type="number" min="0" data-j="'+j+'" data-k="att" value="'+c.att+'"></div>';
+  }).join('') || '<p class="sub">no component data for this subject</p>';
+  box.querySelectorAll('input').forEach(inp => {
+    inp.oninput = () => {
+      S.ltpsVals[+inp.dataset.j][inp.dataset.k] = +inp.value || 0;
+      updateLtpsOverall();
     };
   });
-}
-function askMfa(){
-  return new Promise(resolve => {
-    $('modal-mfa').classList.remove('hidden');
-    $('mfa-text').value = ''; $('mfa-text').focus();
-    $('btn-mfa-go').onclick = () => { const t = $('mfa-text').value.trim(); $('modal-mfa').classList.add('hidden'); resolve(t); };
-    $('btn-mfa-cancel').onclick = () => { $('modal-mfa').classList.add('hidden'); resolve(''); };
-  });
-}
-
-/* ================= ERP login + sync ================= */
-async function erpLoginFlow(){
-  const init = await api('/api/erp', {action:'init'});
-  if(!init.captchaB64) throw new Error('no captcha from erp' + (init.captchaError ? ': '+init.captchaError : ''));
-  S.cookies = init.cookies || {}; S.csrf = init.csrf;
-  let code = init.captchaText || '';
-  for(let attempt = 0; attempt < 5; attempt++){
-    if(!code || code.length < 4){
-      const rf = await api('/api/erp', {action:'refresh', cookies:S.cookies});
-      S.cookies = rf.cookies || S.cookies;
-      code = rf.captchaText || '';
-      if(!code || code.length < 4) break; // solver down -> manual fallback below
-    }
-    const login = await api('/api/erp', {action:'login', uid:S.uid, password:S.pass,
-      captchaText:code, qrCode:S.mfa, csrf:S.csrf, cookies:S.cookies});
-    S.cookies = login.cookies || S.cookies;
-    if(login.ok) return true;
-    if(login.mfaRequired || login.reason === 'mfa'){
-      const m = await askMfa();
-      if(!m) throw new Error('mfa cancelled');
-      S.mfa = m;
-      const rf = await api('/api/erp', {action:'refresh', cookies:S.cookies});
-      S.cookies = rf.cookies || S.cookies;
-      code = rf.captchaText || '';
-      continue;
-    }
-    if(login.reason === 'creds') throw new Error('erp rejected id/password — check and re-setup');
-    // wrong captcha guess -> fresh captcha, solve again
-    const rf = await api('/api/erp', {action:'refresh', cookies:S.cookies});
-    S.cookies = rf.cookies || S.cookies;
-    code = rf.captchaText || '';
-  }
-  // last resort: one manual entry
-  const rf = await api('/api/erp', {action:'refresh', cookies:S.cookies});
-  S.cookies = rf.cookies || S.cookies;
-  code = await askCaptchaManual(rf.captchaB64);
-  if(!code) throw new Error('captcha cancelled');
-  const login = await api('/api/erp', {action:'login', uid:S.uid, password:S.pass,
-    captchaText:code, qrCode:S.mfa, csrf:S.csrf, cookies:S.cookies});
-  S.cookies = login.cookies || S.cookies;
-  if(!login.ok) throw new Error('erp login failed ('+(login.reason||'unknown')+')');
-  return true;
-}
-async function fetchReport(kind, urlKey){
-  let r = await api('/api/erp', {action:'report', kind, cookies:S.cookies, url:S[urlKey]});
-  if(r.loggedOut){
-    await erpLoginFlow();
-    r = await api('/api/erp', {action:'report', kind, cookies:S.cookies, url:S[urlKey]});
-    if(r.loggedOut) throw new Error('still logged out after login');
-  }
-  S.cookies = r.cookies || S.cookies;
-  if(r.notFound) throw new Error(kind+' page not found on erp (tried '+r.tried.length+' links)');
-  if(r.url) S[urlKey] = r.url;
-  return r.html;
-}
-async function syncNow(){
-  setStatus('<span class="spin"></span> syncing…');
-  try {
-    const html = await fetchReport('attendance', 'attUrl');
-    S.subjects = parseAttendance(html);
-    S.lastSync = new Date();
-    renderAll();
-  } catch(e){
-    setStatus('sync failed: ' + e.message);
-  }
-}
-$('btn-refresh').onclick = syncNow;
-$('btn-auto').onclick = () => {
-  S.auto = !S.auto;
-  $('btn-auto').textContent = 'auto: ' + (S.auto ? 'on (5m)' : 'off');
-  if(S.auto){ S.autoTimer = setInterval(syncNow, 5*60*1000); }
-  else stopAuto();
+  updateLtpsOverall();
 };
-function stopAuto(){ if(S.autoTimer) clearInterval(S.autoTimer); S.auto=false; const b=$('btn-auto'); if(b) b.textContent='auto: off'; }
+function updateLtpsOverall(){
+  let wa = 0, wc = 0;
+  const parts = [];
+  for(const j of Object.keys(S.ltpsVals)){
+    const v = S.ltpsVals[j], p = v.cond ? Math.ceil(100*v.att/v.cond) : 100;
+    wa += v.att*W[j]; wc += v.cond*W[j];
+    parts.push(WL[j]+': <b class="'+pctCls(p)+'">'+p+'%</b>');
+  }
+  const p = wc ? Math.ceil(100*wa/wc) : 100;
+  $('ltps-overall').innerHTML = parts.join(' · ') +
+    '<br>weighted overall: <b class="'+pctCls(p)+'">'+p+'%</b> ' + badge(p);
+}
+$('btn-predict').onclick = () => {
+  const target = +$('pred-target').value || 85, bunkN = +$('pred-bunk').value || 0;
+  let cond, att, label;
+  if(S.calcMode === 'ltps'){
+    const si = $('ltps-subj').value;
+    if(si === '' || !Object.keys(S.ltpsVals).length) return alert('pick a subject first');
+    const s = S.subjects[+si];
+    cond = 0; att = 0; label = s.code + ' (ltps)';
+    for(const j of Object.keys(S.ltpsVals)){
+      const v = S.ltpsVals[j];
+      cond += v.cond*W[j]/100; att += v.att*W[j]/100;
+    }
+  } else {
+    const si = $('pred-subj').value;
+    if(si !== ''){
+      const s = S.subjects[+si];
+      cond = 0; att = 0; label = s.code;
+      s.comp.forEach((c,j) => {
+        let cd = c.cond;
+        if(S.tcbr && j === 0) cd = Math.max(0, cd - (s.tcbr || 0));
+        cond += cd*W[j]/100; att += c.att*W[j]/100;
+      });
+    } else {
+      cond = +$('man-cond').value || 0; att = +$('man-att').value || 0;
+      if(!cond) return alert('pick a subject or type conducted/attended');
+      label = 'manual';
+    }
+  }
+  const t = target/100;
+  const cur = cond ? Math.ceil(100*att/cond) : 100;
+  let bunks = 0;
+  if(t < 1 && att > 0) bunks = Math.max(0, Math.floor(att/t - cond));
+  let need = 0, note = '';
+  if(cur < target){
+    if(t >= 1) note = 'target 100% unreachable unless perfect already';
+    else { need = Math.ceil((t*cond - att)/(1-t)); if(need < 0) need = 0; }
+  }
+  const afterBunk = cond+bunkN ? Math.ceil(100*att/(cond+bunkN)) : 100;
+  $('pred-out').innerHTML =
+    '<b>'+esc(label)+'</b> now at <b>'+cur+'%</b><br>'+
+    'safe bunks at '+target+'%: <b>'+bunks+'</b><br>'+
+    'bunk next <b>'+bunkN+'</b> → <b>'+afterBunk+'%</b><br>'+
+    (note || (need ? 'attend next <b>'+need+'</b> straight to hit <b>'+target+'%</b>' : 'already above target'));
+};
 
-/* ================= attendance parser =================
-   Real ERP table (courselist action) has one row per course-component:
-   # | Coursecode | Coursedesc | Ltps | ... | Total Conducted |
-   Total Attended | Total Absent | Tcbr | Percentage | ...
-   Rows are grouped by course code; Ltps holds L/T/P/S. */
+/* ================= manual paste fallback ================= */
+$('btn-paste-open').onclick = () => $('modal-paste').classList.remove('hidden');
+$('btn-paste-close').onclick = () => $('modal-paste').classList.add('hidden');
+$('btn-paste-go').onclick = () => {
+  try{
+    S.subjects = parseAttendance($('paste-box').value);
+    S.syncedAt = new Date();
+    $('modal-paste').classList.add('hidden');
+    renderAll();
+  }catch(e){ alert('parse failed: ' + e.message); }
+};
 function parseAttendance(html){
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const tables = [...doc.querySelectorAll('table')];
@@ -356,27 +620,22 @@ function parseAttendance(html){
     if(/total attended/.test(txt)) s += 3;
     if(s > bestScore){ bestScore = s; best = t; }
   }
-  if(!best || bestScore < 8) throw new Error('attendance table not found in ERP html');
-  const hCells = [...best.rows[0].cells].map(c=>c.textContent.trim().toLowerCase().replace(/\s+/g,' '));
-  const col = (re) => hCells.findIndex(h=>re.test(h));
+  if(!best || bestScore < 8) throw new Error('attendance table not found in pasted html');
+  const hCells = [...best.rows[0].cells].map(c => c.textContent.trim().toLowerCase().replace(/\s+/g,' '));
+  const col = re => hCells.findIndex(h => re.test(h));
   const iCode = col(/course\s*code/), iDesc = col(/course\s*desc/),
         iLtps = col(/^ltps$/), iCond = col(/total conducted/),
-        iAtt = col(/total attended/), iTcbr = col(/^tcbr$/),
-        iPct = col(/percentage/);
-  if(iCode < 0 || iLtps < 0 || iCond < 0 || iAtt < 0)
-    throw new Error('attendance columns not recognized');
-  const num = (v)=>{ const n = parseFloat(String(v==null?'':v).replace(/[^0-9.]/g,'')); return isNaN(n)?0:n; };
+        iAtt = col(/total attended/), iTcbr = col(/^tcbr$/), iPct = col(/percentage/);
+  if(iCode < 0 || iLtps < 0 || iCond < 0 || iAtt < 0) throw new Error('attendance columns not recognized');
+  const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.]/g,'')); return isNaN(n) ? 0 : n; };
   const byCode = {};
-  for(let i=1;i<best.rows.length;i++){
-    const cells = [...best.rows[i].cells].map(c=>c.textContent.trim());
-    const code = cells[iCode] || '';
-    const lt = (cells[iLtps] || '').toUpperCase();
+  for(let i = 1; i < best.rows.length; i++){
+    const cells = [...best.rows[i].cells].map(c => c.textContent.trim());
+    const code = cells[iCode] || '', lt = (cells[iLtps] || '').toUpperCase();
     if(!code || !/^[LTPS]$/.test(lt)) continue;
     const desc = iDesc >= 0 ? cells[iDesc] : '';
-    if(!byCode[code])
-      byCode[code] = { code, name: desc,
-        comp: { L:{cond:0,att:0}, T:{cond:0,att:0}, P:{cond:0,att:0}, S:{cond:0,att:0} },
-        tcbr: 0, erp: {} };
+    if(!byCode[code]) byCode[code] = { code, name: desc,
+      comp: { L:{cond:0,att:0}, T:{cond:0,att:0}, P:{cond:0,att:0}, S:{cond:0,att:0} }, tcbr: 0, erp: {} };
     const s = byCode[code];
     s.comp[lt].cond += num(cells[iCond]);
     s.comp[lt].att += num(cells[iAtt]);
@@ -384,158 +643,11 @@ function parseAttendance(html){
     if(iPct >= 0) s.erp[lt] = num(cells[iPct]);
     if(desc && desc.length > s.name.length) s.name = desc;
   }
-  const subs = Object.values(byCode).map(s =>
-    ({ code: s.code, name: s.name, tcbr: s.tcbr, erp: s.erp,
-       comp: ['L','T','P','S'].map(k => s.comp[k]) }));
+  const subs = Object.values(byCode).map(s => ({ code: s.code, name: s.name, tcbr: s.tcbr, erp: s.erp,
+    comp: ['L','T','P','S'].map(k => s.comp[k]) }));
   if(!subs.length) throw new Error('no subject rows parsed');
   return subs;
 }
-
-/* ================= LTPS math ================= */
-const W = [100,100,50,25];
-function subjPct(s){
-  let wa=0, wc=0;
-  s.comp.forEach((c,j)=>{
-    let cond = c.cond;
-    if(S.tcbr && j===0) cond = Math.max(0, cond - (s.tcbr||0));
-    wa += c.att * W[j]; wc += cond * W[j];
-  });
-  return wc ? Math.ceil(100*wa/wc) : 100;
-}
-function overallPct(){
-  let wa=0, wc=0;
-  S.subjects.forEach(s=>s.comp.forEach((c,j)=>{
-    let cond = c.cond;
-    if(S.tcbr && j===0) cond = Math.max(0, cond - (s.tcbr||0));
-    wa += c.att*W[j]; wc += cond*W[j];
-  }));
-  return wc ? Math.ceil(100*wa/wc) : 100;
-}
-function badge(p){ return p>=85?'<span class="badge b-safe">eligible</span>':p>=75?'<span class="badge b-risk">condonation</span>':'<span class="badge b-low">detention</span>'; }
-function pctCls(p){ return p>=85?'ok':p>=75?'warn':'bad'; }
-
-/* ================= dashboard render ================= */
-function renderAll(){
-  const op = overallPct();
-  $('overall-pct').textContent = op + '%';
-  $('overall-pct').className = 'pct ' + pctCls(op);
-  $('overall-badge').innerHTML = badge(op);
-  setStatus('last synced ' + (S.lastSync ? S.lastSync.toLocaleTimeString('en-IN') : 'never') + (S.tcbr?' · tcbr on':''));
-  $('subj-rows').innerHTML = S.subjects.map(s=>{
-    const p = subjPct(s);
-    return '<tr><td><b>'+esc(s.code)+'</b><br><span style="color:var(--dim)">'+esc(s.name)+'</span></td>'+
-      s.comp.map(c=>'<td>'+c.att+'/'+c.cond+'</td>').join('')+
-      '<td class="pct '+pctCls(p)+'">'+p+'%</td><td>'+badge(p)+'</td></tr>';
-  }).join('');
-  $('pred-subj').innerHTML = '<option value="">— manual numbers below —</option>' +
-    S.subjects.map((s,i)=>'<option value="'+i+'">'+esc(s.code)+' — '+esc(s.name)+'</option>').join('');
-}
-function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-$('btn-tcbr').onclick = () => { S.tcbr=!S.tcbr; $('btn-tcbr').textContent='tcbr: '+(S.tcbr?'on':'off'); if(S.subjects.length) renderAll(); };
-
-/* ================= calculator ================= */
-$('btn-predict').onclick = () => {
-  const target = +$('pred-target').value || 85, bunkN = +$('pred-bunk').value || 0;
-  let cond, att, label;
-  const si = $('pred-subj').value;
-  if(si !== ''){
-    const s = S.subjects[+si];
-    cond = 0; att = 0;
-    s.comp.forEach((c,j)=>{ let cd=c.cond; if(S.tcbr&&j===0) cd=Math.max(0,cd-(s.tcbr||0)); cond+=cd*W[j]/100; att+=c.att*W[j]/100; });
-    label = s.code;
-  } else {
-    cond = +$('man-cond').value || 0; att = +$('man-att').value || 0;
-    if(!cond) return alert('pick a subject or type conducted/attended');
-    label = 'manual';
-  }
-  const t = target/100;
-  const cur = cond ? Math.ceil(100*att/cond) : 100;
-  // safe bunks: max b with att/(cond+b) >= t
-  let bunks = 0;
-  if(t < 1 && att > 0) bunks = Math.max(0, Math.floor(att/t - cond));
-  // classes to attend straight to reach target
-  let need = 0, note = '';
-  if(cur < target){
-    if(t >= 1) note = 'target 100% unreachable unless perfect already';
-    else { need = Math.ceil((t*cond - att) / (1 - t)); if(need < 0) need = 0; }
-  }
-  // bunk predictor: pct after missing next bunkN (spread like current)
-  const afterBunk = cond+bunkN ? Math.ceil(100*att/(cond+bunkN)) : 100;
-  $('pred-out').innerHTML =
-    '<b>'+esc(label)+'</b> now at <b>'+cur+'%</b><br>'+
-    'safe bunks at '+target+'%: <b>'+bunks+'</b><br>'+
-    'bunk next <b>'+bunkN+'</b> → <b>'+afterBunk+'%</b><br>'+
-    (note || (need ? 'attend next <b>'+need+'</b> straight to hit <b>'+target+'%</b>' : 'already above target'));
-};
-
-/* ================= manual paste ================= */
-$('btn-paste-open').onclick = () => $('modal-paste').classList.remove('hidden');
-$('btn-paste-close').onclick = () => $('modal-paste').classList.add('hidden');
-$('btn-paste-go').onclick = () => {
-  try{
-    S.subjects = parseAttendance($('paste-box').value);
-    S.lastSync = new Date();
-    $('modal-paste').classList.add('hidden');
-    renderAll();
-    setStatus($('sync-info').textContent + ' (manual paste)');
-  }catch(e){ alert('parse failed: '+e.message); }
-};
-
-/* ================= timetable ================= */
-function parseTimetable(html){
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const days = /monday|tuesday|wednesday|thursday|friday|saturday/i;
-  let best = null, bestScore = 0;
-  for(const t of doc.querySelectorAll('table')){
-    const txt = t.textContent;
-    const hits = (txt.match(days) || []).length;
-    const s = hits*2 + (t.rows.length > 3 ? 1 : 0);
-    if(s > bestScore){ bestScore = s; best = t; }
-  }
-  if(!best || bestScore < 4) throw new Error('timetable table not found');
-  return best;
-}
-$('btn-tt-load').onclick = async () => {
-  $('tt-out').innerHTML = '<p class="sub"><span class="spin"></span> loading…</p>';
-  try{
-    const html = await fetchReport('timetable', 'ttUrl');
-    const t = parseTimetable(html);
-    const clone = t.cloneNode(true);
-    clone.removeAttribute('id');
-    $('tt-out').innerHTML = '';
-    $('tt-out').appendChild(clone);
-    $('tt-out').dataset.ready = '1';
-  }catch(e){ $('tt-out').innerHTML = '<p class="sub">failed: '+esc(e.message)+'</p>'; }
-};
-$('btn-tt-png').onclick = () => {
-  const t = $('tt-out').querySelector('table');
-  if(!t) return alert('load the timetable first');
-  const rows = [...t.rows].map(r=>[...r.cells].map(c=>c.textContent.trim().replace(/\s+/g,' ')));
-  const cols = Math.max(...rows.map(r=>r.length));
-  const cw = rows[0].map((_,j)=>Math.max(...rows.map(r=>(r[j]||'').length)));
-  const fs = 13, pad = 10, lh = 22;
-  const widths = cw.map(w=>w*fs*0.62+pad*2);
-  const Wpx = widths.reduce((a,b)=>a+b,0), Hpx = rows.length*lh+pad*2;
-  const cv = document.createElement('canvas'); cv.width = Wpx; cv.height = Hpx;
-  const x = cv.getContext('2d');
-  x.fillStyle = '#161b22'; x.fillRect(0,0,Wpx,Hpx);
-  x.font = fs+'px monospace'; x.textBaseline = 'middle';
-  let y = pad;
-  rows.forEach((r,i)=>{
-    let px = 0;
-    r.forEach((cell,j)=>{
-      x.fillStyle = i===0 ? '#0d1117' : (i%2 ? '#161b22' : '#1c2330');
-      x.fillRect(px, y, widths[j], lh);
-      x.fillStyle = i===0 ? '#8b949e' : '#e6edf3';
-      x.fillText((cell||'').slice(0, cw[j]), px+pad, y+lh/2);
-      x.strokeStyle = '#30363d'; x.strokeRect(px+.5, y+.5, widths[j]-1, lh-1);
-      px += widths[j];
-    });
-    y += lh;
-  });
-  const a = document.createElement('a');
-  a.download = 'timetable.png'; a.href = cv.toDataURL('image/png'); a.click();
-};
 
 /* ================= OCR screenshot ================= */
 let tessLoading = null;
@@ -551,7 +663,7 @@ function loadTesseract(){
   return tessLoading;
 }
 $('drop').onclick = () => $('ocr-file').click();
-$('ocr-file').onchange = async (e) => {
+$('ocr-file').onchange = async e => {
   const f = e.target.files[0]; if(!f) return;
   $('ocr-status').innerHTML = '<span class="spin"></span> reading screenshot…';
   try{
@@ -575,26 +687,26 @@ function parseOcrText(text){
   return rows;
 }
 function renderOcrRows(){
-  $('ocr-rows').innerHTML = S.ocrRows.map((r,i)=>
+  $('ocr-rows').innerHTML = S.ocrRows.map((r,i) =>
     '<tr class="ocr-row"><td><input data-i="'+i+'" data-k="code" value="'+esc(r.code)+'"></td>'+
     '<td><input data-i="'+i+'" data-k="cond" type="number" value="'+esc(r.cond)+'"></td>'+
     '<td><input data-i="'+i+'" data-k="att" type="number" value="'+esc(r.att)+'"></td>'+
     '<td><button class="ghost sm" data-del="'+i+'">x</button></td></tr>').join('');
-  $('ocr-rows').querySelectorAll('input').forEach(inp=>{
+  $('ocr-rows').querySelectorAll('input').forEach(inp => {
     inp.onchange = () => { S.ocrRows[+inp.dataset.i][inp.dataset.k] = inp.value; };
   });
-  $('ocr-rows').querySelectorAll('[data-del]').forEach(b=>{
+  $('ocr-rows').querySelectorAll('[data-del]').forEach(b => {
     b.onclick = () => { S.ocrRows.splice(+b.dataset.del,1); renderOcrRows(); };
   });
 }
 $('btn-ocr-add').onclick = () => { S.ocrRows.push({code:'', cond:'', att:''}); renderOcrRows(); };
 $('btn-ocr-calc').onclick = () => {
-  const rows = S.ocrRows.filter(r=>r.code && +r.cond > 0);
+  const rows = S.ocrRows.filter(r => r.code && +r.cond > 0);
   if(!rows.length) return alert('add at least one row with code and conducted');
-  let tc=0, ta=0, html='';
-  rows.forEach(r=>{
-    const c=+r.cond, a=+r.att, p=Math.ceil(100*a/c);
-    tc+=c; ta+=a;
+  let tc = 0, ta = 0, html = '';
+  rows.forEach(r => {
+    const c = +r.cond, a = +r.att, p = Math.ceil(100*a/c);
+    tc += c; ta += a;
     html += '<tr><td><b>'+esc(r.code)+'</b></td><td>'+a+'/'+c+'</td><td class="pct '+pctCls(p)+'">'+p+'%</td><td>'+badge(p)+'</td></tr>';
   });
   const op = Math.ceil(100*ta/tc);
@@ -603,18 +715,20 @@ $('btn-ocr-calc').onclick = () => {
 };
 
 /* ================= tabs ================= */
-document.querySelectorAll('.tabs button').forEach(b=>{
+document.querySelectorAll('.tabs button').forEach(b => {
   b.onclick = () => {
-    document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('on'));
     b.classList.add('on');
-    ['dash','tt','calc','ocr'].forEach(t=>$('tab-'+t).classList.add('hidden'));
+    ['dash','tt','calc','ocr'].forEach(t => $('tab-'+t).classList.add('hidden'));
     $('tab-'+b.dataset.tab).classList.remove('hidden');
   };
 });
 
 /* ================= boot ================= */
 (function(){
-  if(localStorage.getItem('kluatt_uidhash')) show('view-unlock'); else show('view-setup');
+  const tok = sessionStorage.getItem('attenly_token');
+  if(tok){ S.idToken = tok; show('view-app'); afterLogin(); }
+  else { show('view-login'); initGoogle(); }
 })();
 </script>
 </body>
