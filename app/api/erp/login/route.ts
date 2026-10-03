@@ -41,7 +41,10 @@ export async function POST(req: Request) {
     const result = await performLogin(preSession, universityId, password, captchaText);
     if (!result.ok) {
       const status = result.code === 'rate_limited' ? 429 : 401;
-      return Response.json({ ok: false, error: result.error, code: result.code }, { status });
+      return Response.json(
+        { ok: false, error: result.error, code: result.code, diag: result.diag ?? null },
+        { status },
+      );
     }
     const token = sealSession({
       jar: result.jar,
