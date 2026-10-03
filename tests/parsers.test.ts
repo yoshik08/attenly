@@ -8,8 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import {
-  parseAttendance,
+import { parseAttendance,
   parseTimetable,
   extractCsrf,
   extractCaptchaSrc,
@@ -18,14 +17,6 @@ import {
   classifyLoginError,
 } from '../lib/erp/parsers';
 import { sealSession, unsealSession, looksRateLimited } from '../lib/erp/client';
-import {
-  weightedPct,
-  classImpact,
-  maxSkippable,
-  policyBand,
-  DEFAULT_WEIGHTS,
-  DEFAULT_THRESHOLDS,
-} from '../lib/math';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const attendanceHtml = readFileSync(join(dir, 'fixtures', 'attendance.html'), 'utf8');
@@ -104,52 +95,4 @@ test('looksRateLimited ignores the message when embedded in page JS', () => {
   assert.equal(looksRateLimited(429, 'anything'), true);
   assert.equal(looksRateLimited(200, '<html><body>Too many requests. Please try again in one minute.</body></html>'), true);
 });
-
-test('weightedPct uses LTPS weights', () => {
-  const subj = {
-    code: 'X',
-    title: 'X',
-    components: {
-      L: { conducted: 10, attended: 10 },
-      T: { conducted: 10, attended: 0 },
-      P: { conducted: 0, attended: 0 },
-      S: { conducted: 0, attended: 0 },
-    },
-  };
-  // L weight 100, T weight 25 -> (1000+0)/(1000+250) = 80%
-  assert.equal(weightedPct(subj, DEFAULT_WEIGHTS), 80);
-});
-
-test('classImpact deltas are sane', () => {
-  const subj = {
-    code: 'X',
-    title: 'X',
-    components: {
-      L: { conducted: 28, attended: 22 },
-      T: { conducted: 0, attended: 0 },
-      P: { conducted: 0, attended: 0 },
-      S: { conducted: 0, attended: 0 },
-    },
-  };
-  const { gain, loss } = classImpact(subj, DEFAULT_WEIGHTS, 'L');
-  assert.ok(gain > 0 && gain < 5, `gain=${gain}`);
-  assert.ok(loss > 0 && loss < 5, `loss=${loss}`);
-});
-
-test('maxSkippable respects the safe line', () => {
-  const subj = {
-    code: 'X',
-    title: 'X',
-    components: {
-      L: { conducted: 20, attended: 20 },
-      T: { conducted: 0, attended: 0 },
-      P: { conducted: 0, attended: 0 },
-      S: { conducted: 0, attended: 0 },
-    },
-  };
-  // 100% with 20 classes: can miss floor((2000/85 - 2000)/100) = floor(3.529) = 3
-  assert.equal(maxSkippable(subj, DEFAULT_WEIGHTS, 85), 3);
-  assert.equal(policyBand(90, DEFAULT_THRESHOLDS), 'safe');
-  assert.equal(policyBand(80, DEFAULT_THRESHOLDS), 'condonation');
-  assert.equal(policyBand(70, DEFAULT_THRESHOLDS), 'below');
-});
+// Math engine tests live in tests/math.test.ts.

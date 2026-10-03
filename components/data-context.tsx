@@ -9,8 +9,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { SubjectAttendance, Thresholds, Weights } from '@/lib/math';
-import { DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS } from '@/lib/math';
+import type { SubjectAttendance, Thresholds, Weights, TcbrSettings } from '@/lib/math';
+import { DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, DEFAULT_TCBR } from '@/lib/math';
 import type { TimetableDay } from '@/lib/erp/parsers';
 import {
   SAMPLE_SUBJECTS,
@@ -30,7 +30,7 @@ export interface TermInfo {
 export interface Settings {
   thresholds: Thresholds;
   weights: Weights;
-  theme: 'light' | 'dark' | 'system';
+  tcbr: TcbrSettings;
 }
 
 interface PlannerState {
@@ -67,7 +67,7 @@ const DEFAULT_STATE: PlannerState = {
   settings: {
     thresholds: DEFAULT_THRESHOLDS,
     weights: DEFAULT_WEIGHTS,
-    theme: 'system',
+    tcbr: DEFAULT_TCBR,
   },
 };
 
@@ -81,7 +81,14 @@ function loadStored(): PlannerState {
     return {
       ...DEFAULT_STATE,
       ...parsed,
-      settings: { ...DEFAULT_STATE.settings, ...(parsed.settings ?? {}) },
+      settings: {
+        ...DEFAULT_STATE.settings,
+        ...(parsed.settings ?? {}),
+        tcbr: {
+          ...DEFAULT_STATE.settings.tcbr,
+          ...((parsed.settings as Partial<Settings> | undefined)?.tcbr ?? {}),
+        },
+      },
     };
   } catch {
     return DEFAULT_STATE;
@@ -107,20 +114,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       /* storage full or unavailable — non-fatal */
     }
   }, [state, ready]);
-
-  // Theme handling
-  useEffect(() => {
-    const apply = () => {
-      const t = state.settings.theme;
-      const dark =
-        t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.classList.toggle('dark', dark);
-    };
-    apply();
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, [state.settings.theme, ready]);
 
   const loadSample = useCallback(() => {
     setState((s) => ({

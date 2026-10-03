@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/parsers.test.ts"
+    "test": "tsx --test tests/parsers.test.ts tests/math.test.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
+    "framer-motion": "^14.0.0",
     "mongodb": "^7.7.0",
     "next": "16.3.8",
     "react": "19.2.8",

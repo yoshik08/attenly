@@ -70,12 +70,12 @@ export const SAMPLE_SUBJECTS: SubjectAttendance[] = [
 ];
 
 export const SUBJECT_COLORS: Record<string, string> = {
-  CS201: '#6366f1',
-  CS202: '#0ea5e9',
-  CS203: '#f59e0b',
-  CS204: '#10b981',
-  SKL301: '#ec4899',
-  MGT201: '#8b5cf6',
+  CS201: '#8b5cf6',
+  CS202: '#22d3ee',
+  CS203: '#a3e635',
+  CS204: '#e879f9',
+  SKL301: '#38bdf8',
+  MGT201: '#fbbf24',
 };
 
 const P = (

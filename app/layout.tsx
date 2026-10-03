@@ -1,23 +1,24 @@
 import type { Metadata } from 'next';
+import { Sora, Inter } from 'next/font/google';
 import './globals.css';
 import { DataProvider } from '@/components/data-context';
 import { Nav, Footer } from '@/components/nav';
+import { AuroraBackground } from '@/components/ui';
 
 export const metadata: Metadata = {
-  title: 'Skipwise — Know what a class is worth before you skip it',
+  title: 'Skipwise — read the room before you bunk it',
   description:
-    'Unofficial KL University attendance planner. Sync your timetable and attendance from the ERP and see what every class is worth.',
+    'Unofficial KL University attendance companion. Link your ERP, watch your bunk balance, and play the what-if lab before you skip.',
 };
 
-const THEME_SCRIPT = `(function(){try{var s=JSON.parse(localStorage.getItem('skipwise:v1')||'{}');var t=(s.settings||{}).theme||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
+const sora = Sora({ subsets: ['latin'], variable: '--font-sora', display: 'swap' });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-      </head>
-      <body className="flex min-h-screen flex-col">
+      <body className={`${sora.variable} ${inter.variable} flex min-h-screen flex-col`}>
+        <AuroraBackground />
         <DataProvider>
           <Nav />
           <main className="flex-1">{children}</main>

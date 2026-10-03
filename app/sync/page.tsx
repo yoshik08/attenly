@@ -1,10 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner, type TermInfo } from '@/components/data-context';
-import { Button, Card, Container, SectionTitle, inputClass } from '@/components/ui';
-import { cn } from '@/components/cn';
+import { Button, Chip, Container, Field, GlassPanel, SectionHeader, inputClass } from '@/components/ui';
 
 type TermOption = TermInfo;
 
@@ -12,7 +12,6 @@ function defaultTerm(): TermInfo {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
-  // Odd sem ~Jul–Dec, even sem ~Jan–Jun.
   const odd = m >= 7;
   return {
     academicyear: odd ? `${y}-${y + 1}` : `${y - 1}-${y}`,
@@ -21,6 +20,8 @@ function defaultTerm(): TermInfo {
   };
 }
 
+type DecodeState = 'idle' | 'decoding' | 'filled' | 'manual';
+
 export default function SyncPage() {
   const router = useRouter();
   const { loadErpData, loadSample, ready } = usePlanner();
@@ -28,6 +29,8 @@ export default function SyncPage() {
   const [captchaImage, setCaptchaImage] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [captchaLoading, setCaptchaLoading] = useState(true);
+  const [decodeState, setDecodeState] = useState<DecodeState>('idle');
+  const [solverAvailable, setSolverAvailable] = useState<boolean | null>(null);
   const [universityId, setUniversityId] = useState('');
   const [password, setPassword] = useState('');
   const [captchaText, setCaptchaText] = useState('');
@@ -41,28 +44,66 @@ export default function SyncPage() {
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const decodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadManualCaptcha = useCallback(async () => {
+    const res = await fetch('/api/erp/captcha');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Could not load the captcha.');
+    setCaptchaImage(data.captchaImage);
+    setSessionToken(data.sessionToken);
+    setCaptchaText('');
+  }, []);
 
   const loadCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
     setError(null);
+    setDecodeState('idle');
+    if (decodeTimer.current) clearTimeout(decodeTimer.current);
     try {
-      const res = await fetch('/api/erp/captcha');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Could not load the captcha.');
-      setCaptchaImage(data.captchaImage);
-      setSessionToken(data.sessionToken);
-      setCaptchaText('');
+      // Prefer the auto-decoder when a solver is configured; it 501s otherwise.
+      const auto = await fetch('/api/erp/auto-captcha');
+      if (auto.ok) {
+        const data = await auto.json();
+        setSolverAvailable(true);
+        setCaptchaImage(data.image);
+        setSessionToken(data.sessionToken);
+        setCaptchaText('');
+        setDecodeState('decoding');
+        // Brief beat so the "decoding" shimmer reads, then fill the field.
+        decodeTimer.current = setTimeout(() => {
+          setCaptchaText(data.solution ?? '');
+          setDecodeState('filled');
+        }, 900);
+      } else if (auto.status === 501) {
+        setSolverAvailable(false);
+        setDecodeState('manual');
+        await loadManualCaptcha();
+      } else {
+        const data = await auto.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? 'Auto-decode failed.');
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not reach the ERP.');
+      // Any failure → quiet fallback to the manual captcha.
+      setSolverAvailable(false);
+      setDecodeState('manual');
+      try {
+        await loadManualCaptcha();
+      } catch (e2) {
+        setError(e2 instanceof Error ? e2.message : 'Could not reach the ERP.');
+      }
     } finally {
       setCaptchaLoading(false);
     }
-  }, []);
+  }, [loadManualCaptcha]);
 
   useEffect(() => {
     // Data fetch on mount — the canonical exception to no-setState-in-effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCaptcha();
+    return () => {
+      if (decodeTimer.current) clearTimeout(decodeTimer.current);
+    };
   }, [loadCaptcha]);
 
   const term: TermInfo =
@@ -118,13 +159,13 @@ export default function SyncPage() {
           setLoggedIn(false);
           loadCaptcha();
         }
-        throw new Error(att.error ?? 'Could not fetch attendance.');
+        throw new Error(att.error ?? 'Could not fetch scores.');
       }
       if (!ttRes.ok) throw new Error(tt.error ?? 'Could not fetch the timetable.');
       const subjects = att.subjects ?? [];
       const days = tt.days ?? [];
       loadErpData(subjects, days, term);
-      // Persist a MongoDB snapshot: attendance + timetable only — never the password.
+      // Stash a MongoDB snapshot: scores + timetable only — never the password.
       try {
         const snapRes = await fetch('/api/snapshots', {
           method: 'POST',
@@ -142,14 +183,14 @@ export default function SyncPage() {
           );
           setSnapshotMsg('ok');
         } else {
-          setSnapshotMsg(snap.error ?? 'Could not save to MongoDB.');
+          setSnapshotMsg(snap.error ?? 'Could not stash in MongoDB.');
         }
       } catch {
         setSnapshotMsg('Could not reach the snapshot API.');
       }
       setFetched(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sync failed.');
+      setError(e instanceof Error ? e.message : 'Pull failed.');
     } finally {
       setFetching(false);
     }
@@ -177,17 +218,25 @@ export default function SyncPage() {
     }
   }
 
-  if (!ready) return <Container className="py-10"><p className="text-sm text-neutral-500">Loading…</p></Container>;
+  if (!ready)
+    return (
+      <Container className="py-10">
+        <p className="text-sm text-slate-500">Warming up…</p>
+      </Container>
+    );
 
   return (
-    <Container className="max-w-2xl py-10">
-      <SectionTitle eyebrow="Sync" title="Sync with the ERP" />
+    <Container className="max-w-2xl py-8">
+      <SectionHeader
+        kicker="Link-up"
+        title="Connect your ERP"
+        sub="One login pulls your timetable and scores straight from the KL University portal."
+      />
 
       {!loggedIn ? (
-        <Card className="animate-rise p-6">
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-semibold" htmlFor="uid">University ID</label>
+        <GlassPanel className="p-6 sm:p-8">
+          <form onSubmit={handleLogin} className="flex flex-col gap-5">
+            <Field label="University ID" htmlFor="uid">
               <input
                 id="uid"
                 className={inputClass}
@@ -197,9 +246,8 @@ export default function SyncPage() {
                 autoComplete="username"
                 required
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-semibold" htmlFor="pwd">ERP password</label>
+            </Field>
+            <Field label="ERP password" htmlFor="pwd">
               <input
                 id="pwd"
                 type="password"
@@ -210,126 +258,182 @@ export default function SyncPage() {
                 autoComplete="current-password"
                 required
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-semibold">Captcha</label>
+            </Field>
+            <Field label="Captcha">
               <div className="flex items-center gap-3">
-                <div className="flex h-14 w-40 items-center justify-center overflow-hidden rounded-lg border border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                <div className="relative flex h-16 w-44 items-center justify-center overflow-hidden rounded-2xl border border-white/12 bg-black/30">
                   {captchaLoading ? (
-                    <span className="text-xs text-neutral-400">Loading…</span>
+                    <span className="text-xs text-slate-500">Loading…</span>
                   ) : captchaImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={captchaImage} alt="ERP captcha" className="h-full w-full object-contain" />
                   ) : (
-                    <span className="text-xs text-neutral-400">Unavailable</span>
+                    <span className="text-xs text-slate-500">Unavailable</span>
+                  )}
+                  <AnimatePresence>
+                    {decodeState === 'decoding' && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 flex items-center justify-center bg-[#060714]/80 backdrop-blur-sm"
+                      >
+                        <span className="decoding text-xs font-bold text-cyan-200">Decoding</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={loadCaptcha}
+                    className="text-xs font-bold text-cyan-300 hover:text-cyan-200 hover:underline"
+                  >
+                    ↻ New captcha
+                  </button>
+                  {solverAvailable && (
+                    <Chip tone="cyan" className="text-[10px]">Auto-decode on</Chip>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={loadCaptcha}
-                  className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
-                >
-                  New captcha
-                </button>
               </div>
               <input
-                className={cn(inputClass, 'mt-2')}
+                className={`${inputClass} mt-2.5`}
                 value={captchaText}
-                onChange={(e) => setCaptchaText(e.target.value)}
-                placeholder="Type the letters above"
+                onChange={(e) => {
+                  setCaptchaText(e.target.value);
+                  if (decodeState === 'filled') setDecodeState('manual');
+                }}
+                placeholder={decodeState === 'filled' ? 'Decoded — edit if it looks wrong' : 'Type the letters above'}
                 autoComplete="off"
                 required
               />
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                You solve the captcha — it&apos;s the ERP&apos;s own captcha, passed straight through.
+              <p className="mt-1.5 text-xs text-slate-500">
+                {solverAvailable
+                  ? 'We take a crack at the captcha for you — fix it by hand if it misreads.'
+                  : 'Straight from the ERP — type what you see.'}
               </p>
-            </div>
+            </Field>
 
-            {error && (
-              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-700 dark:text-red-400">
-                {error}
-              </p>
-            )}
+            <AnimatePresence>
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-sm font-medium text-rose-200"
+                >
+                  {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
 
-            <Button type="submit" disabled={busy || captchaLoading || !sessionToken} className="w-full">
-              {busy ? 'Logging in…' : 'Log in and sync'}
+            <Button type="submit" disabled={busy || captchaLoading || !sessionToken} className="w-full py-3">
+              {busy ? 'Linking…' : 'Link & pull →'}
             </Button>
           </form>
 
-          <div className="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800">
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              <b className="text-neutral-700 dark:text-neutral-300">Privacy:</b> your password is used
-              only to log in to the ERP and is never stored. Synced data stays in your browser
-              (localStorage); only an encrypted session cookie lives on the server.
+          <div className="mt-7 border-t border-white/[0.08] pt-5">
+            <p className="text-xs leading-relaxed text-slate-500">
+              <b className="text-slate-300">Private by design:</b> your password only logs you in —
+              it&apos;s never stored anywhere. Synced scores live in this browser; only an encrypted
+              session cookie sits on the server.
             </p>
-            <Button variant="secondary" className="mt-3 w-full" onClick={() => { loadSample(); router.push('/'); }}>
-              Try it with sample data
-            </Button>
-            <Button variant="secondary" className="mt-2 w-full" onClick={handleRestore} disabled={restoring}>
-              {restoring ? 'Restoring…' : 'Restore last synced snapshot'}
-            </Button>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button variant="glass" className="w-full" onClick={() => { loadSample(); router.push('/'); }}>
+                Take the sample orbit instead
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={handleRestore} disabled={restoring}>
+                {restoring ? 'Picking up…' : 'Pick up where you left off'}
+              </Button>
+            </div>
           </div>
-        </Card>
+        </GlassPanel>
       ) : (
-        <Card className="animate-rise p-6">
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">[SYNCED] You&apos;re in.</p>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Pick a term, then fetch your attendance and timetable.
-          </p>
+        <GlassPanel className="p-6 sm:p-8">
+          <div className="flex items-center gap-3">
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-300/15 text-xl"
+            >
+              ✓
+            </motion.span>
+            <div>
+              <p className="font-display text-lg font-bold text-white">You&apos;re linked.</p>
+              <p className="text-sm text-slate-400">Pick a term, then pull your data.</p>
+            </div>
+          </div>
+
           {termOptions.length > 0 ? (
-            <div className="mt-4">
-              <label className="mb-1 block text-sm font-semibold" htmlFor="term">Term</label>
-              <select
-                id="term"
-                className={inputClass}
-                value={termIdx}
-                onChange={(e) => setTermIdx(Number(e.target.value))}
-              >
-                {termOptions.map((t, i) => (
-                  <option key={`${t.academicyear}-${t.semesterid}-${i}`} value={i}>
-                    {t.academicyear} · {t.semester || `Sem ${t.semesterid}`}
-                  </option>
-                ))}
-              </select>
+            <div className="mt-5">
+              <Field label="Term" htmlFor="term">
+                <select
+                  id="term"
+                  className={`${inputClass} appearance-none`}
+                  value={termIdx}
+                  onChange={(e) => setTermIdx(Number(e.target.value))}
+                >
+                  {termOptions.map((t, i) => (
+                    <option key={`${t.academicyear}-${t.semesterid}-${i}`} value={i} className="bg-[#0a0c1d]">
+                      {t.academicyear} · {t.semester || `Sem ${t.semesterid}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
+            <p className="mt-5 text-sm text-slate-500">
               Using {term.academicyear} · {term.semester} (no term list found on the ERP page).
             </p>
           )}
-          {error && (
-            <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-700 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          <div className="mt-4 flex gap-2">
-            <Button onClick={handleFetch} disabled={fetching} className="flex-1">
-              {fetching ? 'Fetching…' : 'Fetch my data'}
+
+          <AnimatePresence>
+            {error && (
+              <motion.p
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-sm font-medium text-rose-200"
+              >
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
+          <div className="mt-5 flex gap-2">
+            <Button onClick={handleFetch} disabled={fetching} className="flex-1 py-3">
+              {fetching ? 'Pulling…' : '↓ Pull my data'}
             </Button>
             <Button
-              variant="secondary"
+              variant="glass"
               onClick={() => { setLoggedIn(false); loadCaptcha(); }}
               disabled={fetching}
             >
-              Log in again
+              Relink
             </Button>
           </div>
+
           {snapshotMsg === 'ok' && savedAt && (
-            <p className="mt-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-              Saved to MongoDB ✓ {savedAt}
-            </p>
+            <motion.p
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 text-sm font-bold text-lime-200"
+            >
+              ✓ Snapshot stashed in MongoDB · {savedAt}
+            </motion.p>
           )}
           {snapshotMsg && snapshotMsg !== 'ok' && (
-            <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              MongoDB snapshot skipped: {snapshotMsg}
+            <p className="mt-4 text-sm text-amber-200/80">
+              MongoDB stash skipped: {snapshotMsg}
             </p>
           )}
           {fetched && (
-            <Button onClick={() => router.push('/')} className="mt-4 w-full">
-              Open my week →
+            <Button onClick={() => router.push('/')} className="mt-5 w-full py-3">
+              Open my game plan →
             </Button>
           )}
-        </Card>
+        </GlassPanel>
       )}
     </Container>
   );
