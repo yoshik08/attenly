@@ -251,7 +251,6 @@ export interface LoginResult {
   termOptions?: TermList;
   error?: string;
   code?: 'bad_captcha' | 'bad_credentials' | 'rate_limited' | 'unknown';
-  diag?: Record<string, unknown>;
 }
 
 export async function performLogin(
@@ -296,21 +295,7 @@ export async function performLogin(
     }
     const errText = parseLoginError(res.text) ?? parseLoginError(probe.text);
     const code = classifyLoginError(errText);
-    return {
-      ok: false,
-      error: errText ?? 'Login failed. Please try again.',
-      code,
-      diag: {
-        loginStatus: res.status,
-        loginFinalUrl: res.finalUrl,
-        loginHadForm: detectLoginForm(res.text),
-        probeStatus: probe.status,
-        probeFinalUrl: probe.finalUrl,
-        probeHadForm: detectLoginForm(probe.text),
-        probeHasAcademicyear: /academicyear/i.test(probe.text),
-        probeLen: probe.text.length,
-      },
-    };
+    return { ok: false, error: errText ?? 'Login failed. Please try again.', code };
   } catch (e) {
     if (e instanceof ErpRateLimited) {
       return { ok: false, error: e.message, code: 'rate_limited' };
