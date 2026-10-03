@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       exp: Date.now() + 7 * 24 * 3600 * 1000,
     });
     (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions());
-    return Response.json({ ok: true, termOptions: result.termOptions ?? [] });
+    return Response.json({ ok: true, termOptions: result.termOptions ?? { years: [], semesters: [] } });
   } catch (e) {
     if (e instanceof ErpRateLimited) {
       return Response.json({ ok: false, error: e.message, code: 'rate_limited' }, { status: 429 });

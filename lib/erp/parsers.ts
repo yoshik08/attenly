@@ -364,32 +364,25 @@ export function classifyLoginError(err: string | null): 'bad_captcha' | 'bad_cre
   return 'unknown';
 }
 
-export interface TermOption {
-  academicyear: string;
-  semesterid: string;
-  semester: string;
+export interface TermList {
+  years: { id: string; label: string }[];
+  semesters: { id: string; label: string }[];
 }
 
 /** Scrape available academic-year/semester options from an authenticated ERP page. */
-export function parseTermOptions(html: string): TermOption[] {
+export function parseTermOptions(html: string): TermList {
   try {
     const $ = cheerio.load(html);
     const years = $('select[name*="academicyear"] option, select[id*="academicyear"] option')
       .toArray()
-      .map((o) => ($(o).attr('value') || $(o).text()).trim())
-      .filter((v) => v && !/select|choose/i.test(v));
-    const sems = $('select[name*="semesterid"] option, select[id*="semesterid"] option')
+      .map((o) => ({ id: ($(o).attr('value') || $(o).text()).trim(), label: $(o).text().trim() }))
+      .filter((y) => y.id && !/select|choose/i.test(y.label));
+    const semesters = $('select[name*="semesterid"] option, select[id*="semesterid"] option')
       .toArray()
       .map((o) => ({ id: ($(o).attr('value') || $(o).text()).trim(), label: $(o).text().trim() }))
       .filter((s) => s.id && !/select|choose/i.test(s.label));
-    const out: TermOption[] = [];
-    for (const y of years) {
-      for (const s of sems.length ? sems : [{ id: '', label: '' }]) {
-        out.push({ academicyear: y, semesterid: s.id, semester: s.label });
-      }
-    }
-    return out;
+    return { years, semesters };
   } catch {
-    return [];
+    return { years: [], semesters: [] };
   }
 }

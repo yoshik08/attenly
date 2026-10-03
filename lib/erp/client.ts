@@ -13,7 +13,7 @@ import {
   parseLoginError,
   classifyLoginError,
   parseTermOptions,
-  type TermOption,
+  type TermList,
 } from './parsers';
 
 export const ERP_BASE = process.env.ERP_BASE ?? 'https://newerp.kluniversity.in';
@@ -254,7 +254,7 @@ export interface LoginResult {
   ok: boolean;
   jar?: CookieJar;
   csrf?: string;
-  termOptions?: TermOption[];
+  termOptions?: TermList;
   error?: string;
   code?: 'bad_captcha' | 'bad_credentials' | 'rate_limited' | 'unknown';
 }

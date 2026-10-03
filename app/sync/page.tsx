@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner, type TermInfo } from '@/components/data-context';
 import { Button, Chip, Container, Field, GlassPanel, SectionHeader, inputClass } from '@/components/ui';
 
-type TermOption = TermInfo;
 
 function defaultTerm(): TermInfo {
   const now = new Date();
@@ -37,8 +36,12 @@ export default function SyncPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
-  const [termOptions, setTermOptions] = useState<TermOption[]>([]);
-  const [termIdx, setTermIdx] = useState(0);
+type TermChoice = { id: string; label: string };
+
+  const [termYears, setTermYears] = useState<TermChoice[]>([]);
+  const [termSemesters, setTermSemesters] = useState<TermChoice[]>([]);
+  const [yearIdx, setYearIdx] = useState(0);
+  const [semIdx, setSemIdx] = useState(0);
   const [fetching, setFetching] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
@@ -106,8 +109,12 @@ export default function SyncPage() {
     };
   }, [loadCaptcha]);
 
-  const term: TermInfo =
-    termOptions.length > 0 ? termOptions[Math.min(termIdx, termOptions.length - 1)] : defaultTerm();
+  const term: TermInfo = (() => {
+    const y = termYears[Math.min(yearIdx, termYears.length - 1)];
+    const s = termSemesters[Math.min(semIdx, termSemesters.length - 1)];
+    if (!y || !s) return defaultTerm();
+    return { academicyear: y.id, semesterid: s.id, semester: s.label };
+  })();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -126,9 +133,11 @@ export default function SyncPage() {
       }
       setPassword(''); // drop the password from memory immediately
       setLoggedIn(true);
-      const opts: TermOption[] = data.termOptions ?? [];
-      setTermOptions(opts);
-      setTermIdx(0);
+      const opts = data.termOptions ?? { years: [], semesters: [] };
+      setTermYears(opts.years ?? []);
+      setTermSemesters(opts.semesters ?? []);
+      setYearIdx(0);
+      setSemIdx(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed.');
       loadCaptcha(); // captcha is single-use — always refresh after an attempt
@@ -365,18 +374,32 @@ export default function SyncPage() {
             </div>
           </div>
 
-          {termOptions.length > 0 ? (
-            <div className="mt-5">
-              <Field label="Term" htmlFor="term">
+          {termYears.length > 0 && termSemesters.length > 0 ? (
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <Field label="Academic year" htmlFor="term-year">
                 <select
-                  id="term"
+                  id="term-year"
                   className={`${inputClass} appearance-none`}
-                  value={termIdx}
-                  onChange={(e) => setTermIdx(Number(e.target.value))}
+                  value={yearIdx}
+                  onChange={(e) => setYearIdx(Number(e.target.value))}
                 >
-                  {termOptions.map((t, i) => (
-                    <option key={`${t.academicyear}-${t.semesterid}-${i}`} value={i} className="bg-[#0a0c1d]">
-                      {t.academicyear} · {t.semester || `Sem ${t.semesterid}`}
+                  {termYears.map((y, i) => (
+                    <option key={y.id} value={i} className="bg-[#0a0c1d]">
+                      {y.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Semester" htmlFor="term-sem">
+                <select
+                  id="term-sem"
+                  className={`${inputClass} appearance-none`}
+                  value={semIdx}
+                  onChange={(e) => setSemIdx(Number(e.target.value))}
+                >
+                  {termSemesters.map((s, i) => (
+                    <option key={s.id} value={i} className="bg-[#0a0c1d]">
+                      {s.label}
                     </option>
                   ))}
                 </select>
