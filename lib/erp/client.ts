@@ -18,6 +18,7 @@ import {
 
 export const ERP_BASE = process.env.ERP_BASE ?? 'https://newerp.kluniversity.in';
 const LOGIN_PATH = '/index.php?r=site%2Flogin';
+const ATTENDANCE_PAGE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput';
 const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fcourselist';
 
 export type CookieJar = Record<string, string>;
@@ -281,8 +282,9 @@ export async function performLogin(
       session.jar,
     );
 
-    // Verify auth by loading an authenticated page.
-    const probe = await erpFetch(ATTENDANCE_PATH, { method: 'GET' }, res.jar);
+    // Verify auth by loading an authenticated page (the filter shell — the
+    // courselist action needs a POSTed filter and can't serve as a probe).
+    const probe = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, res.jar);
     if (!detectLoginForm(probe.text) && /academicyear/i.test(probe.text)) {
       return {
         ok: true,
