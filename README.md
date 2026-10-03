@@ -1,56 +1,104 @@
-# Attenly — KL Attendance (v3, cloud captcha)
+# Skipwise
 
-Student attendance portal for KL University NewERP. Captcha is solved
-**server-side**: the browser never loads the model.
+An unofficial KL University attendance planner — **attendance only**.
+Sync your timetable and attendance from the university ERP (`newerp.kluniversity.in`)
+and see what every class is worth before you skip it.
 
-## How it works
+> Unofficial student project, not affiliated with KL University.
+> Attendance numbers are estimates — always verify against the official ERP.
 
-1. Browser → `POST /api/erp` (`init`) → proxy fetches the ERP login page,
-   CSRF token, session cookies and the captcha image.
-2. Proxy → `POST {SOLVER_URL}/solve` with the image → solver (FastAPI +
-   onnxruntime, CRNN model from the KLU ERP Captcha Auto-Fill extension)
-   returns the text.
-3. Browser logs in with the solved text. Wrong guess → fresh captcha →
-   re-solve, up to 5 tries, then manual entry fallback. MFA prompt included.
-4. Attendance/timetable pages are discovered from post-login dashboard links
-   and parsed in the browser.
+## Features
 
-`solver/` runs as a separate service (Render). The Vercel app only needs
-`SOLVER_URL` pointing at it. If the solver is down/unset, `captchaText`
-comes back empty and the UI falls back to manual captcha entry.
+- **Plan** — weekly timetable grid (Mon–Sat) with per-class impact badges
+  (`+X%` = what attending this class adds to the subject's weighted %),
+  current-vs-projected percentage with policy-band labels, per-subject cards
+  with "Can skip N classes" guidance and LTPS breakdowns.
+- **History** — term totals, attendance streaks, this-week progress,
+  month calendar with per-day status, manual per-class tracking,
+  by-subject table with trend sparklines, by-week table.
+- **Sync** — ERP login (ID + password + the ERP's own captcha, passed straight
+  through), term picker, and a sample-data mode that works without login.
+- **Settings** — editable "Safe at" / "Condonation from" lines, LTPS weights,
+  light/dark/system theme, clear-data and ERP logout.
 
-## Deploy
+## Attendance math
 
-**Solver (Render):**
-1. New → Web Service → select this repo, root directory `solver`
-2. Build: `pip install -r requirements.txt`
-3. Start: `uvicorn app:app --host 0.0.0.0 --port $PORT`
-4. Free tier is fine. Note: it sleeps after ~15 min idle, first solve of the
-   day takes ~30 s to wake.
+- Weighted % per subject = Σ(attended × weight) / Σ(conducted × weight)
+  over Lecture / Tutorial / Practical / Skilling (default weights 100/25/50/25).
+- Per-class impact = recompute the % as if this one class were attended (+X%)
+  or missed (−X%).
+- "Can skip N" = max additional misses before the weighted % drops below the
+  "Safe at" line (and, separately, below the condonation line).
+- Policy bands: ≥ Safe at → Safe; ≥ Condonation from → Condonation zone;
+  below → condonation needed.
 
-**App (Vercel):**
-1. Import repo, `vercel.json` pins `api/*` to `bom1` (Mumbai).
-2. Env vars: `MONGODB_URI` (Atlas), `SOLVER_URL` (the Render service URL).
-3. Deploy. Atlas project `attenly`, Cluster0 (Mumbai) already exists.
+## Why a backend proxy
 
-## Verified 2026-09-29
+The ERP sends no CORS headers and its captcha/session cookies must be managed
+server-side, so all ERP traffic goes through Next.js API routes
+(`app/api/erp/*`). The browser never talks to the ERP directly. See
+[ERP_PROTOCOL.md](ERP_PROTOCOL.md) for the exact protocol.
 
-- Live ERP handshake: `POST /index.php?r=site/login` with `_csrf` +
-  `LoginForm[username|password|captcha]` (+ `LoginForm[qr_code]` for MFA);
-  success = HTTP 302. Captcha at `img#loginFormCaptcha-image` (120×50
-  transparent PNG), refresh via `?r=site/captcha&refresh=1`.
-- CRNN solved live captchas end-to-end (`dukeuoa`, `gidivl`).
-- Proxy → solver wiring tested with a mock solver: image forwarded,
-  text lowercased/sanitized, graceful empty string when solver is down.
+## Run locally
 
-## Still TODO (needs Yoshik)
+```bash
+npm install
+cp .env.example .env   # optional; set SESSION_SECRET for persistent sessions
+npm run dev             # http://localhost:3000
+```
 
-- First live login → confirm attendance/timetable URL discovery; the exact
-  route gets hardcoded if the heuristic misses.
-- Parser tuning against real attendance table HTML.
+Generate a session secret with `openssl rand -hex 32`. Without one, the dev
+server uses an ephemeral key (sessions won't survive restarts).
 
-## Disclaimer
+## Expo demo (MongoDB snapshots)
 
-Independent student-built project for educational purposes. Not affiliated
-with, endorsed by, or operated by KL University. Use responsibly and in
-accordance with university policies.
+Show the judges that synced ERP data lands in MongoDB:
+
+```bash
+# 1. Start Mongo (or use a free MongoDB Atlas cluster)
+docker run -d -p 27017:27017 --name mongo mongo
+
+# 2. Point the app at it
+cp .env.example .env   # MONGODB_URI is already set to mongodb://localhost:27017/skipwise
+
+# 3. Run the app and sync
+npm run dev            # http://localhost:3000/sync — log in, pick a term, "Fetch my data"
+```
+
+After fetching, the sync page shows **"Saved to MongoDB ✓ \<time\>"**.
+Then open **MongoDB Compass** → connect to `mongodb://localhost:27017` →
+database `skipwise` → collection `snapshots` — the document is there, keyed by
+`{ universityId, termKey }`, holding `term`, `syncedAt`, `attendance`, and
+`timetable`.
+
+Demo talking point: *"The password is used once for the ERP login request and
+never stored — only the attendance and timetable data is persisted. The API
+even strips any credential field defensively before writing."*
+
+If MongoDB isn't reachable, the snapshot is skipped gracefully and the app
+keeps working with in-browser data.
+
+## Tests
+
+```bash
+npm test   # parser + math unit tests (tsx --test)
+```
+
+## Deploy to Vercel
+
+1. Push this directory to a Git repo.
+2. Import it in Vercel (Framework Preset: Next.js).
+3. Set environment variable `SESSION_SECRET` (32 bytes, hex or base64) —
+   required so login sessions survive across serverless invocations.
+4. (Optional, for MongoDB snapshots) set `MONGODB_URI` to a MongoDB Atlas
+   connection string — without it, snapshots are skipped gracefully.
+5. Deploy. No other config needed (standard API routes, no custom server).
+
+## Privacy
+
+- Your ERP password is used only for the login request — never stored, never logged.
+- The ERP session lives in an httpOnly, AES-256-GCM-encrypted cookie.
+- Synced attendance/timetable data is kept in the browser's localStorage, and —
+  when `MONGODB_URI` is set — a copy is saved to the `snapshots` collection
+  (attendance + timetable only; the API strips any credential field defensively
+  before writing, so no password can ever land in MongoDB).

@@ -1,2 +1,23 @@
-.env*
-*secret*
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# env
+.env
+.env*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# system
+.DS_Store
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
