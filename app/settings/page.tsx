@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner } from '@/components/data-context';
 import { Button, Container, Field, GlassPanel, SectionHeader, Stepper, Toggle, inputClass } from '@/components/ui';
 import { cn } from '@/components/cn';
+import { api } from '@/lib/api';
 import {
   DEFAULT_THRESHOLDS,
   DEFAULT_WEIGHTS,
@@ -30,7 +31,7 @@ export default function SettingsPage() {
   const invalid = thresholds.safeAt <= thresholds.condonationFrom;
 
   async function logoutErp() {
-    await fetch('/api/erp/logout', { method: 'POST' });
+    await fetch(api('/api/erp/logout'), { method: 'POST' });
     setLoggedOut(true);
   }
 

@@ -17,6 +17,7 @@ import {
 import { cn } from '@/components/cn';
 import { COMPONENT_ORDER, courseTcbr, fmtPct, weightedPct } from '@/lib/math';
 import { classKey } from '@/lib/sample-data';
+import { api } from '@/lib/api';
 import {
   daySummary,
   computeStreaks,
@@ -132,8 +133,8 @@ export default function HistoryPage() {
         semester: term.semester,
       }).toString();
       const [attRes, ttRes] = await Promise.all([
-        fetch(`/api/erp/attendance?${q}`),
-        fetch(`/api/erp/timetable?${q}`),
+        fetch(api(`/api/erp/attendance?${q}`)),
+        fetch(api(`/api/erp/timetable?${q}`)),
       ]);
       const att = await attRes.json();
       const tt = await ttRes.json();

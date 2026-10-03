@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner, type TermInfo } from '@/components/data-context';
 import { Button, Chip, Container, Field, GlassPanel, SectionHeader, inputClass } from '@/components/ui';
+import { api } from '@/lib/api';
 
 
 function defaultTerm(): TermInfo {
@@ -80,7 +81,7 @@ type TermChoice = { id: string; label: string };
   }, []);
 
   const loadManualCaptcha = useCallback(async () => {
-    const res = await fetch('/api/erp/captcha');
+    const res = await fetch(api('/api/erp/captcha'));
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Could not load the captcha.');
     setCaptchaImage(data.captchaImage);
@@ -95,7 +96,7 @@ type TermChoice = { id: string; label: string };
     if (decodeTimer.current) clearTimeout(decodeTimer.current);
     try {
       // Prefer the auto-decoder when a solver is configured; it 501s otherwise.
-      const auto = await fetch('/api/erp/auto-captcha');
+      const auto = await fetch(api('/api/erp/auto-captcha'));
       if (auto.ok) {
         const data = await auto.json();
         setSolverAvailable(true);
@@ -152,7 +153,7 @@ type TermChoice = { id: string; label: string };
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/erp/login', {
+      const res = await fetch(api('/api/erp/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ universityId, password, captchaText, sessionToken }),
@@ -177,7 +178,7 @@ type TermChoice = { id: string; label: string };
     setRelinking(true);
     setError(null);
     try {
-      const res = await fetch('/api/erp/relink', {
+      const res = await fetch(api('/api/erp/relink'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ universityId: lastId }),
@@ -205,8 +206,8 @@ type TermChoice = { id: string; label: string };
         semester: term.semester,
       }).toString();
       const [attRes, ttRes] = await Promise.all([
-        fetch(`/api/erp/attendance?${q}`),
-        fetch(`/api/erp/timetable?${q}`),
+        fetch(api(`/api/erp/attendance?${q}`)),
+        fetch(api(`/api/erp/timetable?${q}`)),
       ]);
       const att = await attRes.json();
       const tt = await ttRes.json();
@@ -224,7 +225,7 @@ type TermChoice = { id: string; label: string };
       // Stash a MongoDB snapshot: scores + timetable only — the password is
       // sealed server-side into an encrypted blob, never stored plaintext.
       try {
-        const snapRes = await fetch('/api/snapshots', {
+        const snapRes = await fetch(api('/api/snapshots'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -269,7 +270,7 @@ type TermChoice = { id: string; label: string };
     setRestoring(true);
     setError(null);
     try {
-      const res = await fetch(`/api/snapshots?universityId=${encodeURIComponent(id)}`);
+      const res = await fetch(api(`/api/snapshots?universityId=${encodeURIComponent(id)}`));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'No snapshot found.');
       const s = data.snapshot;
