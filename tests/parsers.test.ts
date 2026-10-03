@@ -96,3 +96,39 @@ test('looksRateLimited ignores the message when embedded in page JS', () => {
   assert.equal(looksRateLimited(200, '<html><body>Too many requests. Please try again in one minute.</body></html>'), true);
 });
 // Math engine tests live in tests/math.test.ts.
+
+test('parseAttendance handles the KL courselist layout (one row per LTPS component)', () => {
+  const html = `<table><thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Tcbr</th></tr></thead><tbody>
+<tr><td>1</td><td>25CS1302E</td><td>DATABASE SYSTEMS</td><td>L</td><td>S-9-MA</td><td>20</td><td>16</td><td>0</td></tr>
+<tr><td>2</td><td>25CS1302E</td><td>DATABASE SYSTEMS</td><td>P</td><td>S-9-A</td><td>20</td><td>18</td><td>0</td></tr>
+<tr><td>3</td><td>25CS2103E</td><td>OPERATING SYSTEMS</td><td>L</td><td>S-9-MA</td><td>18</td><td>18</td><td>0</td></tr>
+</tbody></table>`;
+  const rows = parseAttendance(html);
+  assert.equal(rows.length, 2);
+  const db = rows.find((r) => r.code === '25CS1302E');
+  assert.ok(db);
+  assert.equal(db.title, 'DATABASE SYSTEMS');
+  assert.deepEqual(db.components.L, { conducted: 20, attended: 16 });
+  assert.deepEqual(db.components.P, { conducted: 20, attended: 18 });
+  assert.deepEqual(db.components.T, { conducted: 0, attended: 0 });
+});
+
+test('parseTimetable handles the KL grid (Mon rows, numbered periods, CODE-X cells)', () => {
+  const html = `<table><tr><th>Oday</th><th>1</th><th>2</th><th>3</th></tr>
+<tr><td>Mon</td><td>25CS1302E-L - S-9 -RoomNo-H-003</td><td>-</td><td>25CS2104E-S - S-9 -RoomNo-H102</td></tr>
+<tr><td>Tue</td><td>25FL2112E-P - S-7 -RoomNo-H007</td><td>25CS1302E-L - S-9 -RoomNo-H-003</td><td>-</td></tr>
+</table>`;
+  const days = parseTimetable(html);
+  assert.equal(days.length, 2);
+  assert.equal(days[0].day, 'Mon');
+  assert.equal(days[0].periods.length, 2, 'dash cell skipped');
+  const p1 = days[0].periods[0];
+  assert.equal(p1.subjectCode, '25CS1302E');
+  assert.equal(p1.type, 'L');
+  assert.equal(p1.room, 'H-003');
+  assert.equal(p1.period, 'P1');
+  const p3 = days[0].periods[1];
+  assert.equal(p3.subjectCode, '25CS2104E');
+  assert.equal(p3.type, 'S');
+  assert.equal(p3.period, 'P3');
+});

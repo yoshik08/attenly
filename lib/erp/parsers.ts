@@ -77,11 +77,69 @@ function emptyComponents(): ComponentMap {
   };
 }
 
+type Selection = ReturnType<cheerio.CheerioAPI>;
+
+/** Parse the KL ERP "courselist" table: one row per (course, LTPS component).
+ * Headers look like: # | Coursecode | Coursedesc | Ltps | … | Total Conducted | Total Attended | … */
+function parseCourselistTable($t: Selection, $: cheerio.CheerioAPI): SubjectAttendance[] {
+  const headerCells = $t.find('thead th').toArray();
+  let headers = headerCells.map((th) => $(th).text());
+  let skipFirst = headerCells.length > 0;
+  if (headers.length === 0) {
+    const firstRow = $t.find('tr').first();
+    headers = firstRow.find('th, td').toArray().map((c) => $(c).text());
+    skipFirst = false;
+  }
+  const hs = headers.map(norm);
+  const find = (pred: (h: string) => boolean): number => hs.findIndex(pred);
+  const codeI = find((h) => /course\s*code/.test(h));
+  const titleI = find((h) => /course\s*(desc|title|name)/.test(h));
+  const ltpsI = find((h) => /^ltps$/.test(h));
+  const condI = find((h) => /total\s*conducted/.test(h));
+  const attI = find((h) => /total\s*attended/.test(h));
+  if (codeI < 0 || ltpsI < 0 || condI < 0 || attI < 0) return [];
+
+  const rows = $t.find('tbody tr').length > 0 ? $t.find('tbody tr').toArray() : $t.find('tr').toArray();
+  const byCode = new Map<string, SubjectAttendance>();
+  rows.forEach((tr, ri) => {
+    if (!skipFirst && ri === 0) return;
+    const cells = $(tr).find('td').toArray().map((td) => $(td).text().trim());
+    if (cells.length === 0) return;
+    const get = (i: number): string => (i >= 0 && i < cells.length ? cells[i] : '');
+    const code = get(codeI).split('\n')[0].trim();
+    const comp = get(ltpsI).trim().toUpperCase();
+    if (!code || !/^[LTPS]$/.test(comp)) return;
+    let subj = byCode.get(code);
+    if (!subj) {
+      subj = {
+        code,
+        title: (titleI >= 0 ? get(titleI).split('\n')[0].trim() : '') || code,
+        components: emptyComponents(),
+      };
+      byCode.set(code, subj);
+    }
+    subj.components[comp as ComponentKey] = { conducted: num(get(condI)), attended: num(get(attI)) };
+  });
+  return [...byCode.values()];
+}
+
 /** Parse the ERP attendance table into per-subject LTPS counts. */
 export function parseAttendance(html: string): SubjectAttendance[] {
   try {
     const $ = cheerio.load(html);
     const tables = $('table').toArray();
+
+    // Prefer the KL courselist layout (one row per course × LTPS component).
+    for (const t of tables) {
+      const $t = $(t);
+      const htxt = $t.find('thead th').toArray().map((th) => norm($(th).text())).join(' | ')
+        || $t.find('tr').first().find('th, td').toArray().map((c) => norm($(c).text())).join(' | ');
+      if (/ltps/.test(htxt) && /course\s*code/.test(htxt)) {
+        const parsed = parseCourselistTable($t, $);
+        if (parsed.length > 0) return parsed;
+      }
+    }
+
     let best: { score: number; el: unknown } | null = null;
 
     for (const t of tables) {
@@ -193,6 +251,26 @@ const DAY_SHORT: Record<string, string> = {
   monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu',
   friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
 };
+const DAY_SHORT_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+/** Canonical 3-letter day ("Mon") for full or short English day names; null otherwise. */
+function dayKey(s: string): string | null {
+  const n = norm(s);
+  if (DAY_SHORT[n]) return DAY_SHORT[n];
+  if (DAY_SHORT_NAMES.includes(n)) return n[0].toUpperCase() + n.slice(1);
+  return null;
+}
+
+/** Parse a KL timetable cell like "25CS1302E-L - S-9 -RoomNo-H-003". Null when not KL-shaped. */
+function parseKlCell(cell: string): { code: string; type: ComponentKey | null; room: string; section: string } | null {
+  const m = cell.match(/^([A-Z0-9]+)-([LTPS])\s*-\s*(.+)$/i);
+  if (!m) return null;
+  const rest = m[3].trim();
+  const roomM = rest.match(/RoomNo-?\s*(.+)$/i);
+  const room = roomM ? roomM[1].trim() : '';
+  const section = roomM ? rest.slice(0, roomM.index).replace(/-\s*$/, '').trim() : rest;
+  return { code: m[1].toUpperCase(), type: m[2].toUpperCase() as ComponentKey, room, section };
+}
 
 function parsePeriodLabel(label: string): { period: string; start: string; end: string } {
   const t = label.replace(/\s+/g, ' ').trim();
@@ -241,8 +319,8 @@ export function parseTimetable(html: string): TimetableDay[] {
           ),
       );
 
-      const firstRowDays = grid[0].filter((c) => DAY_NAMES.includes(norm(c))).length;
-      const firstColDays = grid.filter((r) => DAY_NAMES.includes(norm(r[0] ?? ''))).length;
+      const firstRowDays = grid[0].filter((c) => dayKey(c) !== null).length;
+      const firstColDays = grid.filter((r) => dayKey(r[0] ?? '') !== null).length;
       if (firstRowDays < 2 && firstColDays < 2) continue;
 
       const days: TimetableDay[] = [];
@@ -250,46 +328,48 @@ export function parseTimetable(html: string): TimetableDay[] {
         // Days as rows; first row holds period labels.
         const labels = grid[0].slice(1);
         for (let r = 1; r < grid.length; r++) {
-          const dayName = DAY_SHORT[norm(grid[r][0])] ?? grid[r][0];
+          const dayName = dayKey(grid[r][0]) ?? grid[r][0];
           if (!dayName) continue;
           const periods: TimetablePeriod[] = [];
           for (let c = 1; c < grid[r].length; c++) {
             const cell = grid[r][c];
-            if (!cell || /break|lunch/i.test(cell)) continue;
+            if (!cell || cell === '-' || /break|lunch/i.test(cell)) continue;
             const { period, start, end } = parsePeriodLabel(labels[c - 1] ?? `P${c}`);
+            const kl = parseKlCell(cell);
             const parts = cell.split("|").map((p) => p.trim()).filter(Boolean);
-            const code = (parts[0] ?? '').split(' ')[0];
+            const code = kl ? kl.code : (parts[0] ?? '').split(' ')[0];
             periods.push({
               period, start, end,
               subjectCode: code,
               subjectTitle: parts[0] ?? code,
-              room: parts[1] ?? '',
+              room: kl ? kl.room : (parts[1] ?? ''),
               faculty: parts[2] ?? '',
-              type: inferType(parts[0] ?? ""),
+              type: kl ? kl.type : inferType(parts[0] ?? ""),
             });
           }
           days.push({ day: dayName, periods });
         }
       } else {
         // Days as columns; first column holds period labels.
-        const dayNames = grid[0].slice(1).map((d) => DAY_SHORT[norm(d)] ?? d);
+        const dayNames = grid[0].slice(1).map((d) => dayKey(d) ?? d);
         const labels = grid.slice(1).map((r) => r[0]);
         dayNames.forEach((dayName, di) => {
           if (!dayName) return;
           const periods: TimetablePeriod[] = [];
           for (let r = 1; r < grid.length; r++) {
             const cell = grid[r][di + 1];
-            if (!cell || /break|lunch/i.test(cell)) continue;
+            if (!cell || cell === '-' || /break|lunch/i.test(cell)) continue;
             const { period, start, end } = parsePeriodLabel(labels[r - 1] ?? `P${r}`);
+            const kl = parseKlCell(cell);
             const parts = cell.split("|").map((p) => p.trim()).filter(Boolean);
-            const code = (parts[0] ?? '').split(' ')[0];
+            const code = kl ? kl.code : (parts[0] ?? '').split(' ')[0];
             periods.push({
               period, start, end,
               subjectCode: code,
               subjectTitle: parts[0] ?? code,
-              room: parts[1] ?? '',
+              room: kl ? kl.room : (parts[1] ?? ''),
               faculty: parts[2] ?? '',
-              type: inferType(parts[0] ?? ""),
+              type: kl ? kl.type : inferType(parts[0] ?? ""),
             });
           }
           days.push({ day: dayName, periods });

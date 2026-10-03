@@ -18,14 +18,7 @@ import {
 
 export const ERP_BASE = process.env.ERP_BASE ?? 'https://newerp.kluniversity.in';
 const LOGIN_PATH = '/index.php?r=site%2Flogin';
-const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput';
-const TIMETABLE_PATH =
-  '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findexstudentindisearch';
-const TIMETABLE_FALLBACKS = [
-  '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Findividualstudenttimetableget',
-  '/index.php?r=timetables%2Funiversitymasteracademictimetableview%2Fstudenttimetable',
-  '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fstudenttimetable',
-];
+const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fcourselist';
 
 export type CookieJar = Record<string, string>;
 
@@ -344,11 +337,12 @@ export async function fetchAttendanceHtml(
   session: AuthedSession,
   term: { academicyear: string; semesterid: string; semester: string },
 ): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  // The searchgetinput page is only the filter shell; the ERP's own JS posts
+  // the filter to the courselist action and injects the returned table.
   const fields = {
     _csrf: session.csrf,
     'DynamicModel[academicyear]': term.academicyear,
     'DynamicModel[semesterid]': term.semesterid,
-    'DynamicModel[semester]': term.semester,
   };
   return postXhr(session, ATTENDANCE_PATH, fields);
 }
@@ -357,43 +351,20 @@ export async function fetchTimetableHtml(
   session: AuthedSession,
   term: { academicyear: string; semesterid: string; semester: string },
 ): Promise<{ html: string; jar: CookieJar; csrf: string }> {
-  const fields = {
-    _csrf: session.csrf,
+  // The timetable filter is a GET form (data-pjax) targeting
+  // individualstudenttimetableget with UniversityMasterAcademicTimetableView fields.
+  const params = new URLSearchParams({
+    r: 'timetables/universitymasteracademictimetableview/individualstudenttimetableget',
     'UniversityMasterAcademicTimetableView[academicyear]': term.academicyear,
     'UniversityMasterAcademicTimetableView[semesterid]': term.semesterid,
-    'UniversityMasterAcademicTimetableView[semester]': term.semester,
-    'DynamicModel[academicyear]': term.academicyear,
-    'DynamicModel[semesterid]': term.semesterid,
-    'DynamicModel[semester]': term.semester,
-  };
-  const paths = [TIMETABLE_PATH, ...TIMETABLE_FALLBACKS];
-  let lastErr: unknown = null;
-  for (const p of paths) {
-    try {
-      // POST first, then GET with query params, then plain GET.
-      try {
-        const r = await postXhr(session, p, fields);
-        if (r.html && r.html.length > 500 && !detectLoginForm(r.html)) return r;
-      } catch (e) {
-        if ((e as { expired?: boolean }).expired) throw e;
-        lastErr = e;
-      }
-      const q = `${p}&${new URLSearchParams(fields).toString()}`;
-      const g = await erpFetch(q, { method: 'GET', headers: xhrHeaders() }, session.jar);
-      if (detectLoginForm(g.text)) {
-        const e = new Error('ERP session expired') as Error & { expired?: boolean };
-        e.expired = true;
-        throw e;
-      }
-      if (g.text && g.text.length > 500) {
-        return { html: g.text, jar: g.jar, csrf: extractCsrf(g.text) ?? session.csrf };
-      }
-    } catch (e) {
-      if ((e as { expired?: boolean }).expired) throw e;
-      lastErr = e;
-    }
+  });
+  const res = await erpFetch(`/index.php?${params.toString()}`, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
   }
-  throw lastErr ?? new Error('Could not load the timetable from the ERP');
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
 }
 
 export function isSessionExpiredError(e: unknown): boolean {
