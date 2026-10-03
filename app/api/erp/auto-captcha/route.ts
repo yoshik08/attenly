@@ -22,11 +22,12 @@ export async function GET() {
   try {
     const { captchaImage, sessionToken } = await startLoginSession();
 
-    const res = await fetch(solverUrl, {
+    const solveEndpoint = new URL('/solve', solverUrl).toString();
+    const res = await fetch(solveEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: captchaImage }),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(45_000),
     });
     if (!res.ok) throw new Error(`solver_http_${res.status}`);
 
