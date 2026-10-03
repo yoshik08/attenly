@@ -46,7 +46,6 @@ type TermChoice = { id: string; label: string };
   const [fetching, setFetching] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
-  const [fetched, setFetched] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [lastId, setLastId] = useState<string | null>(null);
   const [relinking, setRelinking] = useState(false);
@@ -253,7 +252,7 @@ type TermChoice = { id: string; label: string };
         setSnapshotMsg('Could not reach the snapshot API.');
       }
       passwordRef.current = ''; // wipe the password from memory once stashed
-      setFetched(true);
+      router.push('/'); // straight to the game plan — no extra click
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Pull failed.');
     } finally {
@@ -516,11 +515,6 @@ type TermChoice = { id: string; label: string };
             <p className="mt-4 text-sm text-amber-200/80">
               MongoDB stash skipped: {snapshotMsg}
             </p>
-          )}
-          {fetched && (
-            <Button onClick={() => router.push('/')} className="mt-5 w-full py-3">
-              Open my game plan →
-            </Button>
           )}
         </GlassPanel>
       )}
