@@ -1,11 +1,13 @@
 import { getDb, isMongoMisconfigured } from '@/lib/db/mongo';
+import { sealSession } from '@/lib/erp/client';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Snapshot document shape. NOTE: there is intentionally NO password/credential
- * field anywhere in this schema. The ERP password is used once, transiently,
- * for the login POST to the ERP — it is never sent here and never persisted.
+ * Snapshot document shape. Credentials are stored ONLY as an AES-256-GCM
+ * encrypted blob (`creds`) sealed with the server's SESSION_SECRET — never
+ * plaintext. The blob never leaves the server (GET responses exclude it);
+ * it exists solely so the server can re-authenticate for one-tap re-link.
  */
 export interface SnapshotDoc {
   universityId: string;
@@ -14,6 +16,7 @@ export interface SnapshotDoc {
   syncedAt: Date;
   attendance: unknown[];
   timetable: unknown[];
+  creds?: string;
 }
 
 /** Field names that must never be persisted, matched case-insensitively. */
@@ -62,8 +65,10 @@ export function termKey(term: { academicyear?: string; semesterid?: string; seme
 
 /**
  * POST /api/snapshots
- * Body: { universityId, term: { academicyear, semesterid, semester }, attendance, timetable }
- * Upserts into `snapshots` keyed by { universityId, termKey }.
+ * Body: { universityId, term: { academicyear, semesterid, semester }, attendance, timetable, password? }
+ * Upserts into `snapshots` keyed by { universityId, termKey }. When `password`
+ * is supplied it is sealed (AES-256-GCM, SESSION_SECRET) into `creds` — the
+ * plaintext never touches the database.
  */
 export async function POST(req: Request) {
   let raw: unknown;
@@ -73,7 +78,21 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  const { cleaned, stripped } = stripCredentials(raw);
+  // Pull the password out before the credential-stripper runs, then seal it.
+  // Anything else credential-shaped is still dropped loudly below.
+  const rawObj = (raw ?? {}) as Record<string, unknown>;
+  const rawPassword = typeof rawObj.password === 'string' ? rawObj.password : '';
+  delete rawObj.password;
+  let creds: string | undefined;
+  if (rawPassword) {
+    try {
+      creds = sealSession({ pw: rawPassword });
+    } catch {
+      return Response.json({ error: 'Could not secure the credentials.' }, { status: 500 });
+    }
+  }
+
+  const { cleaned, stripped } = stripCredentials(rawObj);
   if (stripped) {
     // Defense in depth: the client never sends credentials, but if one ever
     // arrives, drop it loudly rather than persisting it.
@@ -100,6 +119,7 @@ export async function POST(req: Request) {
     syncedAt: new Date(),
     attendance: Array.isArray(body.attendance) ? body.attendance : [],
     timetable: Array.isArray(body.timetable) ? body.timetable : [],
+    ...(creds ? { creds } : {}),
   };
 
   try {
@@ -143,7 +163,7 @@ export async function GET(req: Request) {
     const filter: Record<string, string> = tk ? { universityId, termKey: tk } : { universityId };
     const snapshot = await db
       .collection<SnapshotDoc>('snapshots')
-      .find(filter)
+      .find(filter, { projection: { creds: 0 } })
       .sort({ syncedAt: -1 })
       .limit(1)
       .next();

@@ -1,4 +1,5 @@
-import { startLoginSession, ErpRateLimited } from '@/lib/erp/client';
+import { fetchSolvedCaptcha } from '@/lib/erp/autocaptcha';
+import { ErpRateLimited } from '@/lib/erp/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,32 +12,14 @@ export const dynamic = 'force-dynamic';
  * back to manual entry.
  */
 export async function GET() {
-  const solverUrl = process.env.SOLVER_URL;
-  if (!solverUrl) {
-    return Response.json(
-      { error: 'Auto-decode is not configured.', code: 'no_solver' },
-      { status: 501 },
-    );
-  }
-
   try {
-    const { captchaImage, sessionToken } = await startLoginSession();
-
-    const solveEndpoint = new URL('/solve', solverUrl).toString();
-    const res = await fetch(solveEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: captchaImage }),
-      signal: AbortSignal.timeout(45_000),
-    });
-    if (!res.ok) throw new Error(`solver_http_${res.status}`);
-
-    const data = (await res.json()) as Record<string, unknown>;
-    const solution = String(data.solution ?? data.text ?? data.captcha ?? '').trim();
-    if (!solution) throw new Error('solver_empty');
-
+    const { captchaImage, sessionToken, solution } = await fetchSolvedCaptcha();
     return Response.json({ image: captchaImage, solution, sessionToken });
   } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === 'no_solver') {
+      return Response.json({ error: 'Auto-decode is not configured.', code: 'no_solver' }, { status: 501 });
+    }
     if (e instanceof ErpRateLimited) {
       return Response.json({ error: e.message, code: 'rate_limited' }, { status: 429 });
     }

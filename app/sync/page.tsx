@@ -47,7 +47,37 @@ type TermChoice = { id: string; label: string };
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [lastId, setLastId] = useState<string | null>(null);
+  const [relinking, setRelinking] = useState(false);
+  const passwordRef = useRef('');
   const decodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyLoginSuccess = useCallback(
+    (data: { termOptions?: { years?: TermChoice[]; semesters?: TermChoice[] } }, id: string) => {
+      setLoggedIn(true);
+      const opts = data.termOptions ?? { years: [], semesters: [] };
+      setTermYears(opts.years ?? []);
+      setTermSemesters(opts.semesters ?? []);
+      setYearIdx(0);
+      setSemIdx(0);
+      setLastId(id);
+      try {
+        localStorage.setItem('skipwise:lastId', id);
+      } catch {
+        /* storage unavailable — non-fatal */
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    try {
+      const id = localStorage.getItem('skipwise:lastId');
+      if (id) setLastId(id);
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+  }, []);
 
   const loadManualCaptcha = useCallback(async () => {
     const res = await fetch('/api/erp/captcha');
@@ -131,18 +161,35 @@ type TermChoice = { id: string; label: string };
       if (!res.ok || !data.ok) {
         throw new Error(data.error ?? 'Login failed.');
       }
-      setPassword(''); // drop the password from memory immediately
-      setLoggedIn(true);
-      const opts = data.termOptions ?? { years: [], semesters: [] };
-      setTermYears(opts.years ?? []);
-      setTermSemesters(opts.semesters ?? []);
-      setYearIdx(0);
-      setSemIdx(0);
+      passwordRef.current = password; // held for the snapshot POST, then wiped
+      setPassword('');
+      applyLoginSuccess(data, universityId.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed.');
       loadCaptcha(); // captcha is single-use — always refresh after an attempt
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleRelink() {
+    if (!lastId || relinking) return;
+    setRelinking(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/erp/relink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ universityId: lastId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Re-link failed.');
+      setUniversityId(lastId);
+      applyLoginSuccess(data, lastId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Re-link failed.');
+    } finally {
+      setRelinking(false);
     }
   }
 
@@ -174,12 +221,19 @@ type TermChoice = { id: string; label: string };
       const subjects = att.subjects ?? [];
       const days = tt.days ?? [];
       loadErpData(subjects, days, term);
-      // Stash a MongoDB snapshot: scores + timetable only — never the password.
+      // Stash a MongoDB snapshot: scores + timetable only — the password is
+      // sealed server-side into an encrypted blob, never stored plaintext.
       try {
         const snapRes = await fetch('/api/snapshots', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ universityId, term, attendance: subjects, timetable: days }),
+          body: JSON.stringify({
+            universityId,
+            term,
+            attendance: subjects,
+            timetable: days,
+            password: passwordRef.current || undefined,
+          }),
         });
         const snap = await snapRes.json();
         if (snapRes.ok && snap.ok) {
@@ -197,6 +251,7 @@ type TermChoice = { id: string; label: string };
       } catch {
         setSnapshotMsg('Could not reach the snapshot API.');
       }
+      passwordRef.current = ''; // wipe the password from memory once stashed
       setFetched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Pull failed.');
@@ -244,6 +299,16 @@ type TermChoice = { id: string; label: string };
 
       {!loggedIn ? (
         <GlassPanel className="p-6 sm:p-8">
+          {lastId && (
+            <div className="mb-5">
+              <Button variant="glass" onClick={handleRelink} disabled={relinking} className="w-full">
+                {relinking ? 'Re-linking…' : `Re-link as ${lastId} →`}
+              </Button>
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Saved login, sealed in MongoDB — no typing needed.
+              </p>
+            </div>
+          )}
           <form onSubmit={handleLogin} className="flex flex-col gap-5">
             <Field label="University ID" htmlFor="uid">
               <input
