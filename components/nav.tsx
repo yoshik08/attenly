@@ -17,6 +17,7 @@ const LINKS = [
 export function Nav() {
   const pathname = usePathname();
   const { sampleMode, hasData, ready } = usePlanner();
+  if (ready && !hasData && pathname === '/') return null; // landing brings its own nav
   return (
     <div className="sticky top-0 z-30 px-4 pt-4">
       <motion.header
@@ -88,6 +89,9 @@ export function Nav() {
 }
 
 export function Footer() {
+  const pathname = usePathname();
+  const { hasData, ready } = usePlanner();
+  if (ready && !hasData && pathname === '/') return null; // landing has its own footer
   return (
     <footer className="mt-20 pb-8">
       <Container>

@@ -9,13 +9,13 @@ import {
   Chip,
   Container,
   CountUp,
-  EmptyState,
   FuelGauge,
   GlassPanel,
   SectionHeader,
   Stepper,
   bandChip,
 } from '@/components/ui';
+import Landing from '@/components/landing';
 import { cn } from '@/components/cn';
 import {
   COMPONENT_ORDER,
@@ -87,7 +87,7 @@ function ceilingPct(
 }
 
 export default function PlanPage() {
-  const { ready, hasData, subjects, timetable, settings, term, syncedAt, loadSample } = usePlanner();
+  const { ready, hasData, subjects, timetable, settings, term, syncedAt } = usePlanner();
   const [selected, setSelected] = useState<string | null>(null);
   const [plan, setPlan] = useState<SandboxPlan>(emptyPlan());
 
@@ -124,24 +124,7 @@ export default function PlanPage() {
     );
 
   if (!hasData) {
-    return (
-      <Container className="py-12">
-        <EmptyState
-          title="Nothing on the radar yet"
-          hint="Link your KL University ERP to pull your timetable and scores, or take a spin with sample data first."
-          action={
-            <>
-              <Link href="/sync">
-                <Button>Link your ERP</Button>
-              </Link>
-              <Button variant="glass" onClick={loadSample}>
-                Explore sample data
-              </Button>
-            </>
-          }
-        />
-      </Container>
-    );
+    return <Landing />;
   }
 
   const pct = selSubj ? weightedPct(selSubj, weights, selTcbr) : null;
