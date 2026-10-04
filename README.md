@@ -102,3 +102,4 @@ npm test   # parser + math unit tests (tsx --test)
   when `MONGODB_URI` is set — a copy is saved to the `snapshots` collection
   (attendance + timetable only; the API strips any credential field defensively
   before writing, so no password can ever land in MongoDB).
+
