@@ -19,9 +19,8 @@ body {
   overflow-x: hidden;
 }
 
-.font-display {
-  font-family: var(--font-display);
-}
+/* font-display comes from @theme inline (--font-display → Fraunces). Do not
+   redeclare it manually: inline themes don't emit the var at runtime. */
 
 ::selection {
   background: rgba(233, 161, 59, 0.35);
