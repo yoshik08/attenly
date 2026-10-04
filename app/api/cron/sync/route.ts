@@ -3,6 +3,7 @@ import type { UserDoc } from '@/lib/db/users';
 import { unsealSession } from '@/lib/erp/client';
 import { autoLogin, pullAll, isSessionExpiredError, ErpRateLimited } from '@/lib/erp/full-sync';
 import { saveFullSnapshot } from '@/lib/db/snapshots';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -13,13 +14,41 @@ export const maxDuration = 300;
  * user with sealed ERP credentials: decrypt, log in (auto captcha), pull
  * everything, and refresh their snapshot. No browser, no user interaction.
  *
- * Protected by CRON_SECRET (Authorization: Bearer …). The ERP password only
- * exists decrypted in memory for the duration of one user's sync.
+ * Auth: the GitHub Action mints an OIDC JWT (aud "attenly-cron") and sends it
+ * as the Bearer token; we verify it against GitHub's JWKS and require
+ * repository yoshik08/attenly. A CRON_SECRET Bearer token is also accepted
+ * as a manual fallback. The ERP password only exists decrypted in memory for
+ * the duration of one user's sync.
  */
-export async function POST(req: Request) {
-  const secret = process.env.CRON_SECRET;
+const OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
+const OIDC_AUDIENCE = 'attenly-cron';
+const OIDC_REPO = 'yoshik08/attenly';
+const JWKS = createRemoteJWKSet(new URL(`${OIDC_ISSUER}/.well-known/jwks`));
+
+async function authorized(req: Request): Promise<boolean> {
   const auth = req.headers.get('authorization') ?? '';
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!auth.startsWith('Bearer ')) return false;
+  const token = auth.slice(7).trim();
+  if (!token) return false;
+
+  // Manual fallback: shared secret.
+  const secret = process.env.CRON_SECRET;
+  if (secret && token === secret) return true;
+
+  // GitHub Actions OIDC.
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: OIDC_ISSUER,
+      audience: OIDC_AUDIENCE,
+    });
+    return payload.repository === OIDC_REPO;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(req: Request) {
+  if (!(await authorized(req))) {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 

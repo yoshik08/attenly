@@ -9,6 +9,12 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
+# The sync endpoint verifies this job via GitHub OIDC (no shared secret to
+# keep in sync between GitHub and Vercel).
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -16,8 +22,11 @@ jobs:
     steps:
       - name: Trigger backend sync
         run: |
+          oidc_resp=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=attenly-cron")
+          id_token=$(printf '%s' "$oidc_resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['value'])")
           code=$(curl -s -o /tmp/sync.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Authorization: Bearer $id_token" \
             --max-time 280 \
             https://yoshik.xyz/attenly/api/cron/sync)
           echo "HTTP $code"
