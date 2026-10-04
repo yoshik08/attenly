@@ -1,8 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/attenly/:path*", "destination": "https://attenly-pi.vercel.app/attenly/:path*" },
-    { "source": "/", "destination": "https://personal-tau-pearl.vercel.app/" },
-    { "source": "/:path*", "destination": "https://personal-tau-pearl.vercel.app/:path*" }
-  ]
-}

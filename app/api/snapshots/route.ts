@@ -189,7 +189,7 @@ export async function GET(req: Request) {
       return Response.json({ error: 'Not signed in.', code: 'not_signed_in' }, { status: 401 });
     }
     try {
-      const snapshot = await getLatestSnapshotForGoogle(googleId);
+      const snapshot = await getLatestSnapshotForGoogle(googleId, universityId || undefined);
       if (!snapshot) {
         return Response.json({ error: 'No snapshot found.', code: 'not_found' }, { status: 404 });
       }

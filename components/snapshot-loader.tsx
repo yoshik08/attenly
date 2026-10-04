@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePlanner, type SnapshotData } from '@/components/data-context';
 import { api } from '@/lib/api';
+import { getActiveAccount } from '@/components/nav';
 
 /**
  * On mount (and when the Google session appears), pull the latest backend
@@ -18,7 +19,9 @@ export function SnapshotLoader() {
   useEffect(() => {
     if (!ready || status !== 'authenticated' || done.current) return;
     done.current = true;
-    fetch(api('/api/snapshots?mine=1'))
+    const active = getActiveAccount();
+    const url = active ? api(`/api/snapshots?mine=1&universityId=${encodeURIComponent(active)}`) : api('/api/snapshots?mine=1');
+    fetch(url)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.snapshot) loadSnapshot(d.snapshot as SnapshotData);

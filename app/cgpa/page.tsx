@@ -69,10 +69,6 @@ export default function CgpaPage() {
           <h1 className="font-display text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
             CGPA
           </h1>
-          <div className="mt-3 flex items-baseline gap-3">
-            <CountUp value={data.cgpa} className="font-display text-6xl font-black tabular-nums" />
-            <span className="text-sm text-[#A1A1A8]">cumulative</span>
-          </div>
         </div>
 
         {/* SGPA term picker — small, right side, under the nav */}

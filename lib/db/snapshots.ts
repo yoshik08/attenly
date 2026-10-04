@@ -68,11 +68,13 @@ export async function saveFullSnapshot(input: {
 }
 
 /** Latest snapshot for a Google user (creds excluded). */
-export async function getLatestSnapshotForGoogle(googleId: string): Promise<Omit<SnapshotDoc, 'creds'> | null> {
+export async function getLatestSnapshotForGoogle(googleId: string, universityId?: string): Promise<Omit<SnapshotDoc, 'creds'> | null> {
   const db = await getDb();
+  const filter: Record<string, string> = { googleId };
+  if (universityId) filter.universityId = universityId;
   return db
     .collection<SnapshotDoc>('snapshots')
-    .find({ googleId }, { projection: { creds: 0 } })
+    .find(filter, { projection: { creds: 0 } })
     .sort({ syncedAt: -1 })
     .limit(1)
     .next();
