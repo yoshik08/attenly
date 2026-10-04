@@ -1,48 +1,37 @@
 'use client';
 
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 import { usePlanner } from '@/components/data-context';
+import { ErpGate } from '@/components/erp-gate';
 import {
-  Button,
   Chip,
   Container,
   CountUp,
   FuelGauge,
   GlassPanel,
-  SectionHeader,
   Stepper,
   bandChip,
   AMBER,
-  INK,
   MUTED,
 } from '@/components/ui';
-import Landing from '@/components/landing';
 import { cn } from '@/components/cn';
 import {
   COMPONENT_ORDER,
   COMPONENT_SHORT,
   bandLabel,
-  classImpact,
   courseTcbr,
   emptyPlan,
-  fmtDelta,
   fmtPct,
-  fmtRunway,
-  neededToReach,
   policyBand,
   sandboxPct,
-  skipGuidance,
-  skipMargin,
   weightedPct,
   weightedSums,
-  type ComponentKey,
   type SandboxPlan,
   type SubjectAttendance,
 } from '@/lib/math';
 import { SUBJECT_COLORS } from '@/lib/sample-data';
-import type { TimetableDay } from '@/lib/erp/parsers';
 
 function colorFor(code: string): string {
   if (SUBJECT_COLORS[code]) return SUBJECT_COLORS[code];
@@ -51,120 +40,188 @@ function colorFor(code: string): string {
   return `hsl(${h}, 80%, 62%)`;
 }
 
-const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function allPeriods(timetable: TimetableDay[]): string[] {
-  const set = new Map<string, { order: number; start: string }>();
-  for (const d of timetable) {
-    for (const p of d.periods) {
-      if (!set.has(p.period)) {
-        const n = parseInt(p.period.replace(/\D/g, ''), 10);
-        set.set(p.period, { order: Number.isNaN(n) ? 999 : n, start: p.start });
-      }
-    }
-  }
-  return [...set.entries()]
-    .sort((a, b) => a[1].order - b[1].order || a[1].start.localeCompare(b[1].start))
-    .map(([k]) => k);
-}
-
-/** Ceiling score if you show up to everything left this week. */
-function ceilingPct(
-  subj: SubjectAttendance,
-  timetable: TimetableDay[],
-  weights: Record<ComponentKey, number>,
-): number | null {
-  const { attW, condW } = weightedSums(subj, weights);
-  if (condW <= 0) return null;
-  const jsDay = new Date().getDay();
-  const todayIdx = jsDay === 0 ? 7 : jsDay;
-  let remW = 0;
-  for (const d of timetable) {
-    const idx = DAY_ORDER.indexOf(d.day) + 1;
-    if (idx < todayIdx) continue;
-    for (const p of d.periods) {
-      if (p.subjectCode === subj.code) remW += weights[p.type ?? 'L'] ?? 0;
-    }
-  }
-  return Math.ceil(((attW + remW) / (condW + remW)) * 100);
-}
-
-export default function PlanPage() {
-  const { ready, hasData, subjects, timetable, settings, term, syncedAt } = usePlanner();
-  const [selected, setSelected] = useState<string | null>(null);
+function CourseCard({ subj, index }: { subj: SubjectAttendance; index: number }) {
+  const { settings } = usePlanner();
+  const { thresholds, weights, tcbr } = settings;
+  const t = courseTcbr(subj.code, tcbr);
+  const pct = weightedPct(subj, weights, t);
+  const band = policyBand(pct, thresholds);
+  const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<SandboxPlan>(emptyPlan());
+  const projected = sandboxPct(subj, weights, plan, t);
+  const planActive = COMPONENT_ORDER.some((k) => plan[k].attend > 0 || plan[k].skip > 0);
+  const setPlanFor = (k: (typeof COMPONENT_ORDER)[number], patch: Partial<{ attend: number; skip: number }>) =>
+    setPlan((p) => ({ ...p, [k]: { ...p[k], ...patch } }));
 
-  const periods = useMemo(() => allPeriods(timetable), [timetable]);
-  const days = useMemo(
-    () => DAY_ORDER.map((d) => timetable.find((t) => t.day === d)).filter(Boolean) as TimetableDay[],
-    [timetable],
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(0.05 * index, 0.4), duration: 0.4 }}
+    >
+      <GlassPanel className="overflow-hidden">
+        <button onClick={() => setOpen((o) => !o)} className="block w-full p-5 text-left sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span
+                className="rounded-lg px-2.5 py-1 text-xs font-black tracking-wide text-[#0A0A0B]"
+                style={{ backgroundColor: colorFor(subj.code) }}
+              >
+                {subj.code}
+              </span>
+              <h2 className="font-display mt-2 text-xl font-black text-[#F5F4F0]">{subj.title}</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <CountUp value={pct} className="font-display text-4xl font-black tabular-nums" />
+              <Chip tone={bandChip(band)}>{bandLabel(band)}</Chip>
+            </div>
+          </div>
+          <FuelGauge pct={pct} thresholds={thresholds} className="mt-4" />
+          <div className={cn('mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs', MUTED)}>
+            {COMPONENT_ORDER.map((k) => {
+              const c = subj.components[k];
+              if (!c || c.conducted - (t?.[k] ?? 0) <= 0) return null;
+              const cp = c.conducted > 0 ? Math.round((c.attended / c.conducted) * 100) : 0;
+              return (
+                <span key={k}>
+                  {COMPONENT_SHORT[k]} <b className="text-[#F5F4F0] tabular-nums">{c.attended}/{c.conducted}</b>{' '}
+                  <span className="text-[#6B6B72]">· {cp}%</span>
+                </span>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs font-semibold text-[#6B6B72]">
+            {open ? '▾ hide the what-if' : '▸ what if — rehearse the week'} 
+          </p>
+        </button>
+
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="overflow-hidden"
+            >
+              <div className="border-t border-[#232327] p-5 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-[#F5F4F0]">
+                    🧪 What if{' '}
+                    <span className="font-normal text-[#A1A1A8]">— rehearse the week before you live it</span>
+                  </p>
+                  {planActive && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-display text-xl font-black" style={{ color: AMBER }}>
+                        → {fmtPct(projected)}
+                      </span>
+                      <button
+                        onClick={() => setPlan(emptyPlan())}
+                        className="text-xs font-semibold text-[#A1A1A8] hover:text-white hover:underline"
+                      >
+                        reset
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {COMPONENT_ORDER.map((k) => {
+                    const c = subj.components[k];
+                    if (!c || c.conducted - (t?.[k] ?? 0) <= 0) return null;
+                    return (
+                      <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-black/20 px-3 py-2">
+                        <span className="text-xs font-semibold text-[#F5F4F0]">{COMPONENT_SHORT[k]}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-[#34D399]/80">show up</span>
+                            <Stepper small value={plan[k].attend} onChange={(v) => setPlanFor(k, { attend: v })} />
+                          </div>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-[#F87171]/80">bunk</span>
+                            <Stepper small value={plan[k].skip} onChange={(v) => setPlanFor(k, { skip: v })} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </GlassPanel>
+    </motion.div>
   );
-  const selSubj = useMemo(
-    () => subjects.find((s) => s.code === selected) ?? subjects[0] ?? null,
-    [subjects, selected],
-  );
+}
+
+export default function AttendancePage() {
+  const { ready, hasData, subjects, settings, term, syncedAt, loadSnapshot } = usePlanner();
+  const { status } = useSession();
+  const [waited, setWaited] = useState(false);
+
+  useEffect(() => {
+    if (status === 'authenticated' && !hasData) {
+      const t = setTimeout(() => setWaited(true), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [status, hasData]);
 
   const { thresholds, weights, tcbr } = settings;
-  const selTcbr = selSubj ? courseTcbr(selSubj.code, tcbr) : undefined;
-
   const overall = useMemo(() => {
     let attW = 0;
     let condW = 0;
     for (const s of subjects) {
-      const t = courseTcbr(s.code, tcbr);
-      const p = weightedSums(s, weights, t);
+      const p = weightedSums(s, weights, courseTcbr(s.code, tcbr));
       attW += p.attW;
       condW += p.condW;
     }
     return condW > 0 ? Math.ceil((attW / condW) * 100) : null;
   }, [subjects, weights, tcbr]);
 
-  if (!ready)
+  if (!ready || status === 'loading') {
     return (
       <Container className="py-10">
         <p className={cn('text-sm', MUTED)}>Warming up…</p>
       </Container>
     );
-
-  if (!hasData) {
-    return <Landing />;
   }
 
-  const pct = selSubj ? weightedPct(selSubj, weights, selTcbr) : null;
-  const ceiling = selSubj ? ceilingPct(selSubj, timetable, weights) : null;
-  const band = policyBand(pct, thresholds);
-  const guide = selSubj ? skipGuidance(selSubj, weights, thresholds, selTcbr) : null;
-  const projected = selSubj ? sandboxPct(selSubj, weights, plan, selTcbr) : null;
-  const planActive = COMPONENT_ORDER.some((k) => plan[k].attend > 0 || plan[k].skip > 0);
-
-  const setPlanFor = (k: ComponentKey, patch: Partial<{ attend: number; skip: number }>) =>
-    setPlan((p) => ({ ...p, [k]: { ...p[k], ...patch } }));
-
-  const pickCourse = (code: string) => {
-    setSelected(code);
-    setPlan(emptyPlan());
-  };
+  if (!hasData) {
+    // Signed in + linked but the snapshot is still arriving — brief patience,
+    // then fall through to the gate (covers re-link).
+    if (status === 'authenticated' && !waited) {
+      return (
+        <Container className="py-10">
+          <p className={cn('text-sm', MUTED)}>Pulling your latest sync…</p>
+        </Container>
+      );
+    }
+    return (
+      <Container>
+        <ErpGate onLinked={loadSnapshot} />
+      </Container>
+    );
+  }
 
   return (
     <Container className="py-8">
-      {/* hero */}
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#A1A1A8]">
-            [ Game plan ]
+            [ Attendance ]
           </p>
-          <h1 className="font-display max-w-xl text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
-            Know the cost of <span style={{ color: AMBER }}>every bunk.</span>
+          <h1 className="font-display text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
+            Attendance
           </h1>
           {term && (
             <p className={cn('mt-2 text-sm', MUTED)}>
               {term.academicyear} · {term.semester}
-              {syncedAt && <> · pulled {new Date(syncedAt).toLocaleString()}</>}
+              {syncedAt && <> · synced {new Date(syncedAt).toLocaleString()}</>}
             </p>
           )}
         </div>
         <GlassPanel className="w-full max-w-xs px-5 py-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#A1A1A8]">Overall score</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#A1A1A8]">Overall</p>
           <div className="flex items-baseline gap-2">
             <CountUp value={overall} className="font-display text-5xl font-black" suffix="%" />
             <span className="text-xs text-[#A1A1A8]">weighted</span>
@@ -173,245 +230,10 @@ export default function PlanPage() {
         </GlassPanel>
       </div>
 
-      {/* course deep-dive */}
-      {selSubj && (
-        <GlassPanel className="mb-6 p-5 sm:p-6" key={selSubj.code}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className="rounded-lg px-2.5 py-1 text-xs font-black tracking-wide text-[#0A0A0B]"
-                  style={{ backgroundColor: colorFor(selSubj.code) }}
-                >
-                  {selSubj.code}
-                </span>
-                {selTcbr && <Chip tone="cyan">Late-joiner fix on</Chip>}
-              </div>
-              <h2 className="font-display mt-2 text-2xl font-black text-[#F5F4F0]">{selSubj.title}</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <CountUp value={pct} className="font-display text-4xl font-black tabular-nums" />
-              <Chip tone={bandChip(band)}>{bandLabel(band)}</Chip>
-            </div>
-          </div>
-
-          <FuelGauge pct={pct} thresholds={thresholds} className="mt-4" />
-          <div className={cn('mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs', MUTED)}>
-            <span>
-              Bunk balance:{' '}
-              <b className="text-[#34D399]">{guide ? fmtRunway(guide.keepCruising) : '—'}</b>{' '}
-              <span className="text-[#6B6B72]">to stay cruising</span>
-            </span>
-            {ceiling != null && (
-              <span>
-                Ceiling this week: <b className="text-[#7DD3FC]">{fmtPct(ceiling)}</b>{' '}
-                <span className="text-[#6B6B72]">if you show up to everything left</span>
-              </span>
-            )}
-          </div>
-
-          {/* per-component bunk balance + catch-up */}
-          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {COMPONENT_ORDER.map((k, i) => {
-              const c = selSubj.components[k];
-              if (!c || c.conducted - (selTcbr?.[k] ?? 0) <= 0) return null;
-              const margin = skipMargin(selSubj, weights, thresholds.safeAt, k, selTcbr);
-              const need = neededToReach(selSubj, weights, thresholds.safeAt, k, selTcbr);
-              const cp = (c.attended / c.conducted) * 100;
-              return (
-                <motion.div
-                  key={k}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.05 * i, duration: 0.4 }}
-                  className="rounded-2xl border border-[#232327] bg-white/[0.03] p-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-[#F5F4F0]">{COMPONENT_SHORT[k]}</p>
-                    <p className="text-xs font-bold tabular-nums text-[#F5F4F0]">
-                      {c.attended}/{c.conducted} <span className="font-normal text-[#A1A1A8]">· {Math.round(cp)}%</span>
-                    </p>
-                  </div>
-                  <p className="mt-1.5 text-xs text-[#A1A1A8]">
-                    {margin > 0 ? (
-                      <>🎯 <b className="text-[#34D399]">{fmtRunway(margin)}</b> before {thresholds.safeAt}% slips</>
-                    ) : need > 0 && Number.isFinite(need) ? (
-                      <>🛟 show up <b className="text-[#E9A13B]">{need} in a row</b> to climb back to {thresholds.safeAt}%</>
-                    ) : (
-                      <>🧊 right on the edge — every class counts</>
-                    )}
-                  </p>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          {/* what-if lab */}
-          <div className="mt-5 rounded-2xl border border-[#E9A13B]/25 bg-[#E9A13B]/[0.05] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-bold text-[#F5F4F0]">
-                🧪 What-if lab{' '}
-                <span className="font-normal text-[#A1A1A8]">— rehearse the week before you live it</span>
-              </p>
-              {planActive && (
-                <div className="flex items-center gap-2">
-                  <AnimatePresence mode="wait">
-                    <motion.span
-                      key={projected}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      className="font-display text-xl font-black"
-                      style={{ color: AMBER }}
-                    >
-                      → {fmtPct(projected)}
-                    </motion.span>
-                  </AnimatePresence>
-                  <button onClick={() => setPlan(emptyPlan())} className="text-xs font-semibold text-[#A1A1A8] hover:text-white hover:underline">
-                    reset
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {COMPONENT_ORDER.map((k) => {
-                const c = selSubj.components[k];
-                if (!c || c.conducted - (selTcbr?.[k] ?? 0) <= 0) return null;
-                return (
-                  <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-black/20 px-3 py-2">
-                    <span className="text-xs font-semibold text-[#F5F4F0]">{COMPONENT_SHORT[k]}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-[#34D399]/80">show up</span>
-                        <Stepper small value={plan[k].attend} onChange={(v) => setPlanFor(k, { attend: v })} />
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-[#F87171]/80">bunk</span>
-                        <Stepper small value={plan[k].skip} onChange={(v) => setPlanFor(k, { skip: v })} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </GlassPanel>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
-        {/* timetable */}
-        <div>
-          <SectionHeader kicker="This week" title="The grid" sub="Tap a class to inspect its course. The chip is what that class is worth if you show up." />
-          <GlassPanel className="overflow-hidden">
-            <div className="thin-scroll overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th className="w-14 p-2 text-left" />
-                    {days.map((d) => (
-                      <th key={d.day} className="border-b border-[#232327] p-2.5 text-left text-xs font-bold uppercase tracking-wider text-[#A1A1A8]">
-                        {d.day}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {periods.map((per) => (
-                    <tr key={per}>
-                      <td className="border-b border-white/[0.05] p-2 align-top text-xs font-bold text-[#6B6B72]">{per}</td>
-                      {days.map((d) => {
-                        const p = d.periods.find((x) => x.period === per);
-                        if (!p)
-                          return <td key={d.day} className="border-b border-white/[0.05] p-1" />;
-                        const subj = subjects.find((s) => s.code === p.subjectCode);
-                        const impact = subj ? classImpact(subj, weights, p.type ?? 'L', subj.code === selSubj?.code ? selTcbr : courseTcbr(subj.code, tcbr)) : null;
-                        const isSel = selSubj?.code === p.subjectCode;
-                        return (
-                          <td key={d.day} className="border-b border-white/[0.05] p-1 align-top">
-                            <motion.button
-                              whileHover={{ scale: 1.03, y: -1 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => pickCourse(p.subjectCode)}
-                              title={`${p.subjectTitle}${p.room ? ` · ${p.room}` : ''}${p.start ? ` · ${p.start}–${p.end}` : ''}`}
-                              className={cn(
-                                'w-full rounded-2xl border p-2.5 text-left transition',
-                                isSel
-                                  ? 'border-[#E9A13B]/60 bg-[#E9A13B]/[0.08] shadow-[0_0_20px_-6px_rgba(233,161,59,0.5)]'
-                                  : 'border-[#232327] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]',
-                              )}
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: colorFor(p.subjectCode), boxShadow: `0 0 8px ${colorFor(p.subjectCode)}` }} />
-                                <span className="truncate text-xs font-bold text-[#F5F4F0]">{p.subjectCode}</span>
-                              </div>
-                              {p.room && <p className="mt-0.5 truncate text-[11px] text-[#6B6B72]">{p.room}</p>}
-                              {impact && impact.gain >= 1 && (
-                                <span
-                                  className="mt-1.5 inline-block rounded-full bg-[#E9A13B]/15 px-1.5 py-px text-[11px] font-bold text-[#E9A13B]"
-                                  title={`Showing up adds ${fmtDelta(impact.gain)} pts · bunking costs ${fmtDelta(impact.loss)} pts`}
-                                >
-                                  {fmtDelta(impact.gain)}
-                                </span>
-                              )}
-                            </motion.button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </GlassPanel>
-        </div>
-
-        {/* course lineup */}
-        <div>
-          <SectionHeader kicker="The lineup" title="Courses" />
-          <div className="flex flex-col gap-3">
-            {subjects.map((s, i) => {
-              const t = courseTcbr(s.code, tcbr);
-              const sp = weightedPct(s, weights, t);
-              const b = policyBand(sp, thresholds);
-              const g = skipGuidance(s, weights, thresholds, t);
-              const isSel = selSubj?.code === s.code;
-              return (
-                <motion.button
-                  key={s.code}
-                  initial={{ opacity: 0, x: 24 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.04 * i, duration: 0.4 }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => pickCourse(s.code)}
-                  className={cn(
-                    'rounded-3xl border p-4 text-left transition',
-                    isSel
-                      ? 'border-[#E9A13B]/50 bg-[#141416] shadow-[0_0_28px_-8px_rgba(233,161,59,0.4)]'
-                      : 'border-[#232327] bg-[#141416] hover:border-white/20',
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: colorFor(s.code), boxShadow: `0 0 10px ${colorFor(s.code)}` }} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-[#F5F4F0]">{s.code}</p>
-                      <p className="truncate text-xs text-[#A1A1A8]">{s.title}</p>
-                    </div>
-                    <CountUp value={sp} className="font-display text-xl font-black tabular-nums" duration={0.6} />
-                  </div>
-                  <FuelGauge pct={sp} thresholds={thresholds} className="mt-3" />
-                  <div className="mt-2 flex items-center justify-between">
-                    <Chip tone={bandChip(b)} className="text-[10px]">{bandLabel(b)}</Chip>
-                    <span className="text-[11px] text-[#6B6B72]">
-                      bunk balance <b className="text-[#F5F4F0]">{Number.isFinite(g.keepCruising) ? g.keepCruising : '∞'}</b>
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        </div>
+      <div className="flex flex-col gap-4">
+        {subjects.map((s, i) => (
+          <CourseCard key={s.code} subj={s} index={i} />
+        ))}
       </div>
     </Container>
   );

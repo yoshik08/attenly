@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { SubjectAttendance, Thresholds, Weights, TcbrSettings } from '@/lib/math';
 import { DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, DEFAULT_TCBR } from '@/lib/math';
-import type { TimetableDay } from '@/lib/erp/parsers';
+import type { TimetableDay, InternalRow, ResultRow, CgpaRow } from '@/lib/erp/parsers';
 import {
   SAMPLE_SUBJECTS,
   SAMPLE_TIMETABLE,
@@ -33,9 +33,34 @@ export interface Settings {
   tcbr: TcbrSettings;
 }
 
+export interface SgpaTerm {
+  key: string;
+  academicYear: string;
+  semester: string;
+  sgpa: number | null;
+  credits: number;
+}
+
+export interface SnapshotData {
+  term: TermInfo;
+  attendance: SubjectAttendance[];
+  timetable: TimetableDay[];
+  internals?: InternalRow[];
+  results?: ResultRow[];
+  cgpaRows?: CgpaRow[];
+  cgpa?: number | null;
+  sgpaTerms?: SgpaTerm[];
+  syncedAt?: string;
+}
+
 interface PlannerState {
   subjects: SubjectAttendance[];
   timetable: TimetableDay[];
+  internals: InternalRow[];
+  results: ResultRow[];
+  cgpaRows: CgpaRow[];
+  cgpa: number | null;
+  sgpaTerms: SgpaTerm[];
   log: AttendanceLog;
   trends: Record<string, number[]>;
   term: TermInfo | null;
@@ -48,7 +73,7 @@ interface PlannerContextValue extends PlannerState {
   ready: boolean;
   hasData: boolean;
   loadSample: () => void;
-  loadErpData: (subjects: SubjectAttendance[], timetable: TimetableDay[], term: TermInfo) => void;
+  loadSnapshot: (snap: SnapshotData) => void;
   clearData: () => void;
   updateSettings: (patch: Partial<Settings>) => void;
   setLogEntry: (dateISO: string, key: string, present: boolean | null) => void;
@@ -59,6 +84,11 @@ const STORAGE_KEY = 'skipwise:v1';
 const DEFAULT_STATE: PlannerState = {
   subjects: [],
   timetable: [],
+  internals: [],
+  results: [],
+  cgpaRows: [],
+  cgpa: null,
+  sgpaTerms: [],
   log: {},
   trends: {},
   term: null,
@@ -120,6 +150,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ...s,
       subjects: SAMPLE_SUBJECTS,
       timetable: SAMPLE_TIMETABLE,
+      internals: [],
+      results: [],
+      cgpaRows: [],
+      cgpa: null,
+      sgpaTerms: [],
       log: seedSampleLog(),
       trends: SAMPLE_TRENDS,
       term: SAMPLE_TERM,
@@ -128,56 +163,63 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const loadErpData = useCallback(
-    (subjects: SubjectAttendance[], timetable: TimetableDay[], term: TermInfo) => {
-      // Backfill missing subject titles from the timetable.
-      const titles = new Map<string, string>();
-      for (const d of timetable) {
-        for (const p of d.periods) {
-          if (p.subjectCode && p.subjectTitle && !titles.has(p.subjectCode)) {
-            titles.set(p.subjectCode, p.subjectTitle);
-          }
+  const loadSnapshot = useCallback((snap: SnapshotData) => {
+    // Backfill missing subject titles from the timetable.
+    const titles = new Map<string, string>();
+    for (const d of snap.timetable) {
+      for (const p of d.periods) {
+        if (p.subjectCode && p.subjectTitle && !titles.has(p.subjectCode)) {
+          titles.set(p.subjectCode, p.subjectTitle);
         }
       }
-      const merged = subjects.map((s) => ({
-        ...s,
-        title: s.title || titles.get(s.code) || s.code,
-      }));
-      // Add timetable-only subjects as stubs so the grid still renders.
-      const known = new Set(merged.map((s) => s.code));
-      for (const [code, title] of titles) {
-        if (!known.has(code)) {
-          merged.push({
-            code,
-            title,
-            components: {
-              L: { conducted: 0, attended: 0 },
-              T: { conducted: 0, attended: 0 },
-              P: { conducted: 0, attended: 0 },
-              S: { conducted: 0, attended: 0 },
-            },
-          });
-        }
+    }
+    const merged = (snap.attendance ?? []).map((s) => ({
+      ...s,
+      title: s.title || titles.get(s.code) || s.code,
+    }));
+    // Add timetable-only subjects as stubs so the grid still renders.
+    const known = new Set(merged.map((s) => s.code));
+    for (const [code, title] of titles) {
+      if (!known.has(code)) {
+        merged.push({
+          code,
+          title,
+          components: {
+            L: { conducted: 0, attended: 0 },
+            T: { conducted: 0, attended: 0 },
+            P: { conducted: 0, attended: 0 },
+            S: { conducted: 0, attended: 0 },
+          },
+        });
       }
-      setState((s) => ({
-        ...s,
-        subjects: merged,
-        timetable,
-        log: {},
-        trends: {},
-        term,
-        sampleMode: false,
-        syncedAt: new Date().toISOString(),
-      }));
-    },
-    [],
-  );
+    }
+    setState((s) => ({
+      ...s,
+      subjects: merged,
+      timetable: snap.timetable ?? [],
+      internals: snap.internals ?? [],
+      results: snap.results ?? [],
+      cgpaRows: snap.cgpaRows ?? [],
+      cgpa: snap.cgpa ?? null,
+      sgpaTerms: snap.sgpaTerms ?? [],
+      log: {},
+      trends: {},
+      term: snap.term,
+      sampleMode: false,
+      syncedAt: snap.syncedAt ?? new Date().toISOString(),
+    }));
+  }, []);
 
   const clearData = useCallback(() => {
     setState((s) => ({
       ...s,
       subjects: [],
       timetable: [],
+      internals: [],
+      results: [],
+      cgpaRows: [],
+      cgpa: null,
+      sgpaTerms: [],
       log: {},
       trends: {},
       term: null,
@@ -208,12 +250,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ready,
       hasData: state.subjects.length > 0 || state.timetable.length > 0,
       loadSample,
-      loadErpData,
+      loadSnapshot,
       clearData,
       updateSettings,
       setLogEntry,
     }),
-    [state, ready, loadSample, loadErpData, clearData, updateSettings, setLogEntry],
+    [state, ready, loadSample, loadSnapshot, clearData, updateSettings, setLogEntry],
   );
 
   return <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>;

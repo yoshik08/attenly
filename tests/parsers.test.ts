@@ -10,6 +10,11 @@ import { dirname, join } from 'node:path';
 
 import { parseAttendance,
   parseTimetable,
+  parseInternals,
+  parseCgpa,
+  computeGpa,
+  parseResults,
+  parseBookletMarks,
   extractCsrf,
   extractCaptchaSrc,
   detectLoginForm,
@@ -131,4 +136,51 @@ test('parseTimetable handles the KL grid (Mon rows, numbered periods, CODE-X cel
   assert.equal(p3.subjectCode, '25CS2104E');
   assert.equal(p3.type, 'S');
   assert.equal(p3.period, 'P3');
+});
+
+test('parseInternals maps component columns from headers', () => {
+  const html = `<table><thead><tr><th>Sno</th><th>Course Code</th><th>Course Name</th><th>Mid-Term Examination (Descriptive)</th><th>Hackathon</th></tr></thead>
+  <tbody><tr><td>1</td><td>25SC2107E</td><td>MACHINE LEARNING</td><td>25.5</td><td>-</td></tr></tbody></table>`;
+  const rows = parseInternals(html);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].courseCode, '25SC2107E');
+  assert.equal(rows[0].components.length, 2);
+  assert.equal(rows[0].components[0].marks, '25.5');
+});
+
+test('parseCgpa positional fallback + computeGpa', () => {
+  const html = `<table><thead><tr><th>#</th><th>a</th><th>b</th><th>Course Code</th><th>Course Name</th><th>Grade</th><th>Grade Point</th><th>Credits</th><th>Status</th><th>Academic Year</th><th>Semester</th></tr></thead>
+  <tbody>
+  <tr><td>1</td><td>x</td><td>y</td><td>25SC2107E</td><td>MACHINE LEARNING</td><td>O</td><td>10</td><td>4</td><td>P</td><td>2026-2027</td><td>Odd Sem</td></tr>
+  <tr><td>2</td><td>x</td><td>y</td><td>25CS2104E</td><td>OPERATING SYSTEMS</td><td>A</td><td>9</td><td>4</td><td>P</td><td>2026-2027</td><td>Odd Sem</td></tr>
+  </tbody></table>`;
+  const rows = parseCgpa(html);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].grade, 'O');
+  assert.equal(rows[0].credits, 4);
+  const { cgpa, terms } = computeGpa(rows);
+  assert.equal(cgpa, 9.5);
+  assert.equal(terms.length, 1);
+  assert.equal(terms[0].sgpa, 9.5);
+});
+
+test('parseResults extracts booklet links', () => {
+  const html = `<table><thead><tr><th>#</th><th>Course Code</th><th>Course Name</th><th>Academic Year</th><th>Semester</th><th>Study Year</th><th>Type</th><th>Exam</th><th>Eval No</th><th>View Booklet</th></tr></thead>
+  <tbody><tr><td>1</td><td>25SC2107E</td><td>MACHINE LEARNING</td><td>2026-2027</td><td>Odd Sem</td><td>2</td><td>sem-in</td><td>Mid-Term Examination (Descriptive)</td><td>1</td>
+  <td><a href="/index.php?r=studentinfo%2Fstudentendexamresult%2Fqpwise&amp;id=123">Booklet</a></td></tr></tbody></table>`;
+  const rows = parseResults(html);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].courseCode, '25SC2107E');
+  assert.ok(rows[0].bookletUrl?.includes('qpwise'));
+});
+
+test('parseBookletMarks parses a generic marks table', () => {
+  const html = `<div class="modal-title">Student Mid-Term Examination (Descriptive) Qp Wise Marks</div>
+  <table><thead><tr><th>Sno</th><th>Coursecode</th><th>1 B</th><th>Total Marks</th></tr></thead>
+  <tbody><tr><td>1</td><td>25SC2107E</td><td>6.5</td><td>25.5</td></tr></tbody></table>`;
+  const m = parseBookletMarks(html);
+  assert.ok(m.title.includes('Qp Wise Marks'));
+  assert.deepEqual(m.headers, ['Sno', 'Coursecode', '1 B', 'Total Marks']);
+  assert.equal(m.rows.length, 1);
+  assert.equal(m.rows[0][2], '6.5');
 });

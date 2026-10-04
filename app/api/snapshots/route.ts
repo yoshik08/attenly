@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb, isMongoMisconfigured } from '@/lib/db/mongo';
 import { upsertUserCreds } from '@/lib/db/users';
+import { getLatestSnapshotForGoogle } from '@/lib/db/snapshots';
 import { sealSession } from '@/lib/erp/client';
 
 export const dynamic = 'force-dynamic';
@@ -170,14 +171,41 @@ export async function POST(req: Request) {
 }
 
 /**
- * GET /api/snapshots?universityId=&termKey=
- * Returns the latest snapshot for the student (optionally for one term).
- * Handy for reloading last-synced data and for demo resilience.
+ * GET /api/snapshots?universityId=&termKey=  — latest snapshot for a student
+ * GET /api/snapshots?mine=1                  — latest snapshot for the signed-in Google user
+ * Returns the latest snapshot (optionally for one term). Handy for reloading
+ * last-synced data and for demo resilience. Never includes `creds`.
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const universityId = (sp.get('universityId') ?? '').trim();
   const tk = (sp.get('termKey') ?? '').trim();
+  const mine = sp.get('mine') === '1';
+
+  if (mine) {
+    const gsession = await getServerSession(authOptions);
+    const googleId = (gsession?.user as { id?: string } | undefined)?.id;
+    if (!googleId) {
+      return Response.json({ error: 'Not signed in.', code: 'not_signed_in' }, { status: 401 });
+    }
+    try {
+      const snapshot = await getLatestSnapshotForGoogle(googleId);
+      if (!snapshot) {
+        return Response.json({ error: 'No snapshot found.', code: 'not_found' }, { status: 404 });
+      }
+      return Response.json({ snapshot });
+    } catch (e) {
+      if (isMongoMisconfigured(e)) {
+        return Response.json(
+          { error: 'MongoDB is not configured. Set MONGODB_URI to enable snapshots.', code: 'mongo_not_configured' },
+          { status: 503 },
+        );
+      }
+      console.error('[api/snapshots] GET mine failed:', e instanceof Error ? e.message : e);
+      return Response.json({ error: 'Could not load the snapshot.' }, { status: 502 });
+    }
+  }
+
   if (!universityId) {
     return Response.json({ error: 'universityId is required.' }, { status: 400 });
   }

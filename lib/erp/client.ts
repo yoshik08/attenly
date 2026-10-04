@@ -20,6 +20,9 @@ export const ERP_BASE = process.env.ERP_BASE ?? 'https://newerp.kluniversity.in'
 const LOGIN_PATH = '/index.php?r=site%2Flogin';
 const ATTENDANCE_PAGE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput';
 const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fcourselist';
+const INTERNALS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fgetstudentinternalmarks';
+const RESULTS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsemendresult';
+const CGPA_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsearchgetmycgpa';
 
 export type CookieJar = Record<string, string>;
 
@@ -367,6 +370,105 @@ export async function fetchTimetableHtml(
     throw e;
   }
   return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
+}
+
+function termFields(session: AuthedSession, term: { academicyear: string; semesterid: string; semester: string }) {
+  return {
+    _csrf: session.csrf,
+    'DynamicModel[academicyear]': term.academicyear,
+    'DynamicModel[semester]': term.semesterid,
+    'DynamicModel[semesterid]': term.semesterid,
+  };
+}
+
+export async function fetchInternalsHtml(
+  session: AuthedSession,
+  term: { academicyear: string; semesterid: string; semester: string },
+): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  return postXhr(session, INTERNALS_PATH, termFields(session, term));
+}
+
+export async function fetchResultsHtml(
+  session: AuthedSession,
+  term: { academicyear: string; semesterid: string; semester: string },
+): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  return postXhr(session, RESULTS_PATH, termFields(session, term));
+}
+
+export async function fetchCgpaHtml(
+  session: AuthedSession,
+): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  // The CGPA grid answers to GET (and tolerates POST); prefer GET.
+  const res = await erpFetch(CGPA_PATH, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
+}
+
+/**
+ * Fetch an arbitrary same-origin ERP page (e.g. a booklet popup URL scraped
+ * from the results grid). Refuses off-origin targets.
+ */
+export async function fetchErpPageHtml(
+  session: AuthedSession,
+  url: string,
+): Promise<{ html: string; jar: CookieJar }> {
+  const target = new URL(url, ERP_BASE);
+  if (target.origin !== new URL(ERP_BASE).origin) throw new Error('Refusing off-origin ERP fetch');
+  const path = target.pathname + target.search;
+  const res = await erpFetch(path, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar };
+}
+
+/**
+ * Fetch a binary payload (answer-script PDF) from the ERP with the session.
+ * Returns raw bytes + content type for proxying to the browser.
+ */
+export async function fetchErpBinary(
+  session: AuthedSession,
+  url: string,
+): Promise<{ bytes: Buffer; contentType: string }> {
+  const target = new URL(url, ERP_BASE);
+  if (target.origin !== new URL(ERP_BASE).origin) throw new Error('Refusing off-origin ERP fetch');
+  const path = target.pathname + target.search;
+  let current = new URL(path, ERP_BASE).toString();
+  let jar = { ...session.jar };
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    Referer: new URL(LOGIN_PATH, ERP_BASE).toString(),
+  };
+  for (let i = 0; i < 8; i++) {
+    if (Object.keys(jar).length > 0) headers['Cookie'] = jarHeader(jar);
+    const res = await fetch(current, { method: 'GET', headers, redirect: 'manual' });
+    jar = mergeCookies(jar, res.headers);
+    if ([301, 302, 303].includes(res.status)) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new Error('ERP redirect without location');
+      const next = new URL(loc, current);
+      if (next.origin !== new URL(ERP_BASE).origin) throw new Error('ERP redirected off-origin; refusing');
+      current = next.toString();
+      await res.arrayBuffer().catch(() => null);
+      continue;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ct = res.headers.get('content-type') ?? '';
+    if (/text\/html/i.test(ct) && detectLoginForm(buf.toString('utf8', 0, Math.min(buf.length, 20000)))) {
+      const e = new Error('ERP session expired') as Error & { expired?: boolean };
+      e.expired = true;
+      throw e;
+    }
+    return { bytes: buf, contentType: ct || 'application/pdf' };
+  }
+  throw new Error('Too many redirects fetching the ERP file');
 }
 
 export function isSessionExpiredError(e: unknown): boolean {

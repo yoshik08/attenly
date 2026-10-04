@@ -55,7 +55,7 @@ export const COMPONENT_LABELS: Record<ComponentKey, string> = {
 export const COMPONENT_SHORT: Record<ComponentKey, string> = {
   L: 'Lec',
   T: 'Tut',
-  P: 'Lab',
+  P: 'Prac',
   S: 'Skill',
 };
 

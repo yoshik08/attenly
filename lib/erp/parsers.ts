@@ -13,6 +13,7 @@
  * Unit tests in tests/parsers.test.ts cover representative fixture HTML.
  */
 import * as cheerio from 'cheerio';
+import type { Element } from 'domhandler';
 import type { ComponentKey, ComponentMap, SubjectAttendance } from '../math';
 import { COMPONENT_ORDER } from '../math';
 
@@ -465,4 +466,308 @@ export function parseTermOptions(html: string): TermList {
   } catch {
     return { years: [], semesters: [] };
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Internals / CGPA / results / booklet parsers (studentendexamresult module)
+ * ------------------------------------------------------------------------- */
+
+export interface InternalComponent {
+  name: string;
+  marks: string;
+}
+
+export interface InternalRow {
+  courseCode: string;
+  courseTitle: string;
+  components: InternalComponent[];
+}
+
+function tableHeaders($: cheerio.CheerioAPI, table: cheerio.Cheerio<Element>): string[] {
+  const ths = table.find('thead th');
+  const src = ths.length ? ths : table.find('tr').first().find('th, td');
+  return src.toArray().map((h) => $(h).text().replace(/\s+/g, ' ').trim());
+}
+
+/** Pick the data table: the one with the most body rows. */
+function biggestTable($: cheerio.CheerioAPI): cheerio.Cheerio<Element> | null {
+  let best: cheerio.Cheerio<Element> | null = null;
+  let bestRows = 0;
+  $('table').each((_, t) => {
+    const rows = $(t).find('tbody tr').length || $(t).find('tr').length;
+    if (rows > bestRows) {
+      bestRows = rows;
+      best = $(t);
+    }
+  });
+  return best;
+}
+
+/**
+ * Parse the Course Internals grid: one row per course, one column per
+ * evaluation component (Mid-Term, Hackathon, MOOCs, …). Header-driven with a
+ * positional fallback (sno, year, sem, code, name, then components).
+ */
+export function parseInternals(html: string): InternalRow[] {
+  try {
+    const $ = cheerio.load(html);
+    const table = biggestTable($);
+    if (!table) return [];
+    const headers = tableHeaders($, table).map(norm);
+    let codeIdx = headers.findIndex((h) => h.includes('course code') || h === 'coursecode');
+    let nameIdx = headers.findIndex(
+      (h) => h.includes('course') && (h.includes('name') || h.includes('title') || h.includes('desc')),
+    );
+    if (codeIdx < 0) codeIdx = 3;
+    if (nameIdx < 0) nameIdx = 4;
+    // Component columns: everything after the identity columns that isn't
+    // itself an identity column (sno/year/semester/etc).
+    const skip = new Set([codeIdx, nameIdx]);
+    headers.forEach((h, i) => {
+      if (/^(s\.?no|#|sno)$/.test(h) || h.includes('academic') || (h.includes('semester') && !h.includes('mark')) || h.includes('study year') || h === 'type' || h.includes('remarks') || h.includes('uniid')) {
+        skip.add(i);
+      }
+    });
+    const compIdx = headers.map((_, i) => i).filter((i) => !skip.has(i) && headers[i]);
+    const out: InternalRow[] = [];
+    table.find('tbody tr').each((_, tr) => {
+      const tds = $(tr).find('td');
+      if (tds.length <= Math.max(codeIdx, nameIdx)) return;
+      const code = $(tds[codeIdx]).text().replace(/\s+/g, ' ').trim();
+      if (!code || !/[A-Z]{2,}\d/.test(code)) return;
+      const title = $(tds[nameIdx]).text().replace(/\s+/g, ' ').trim();
+      const components: InternalComponent[] = [];
+      for (const i of compIdx) {
+        if (i >= tds.length) continue;
+        const marks = $(tds[i]).text().replace(/\s+/g, ' ').trim();
+        components.push({ name: tableHeaders($, table)[i] || `Component ${i}`, marks });
+      }
+      out.push({ courseCode: code, courseTitle: title || code, components });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export interface CgpaRow {
+  courseCode: string;
+  courseName: string;
+  grade: string;
+  gradePoint: number;
+  credits: number;
+  status: string;
+  academicYear: string;
+  semester: string;
+}
+
+/**
+ * Parse the My CGPA grid: every course the student has taken, with grade,
+ * grade point, credits, academic year and semester. Follows the header-keyword
+ * mapping first, then the positional layout observed in the wild
+ * (code=3, name=4, grade=5, point=6, credits=7, status=8, year=9, sem=10).
+ */
+export function parseCgpa(html: string): CgpaRow[] {
+  try {
+    const $ = cheerio.load(html);
+    const table = biggestTable($);
+    if (!table) return [];
+    const headers = tableHeaders($, table).map(norm);
+    const find = (...words: string[]) => headers.findIndex((h) => words.every((w) => h.includes(w)));
+    let codeIdx = find('course', 'code');
+    let nameIdx = find('course', 'name');
+    if (nameIdx < 0) nameIdx = find('course', 'title');
+    let gradeIdx = headers.findIndex((h) => h === 'grade' || h.endsWith(' grade'));
+    let pointIdx = find('grade', 'point');
+    let credIdx = find('credit');
+    let statusIdx = headers.findIndex((h) => h.includes('status') || h.includes('result') || h === 'p');
+    let yearIdx = find('academic', 'year');
+    let semIdx = headers.findIndex((h) => h.includes('semester') && !h.includes('year'));
+    if (codeIdx < 0 || gradeIdx < 0) {
+      // Positional fallback (matches the observed ERP layout).
+      codeIdx = 3; nameIdx = 4; gradeIdx = 5; pointIdx = 6; credIdx = 7; statusIdx = 8; yearIdx = 9; semIdx = 10;
+    }
+    const out: CgpaRow[] = [];
+    table.find('tbody tr').each((_, tr) => {
+      const tds = $(tr).find('td');
+      if (tds.length <= Math.max(codeIdx, gradeIdx)) return;
+      const cell = (i: number) => (i >= 0 && i < tds.length ? $(tds[i]).text().replace(/\s+/g, ' ').trim() : '');
+      const code = cell(codeIdx);
+      if (!code || !/[A-Z]{2,}\d/.test(code)) return;
+      out.push({
+        courseCode: code,
+        courseName: cell(nameIdx) || code,
+        grade: cell(gradeIdx),
+        gradePoint: parseFloat(cell(pointIdx)) || 0,
+        credits: parseFloat(cell(credIdx)) || 0,
+        status: cell(statusIdx),
+        academicYear: cell(yearIdx),
+        semester: cell(semIdx),
+      });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export interface ResultRow {
+  courseCode: string;
+  courseName: string;
+  academicYear: string;
+  semester: string;
+  studyYear: string;
+  type: string;
+  exam: string;
+  evalNo: string;
+  /** URL (ERP-relative or absolute) backing the "Booklet" popup, if found. */
+  bookletUrl: string | null;
+  /** Direct ERP download URL for the full answer-script PDF, if found. */
+  pdfUrl: string | null;
+}
+
+function cleanErpUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  let u = raw.replace(/&amp;/g, '&').trim();
+  if (!u || u === '#' || u.toLowerCase().startsWith('javascript:void')) return null;
+  const m = u.match(/['"](\/index\.php[^'"]+)['"]/);
+  if (m) u = m[1].replace(/&amp;/g, '&');
+  if (/^javascript:/i.test(u)) return null;
+  if (u.startsWith('index.php')) u = '/' + u;
+  return u || null;
+}
+
+/**
+ * Parse the Sem End Course Result grid (the "View Booklets" table). Extracts
+ * the Booklet cell's link target so the popup and the PDF download can be
+ * fetched later through the ERP proxy.
+ */
+export function parseResults(html: string): ResultRow[] {
+  try {
+    const $ = cheerio.load(html);
+    const table = biggestTable($);
+    if (!table) return [];
+    const headers = tableHeaders($, table).map(norm);
+    const find = (...words: string[]) => headers.findIndex((h) => words.every((w) => h.includes(w)));
+    let codeIdx = find('course', 'code');
+    let nameIdx = headers.findIndex((h) => h.includes('course') && h.includes('name'));
+    let yearIdx = find('academic', 'year');
+    let semIdx = headers.findIndex((h) => h === 'semester' || (h.includes('semester') && !h.includes('year')));
+    let studyIdx = find('study', 'year');
+    let typeIdx = headers.findIndex((h) => h === 'type');
+    let examIdx = find('exam');
+    let evalIdx = headers.findIndex((h) => h.includes('eval'));
+    let bookletIdx = headers.findIndex((h) => h.includes('booklet'));
+    if (codeIdx < 0) { codeIdx = 1; nameIdx = 2; yearIdx = 3; semIdx = 4; studyIdx = 5; typeIdx = 6; examIdx = 7; evalIdx = 8; bookletIdx = 9; }
+    const out: ResultRow[] = [];
+    table.find('tbody tr').each((_, tr) => {
+      const tds = $(tr).find('td');
+      if (tds.length <= codeIdx) return;
+      const cell = (i: number) => (i >= 0 && i < tds.length ? $(tds[i]).text().replace(/\s+/g, ' ').trim() : '');
+      const code = cell(codeIdx);
+      if (!code || !/[A-Z]{2,}\d/.test(code)) return;
+      let bookletUrl: string | null = null;
+      let pdfUrl: string | null = null;
+      const linkCell = bookletIdx >= 0 && bookletIdx < tds.length ? $(tds[bookletIdx]) : null;
+      const scope = linkCell ?? $(tr);
+      scope.find('a').each((_, a) => {
+        const href = cleanErpUrl($(a).attr('href'));
+        const onclick = $(a).attr('onclick') ?? '';
+        const fromOnclick = cleanErpUrl(onclick);
+        for (const u of [href, fromOnclick]) {
+          if (!u) continue;
+          if (/download_script_frompath/i.test(u)) pdfUrl = pdfUrl ?? u;
+          else bookletUrl = bookletUrl ?? u;
+        }
+      });
+      // onclick directly on the cell (no anchor)
+      if (!bookletUrl && !pdfUrl && linkCell) {
+        const u = cleanErpUrl(linkCell.attr('onclick'));
+        if (u) {
+          if (/download_script_frompath/i.test(u)) pdfUrl = u;
+          else bookletUrl = u;
+        }
+      }
+      out.push({
+        courseCode: code,
+        courseName: cell(nameIdx) || code,
+        academicYear: cell(yearIdx),
+        semester: cell(semIdx),
+        studyYear: cell(studyIdx),
+        type: cell(typeIdx),
+        exam: cell(examIdx),
+        evalNo: cell(evalIdx),
+        bookletUrl,
+        pdfUrl,
+      });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export interface BookletMarks {
+  title: string;
+  headers: string[];
+  rows: string[][];
+}
+
+/**
+ * Parse the QP-wise marks popup generically: first meaningful table becomes
+ * headers + rows; the title is scraped from the modal/popup heading.
+ */
+export function parseBookletMarks(html: string): BookletMarks {
+  try {
+    const $ = cheerio.load(html);
+    const title =
+      $('.modal-title').first().text().replace(/\s+/g, ' ').trim() ||
+      $('h1, h2, h3, h4').first().text().replace(/\s+/g, ' ').trim() ||
+      'QP-wise marks';
+    const table = biggestTable($);
+    if (!table) return { title, headers: [], rows: [] };
+    const headers = tableHeaders($, table);
+    const rows: string[][] = [];
+    table.find('tbody tr').each((_, tr) => {
+      const cells = $(tr)
+        .find('td')
+        .toArray()
+        .map((td) => $(td).text().replace(/\s+/g, ' ').trim());
+      if (cells.some((c) => c)) rows.push(cells);
+    });
+    return { title, headers, rows };
+  } catch {
+    return { title: 'QP-wise marks', headers: [], rows: [] };
+  }
+}
+
+/** Compute CGPA/SGPA from parsed CGPA rows. */
+export function computeGpa(rows: CgpaRow[]): {
+  cgpa: number | null;
+  terms: { key: string; academicYear: string; semester: string; sgpa: number | null; credits: number }[];
+} {
+  let totP = 0;
+  let totC = 0;
+  const byTerm = new Map<string, { academicYear: string; semester: string; p: number; c: number }>();
+  for (const r of rows) {
+    if (r.credits <= 0 || r.gradePoint <= 0) continue;
+    if (/fail|f\b/i.test(r.status) && r.grade.toUpperCase() === 'F') continue;
+    totP += r.gradePoint * r.credits;
+    totC += r.credits;
+    const key = `${r.academicYear}::${r.semester}`;
+    const t = byTerm.get(key) ?? { academicYear: r.academicYear, semester: r.semester, p: 0, c: 0 };
+    t.p += r.gradePoint * r.credits;
+    t.c += r.credits;
+    byTerm.set(key, t);
+  }
+  const terms = [...byTerm.entries()].map(([key, t]) => ({
+    key,
+    academicYear: t.academicYear,
+    semester: t.semester,
+    sgpa: t.c > 0 ? Math.round((t.p / t.c) * 100) / 100 : null,
+    credits: t.c,
+  }));
+  // Sort terms chronologically by academic year start.
+  terms.sort((a, b) => a.academicYear.localeCompare(b.academicYear) || a.semester.localeCompare(b.semester));
+  return { cgpa: totC > 0 ? Math.round((totP / totC) * 100) / 100 : null, terms };
 }
