@@ -2,9 +2,9 @@
 
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-system, system-ui, sans-serif;
-  --font-display: var(--font-sora), var(--font-inter), ui-sans-system, sans-serif;
-  --color-ink: #060714;
-  --color-mint: #a3e635;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --color-ink: #0a0a0b;
+  --color-amber-glow: #e9a13b;
 }
 
 html {
@@ -12,8 +12,8 @@ html {
 }
 
 body {
-  background: #060714;
-  color: #f1f5f9;
+  background: #0a0a0b;
+  color: #f5f4f0;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -24,34 +24,8 @@ body {
 }
 
 ::selection {
-  background: rgba(163, 230, 53, 0.35);
+  background: rgba(233, 161, 59, 0.35);
   color: #fff;
-}
-
-/* ---------- aurora blobs ---------- */
-
-.aurora-blob {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.5;
-  animation: aurora-drift 26s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-@keyframes aurora-drift {
-  0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
-  }
-  33% {
-    transform: translate(6vw, 4vh) scale(1.12) rotate(8deg);
-  }
-  66% {
-    transform: translate(-4vw, 7vh) scale(0.94) rotate(-6deg);
-  }
-  100% {
-    transform: translate(5vw, -3vh) scale(1.06) rotate(4deg);
-  }
 }
 
 /* film grain */
@@ -103,8 +77,8 @@ body {
   border-radius: 9999px;
 }
 
-.text-glow-mint {
-  text-shadow: 0 0 28px rgba(163, 230, 53, 0.45);
+.text-glow-amber {
+  text-shadow: 0 0 28px rgba(233, 161, 59, 0.45);
 }
 
 /* decoding dots */

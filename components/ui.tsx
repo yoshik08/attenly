@@ -5,17 +5,34 @@ import { motion, animate, useInView } from 'framer-motion';
 import { cn } from './cn';
 
 /* ------------------------------------------------------------------ */
-/* Aurora background — fixed, drifting gradient blobs                  */
+/* Design language — matches the landing:                              */
+/*   bg #0A0A0B · card #141416 / #232327 · ink #F5F4F0 · muted #A1A1A8   */
+/*   accent amber #E9A13B · safe #34D399 · danger #F87171                */
+/*   headlines in Fraunces (font-display)                               */
+/* ------------------------------------------------------------------ */
+
+export const AMBER = '#E9A13B';
+export const INK = 'text-[#F5F4F0]';
+export const MUTED = 'text-[#A1A1A8]';
+export const CARD = 'bg-[#141416] border border-[#232327]';
+
+/* ------------------------------------------------------------------ */
+/* Background — flat ink with a faint amber dot grid up top            */
 /* ------------------------------------------------------------------ */
 
 export function AuroraBackground() {
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#060714]">
-      <div className="aurora-blob left-[-12%] top-[-18%] h-[55vmax] w-[55vmax] bg-[#8b5cf6]" />
-      <div className="aurora-blob right-[-15%] top-[22%] h-[48vmax] w-[48vmax] bg-[#22d3ee] [animation-delay:-8s]" />
-      <div className="aurora-blob bottom-[-22%] left-[28%] h-[52vmax] w-[52vmax] bg-[#a3e635] [animation-delay:-16s]" />
-      <div className="absolute inset-0 bg-[#060714]/72" />
-      <div className="grain absolute inset-0 opacity-[0.05]" />
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#0A0A0B]">
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(233,161,59,0.10) 1px, transparent 1px)',
+          backgroundSize: '30px 30px',
+          maskImage: 'radial-gradient(ellipse 90% 55% at 50% 0%, black 10%, transparent 70%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 90% 55% at 50% 0%, black 10%, transparent 70%)',
+        }}
+      />
+      <div className="grain absolute inset-0 opacity-[0.04]" />
     </div>
   );
 }
@@ -39,14 +56,11 @@ export function GlassPanel({
 }) {
   return (
     <motion.section
-      initial={{ opacity: 0, y: 22, filter: 'blur(6px)' }}
-      whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      initial={{ opacity: 0, y: 22 }}
+      whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={cn(
-        'rounded-3xl border border-white/10 bg-white/[0.045] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.6)] backdrop-blur-xl',
-        className,
-      )}
+      className={cn('rounded-3xl border border-[#232327] bg-[#141416]', className)}
     >
       {children}
     </motion.section>
@@ -69,12 +83,12 @@ export function SectionHeader({
         whileInView={{ opacity: 1, x: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.4 }}
-        className="mb-1 text-[11px] font-bold tracking-[0.22em] text-lime-300/90 uppercase"
+        className="mb-1 text-[11px] font-bold tracking-[0.22em] text-[#A1A1A8] uppercase"
       >
         {kicker}
       </motion.p>
-      <h2 className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">{title}</h2>
-      {sub && <p className="mt-1 max-w-xl text-sm text-slate-400">{sub}</p>}
+      <h2 className="font-display text-2xl font-black tracking-tight text-[#F5F4F0] sm:text-3xl">{title}</h2>
+      {sub && <p className="mt-1 max-w-xl text-sm text-[#A1A1A8]">{sub}</p>}
     </div>
   );
 }
@@ -86,12 +100,12 @@ export function SectionHeader({
 type ChipTone = 'mint' | 'violet' | 'cyan' | 'amber' | 'rose' | 'ghost';
 
 const chipClasses: Record<ChipTone, string> = {
-  mint: 'border-lime-300/30 bg-lime-300/10 text-lime-200',
-  violet: 'border-violet-400/30 bg-violet-400/10 text-violet-200',
-  cyan: 'border-cyan-300/30 bg-cyan-300/10 text-cyan-200',
-  amber: 'border-amber-300/30 bg-amber-300/10 text-amber-200',
-  rose: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
-  ghost: 'border-white/10 bg-white/[0.04] text-slate-300',
+  mint: 'border-[#34D399]/30 bg-[#34D399]/10 text-[#34D399]',
+  violet: 'border-[#E9A13B]/30 bg-[#E9A13B]/10 text-[#E9A13B]',
+  cyan: 'border-[#7DD3FC]/30 bg-[#7DD3FC]/10 text-[#7DD3FC]',
+  amber: 'border-[#E9A13B]/30 bg-[#E9A13B]/10 text-[#E9A13B]',
+  rose: 'border-[#F87171]/30 bg-[#F87171]/10 text-[#F87171]',
+  ghost: 'border-white/10 bg-white/[0.04] text-[#A1A1A8]',
 };
 
 export function Chip({
@@ -139,19 +153,19 @@ export function FuelGauge({
   barClassName?: string;
 }) {
   const v = pct == null ? 0 : Math.min(100, Math.max(0, pct));
-  const gradient =
+  const fill =
     pct == null
-      ? 'bg-slate-600'
+      ? 'bg-[#3A3A3F]'
       : pct >= thresholds.safeAt
-        ? 'from-lime-300 to-emerald-400'
+        ? 'bg-[#34D399]'
         : pct >= thresholds.condonationFrom
-          ? 'from-amber-300 to-orange-400'
-          : 'from-rose-400 to-red-500';
+          ? 'bg-[#E9A13B]'
+          : 'bg-[#F87171]';
   return (
     <div className={cn('relative', className)}>
       <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
         <motion.div
-          className={cn('fuel-fill h-full rounded-full bg-gradient-to-r', gradient, barClassName)}
+          className={cn('fuel-fill h-full rounded-full', fill, barClassName)}
           initial={{ width: 0 }}
           whileInView={{ width: `${v}%` }}
           viewport={{ once: true }}
@@ -218,14 +232,14 @@ type BtnVariant = 'primary' | 'violet' | 'ghost' | 'danger' | 'glass';
 
 const btnVariants: Record<BtnVariant, string> = {
   primary:
-    'bg-lime-300 text-[#0b0f0a] font-bold shadow-[0_0_24px_-6px_rgba(163,230,53,0.7)] hover:bg-lime-200 disabled:bg-lime-300/40',
+    'bg-[#E9A13B] text-[#0A0A0B] font-bold hover:brightness-110 disabled:opacity-40',
   violet:
-    'bg-violet-500/90 text-white font-semibold shadow-[0_0_24px_-8px_rgba(139,92,246,0.8)] hover:bg-violet-400 disabled:bg-violet-500/40',
-  ghost: 'text-slate-300 hover:bg-white/[0.06] hover:text-white font-medium',
+    'border border-[#E9A13B]/40 text-[#E9A13B] hover:bg-[#E9A13B]/10 font-semibold disabled:opacity-40',
+  ghost: 'text-[#A1A1A8] hover:bg-white/[0.06] hover:text-white font-medium',
   danger:
-    'border border-rose-400/40 text-rose-200 hover:bg-rose-400/10 font-semibold disabled:opacity-50',
+    'border border-[#F87171]/40 text-[#F87171] hover:bg-[#F87171]/10 font-semibold disabled:opacity-50',
   glass:
-    'border border-white/12 bg-white/[0.05] text-slate-100 hover:bg-white/[0.09] font-semibold backdrop-blur',
+    'border border-white/10 bg-white/[0.04] text-[#F5F4F0] hover:bg-white/[0.08] font-semibold',
 };
 
 export function Button({
@@ -263,7 +277,7 @@ export function Button({
 }
 
 export const inputClass =
-  'w-full rounded-2xl border border-white/12 bg-white/[0.05] px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 backdrop-blur focus:border-lime-300/60 focus:outline-none focus:ring-2 focus:ring-lime-300/20 transition';
+  'w-full rounded-2xl border border-[#2A2A2E] bg-white/[0.04] px-3.5 py-2.5 text-sm text-[#F5F4F0] placeholder:text-[#6B6B72] focus:border-[#E9A13B]/60 focus:outline-none focus:ring-2 focus:ring-[#E9A13B]/20 transition';
 
 export function Field({
   label,
@@ -278,11 +292,11 @@ export function Field({
 }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-semibold text-slate-200">
+      <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-semibold text-[#F5F4F0]">
         {label}
       </label>
       {children}
-      {hint && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-[#A1A1A8]">{hint}</p>}
     </div>
   );
 }
@@ -307,7 +321,7 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={cn(
         'relative h-7 w-12 shrink-0 rounded-full border transition-colors duration-300',
-        checked ? 'border-lime-300/50 bg-lime-300/25' : 'border-white/15 bg-white/[0.06]',
+        checked ? 'border-[#E9A13B]/50 bg-[#E9A13B]/25' : 'border-white/15 bg-white/[0.06]',
       )}
     >
       <motion.span
@@ -315,7 +329,7 @@ export function Toggle({
         transition={{ type: 'spring', stiffness: 600, damping: 32 }}
         className={cn(
           'absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full shadow',
-          checked ? 'right-1 bg-lime-300' : 'left-1 bg-slate-400',
+          checked ? 'right-1 bg-[#E9A13B]' : 'left-1 bg-[#A1A1A8]',
         )}
       />
     </button>
@@ -338,7 +352,7 @@ export function Stepper({
   small?: boolean;
 }) {
   const btn = cn(
-    'flex items-center justify-center rounded-xl border border-white/12 bg-white/[0.05] font-black text-slate-200 transition hover:bg-white/[0.12] active:scale-90 disabled:opacity-30',
+    'flex items-center justify-center rounded-xl border border-[#2A2A2E] bg-white/[0.05] font-black text-[#F5F4F0] transition hover:bg-white/[0.12] active:scale-90 disabled:opacity-30',
     small ? 'h-7 w-7 text-sm' : 'h-8 w-8 text-base',
   );
   return (
@@ -348,7 +362,7 @@ export function Stepper({
         key={value}
         initial={{ scale: 1.25, opacity: 0.6 }}
         animate={{ scale: 1, opacity: 1 }}
-        className={cn('min-w-7 text-center font-display font-bold text-white tabular-nums', small ? 'text-sm' : 'text-base')}
+        className={cn('min-w-7 text-center font-display font-bold text-[#F5F4F0] tabular-nums', small ? 'text-sm' : 'text-base')}
       >
         {value}
       </motion.span>
@@ -373,12 +387,12 @@ export function EmptyState({
       <motion.div
         animate={{ y: [0, -8, 0] }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-violet-500/30 to-cyan-400/20 text-3xl"
+        className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#E9A13B]/15 text-3xl text-[#E9A13B]"
       >
-        ✦
+        ◑
       </motion.div>
-      <p className="font-display text-xl font-bold text-white">{title}</p>
-      <p className="max-w-md text-sm text-slate-400">{hint}</p>
+      <p className="font-display text-xl font-black text-[#F5F4F0]">{title}</p>
+      <p className="max-w-md text-sm text-[#A1A1A8]">{hint}</p>
       {action && <div className="flex flex-wrap justify-center gap-2">{action}</div>}
     </GlassPanel>
   );
@@ -397,7 +411,7 @@ export function Sparkline({
   height?: number;
   className?: string;
 }) {
-  if (values.length < 2) return <span className="text-xs text-slate-600">—</span>;
+  if (values.length < 2) return <span className="text-xs text-[#6B6B72]">—</span>;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
@@ -405,7 +419,7 @@ export function Sparkline({
     .map((v, i) => `${(i / (values.length - 1)) * width},${height - ((v - min) / span) * (height - 4) - 2}`)
     .join(' ');
   const up = values[values.length - 1] >= values[0];
-  const stroke = up ? '#a3e635' : '#fb7185';
+  const stroke = up ? '#34D399' : '#F87171';
   const id = `sg-${Math.abs(pts.length % 997)}`;
   return (
     <svg width={width} height={height} className={className} aria-hidden>

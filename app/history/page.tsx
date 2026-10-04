@@ -30,9 +30,9 @@ import {
 } from '@/lib/history';
 
 const STATUS_STYLE: Record<DayStatus, string> = {
-  all: 'bg-lime-300/15 text-lime-200 font-bold border border-lime-300/25',
-  some: 'bg-amber-300/15 text-amber-200 font-bold border border-amber-300/25',
-  none: 'bg-rose-400/15 text-rose-200 font-bold border border-rose-400/25',
+  all: 'bg-[#34D399]/15 text-[#34D399] font-bold border border-[#34D399]/25',
+  some: 'bg-[#E9A13B]/15 text-[#E9A13B] font-bold border border-[#E9A13B]/25',
+  none: 'bg-[#F87171]/15 text-[#F87171] font-bold border border-[#F87171]/25',
   unscheduled: 'text-slate-700',
   future: 'text-slate-600',
   unmarked: 'text-slate-500 border border-dashed border-white/15',
@@ -182,9 +182,9 @@ export default function HistoryPage() {
     <Container className="py-8">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="mb-1 text-[11px] font-bold tracking-[0.22em] text-lime-300/90 uppercase">Rewind</p>
+          <p className="mb-1 text-[11px] font-bold tracking-[0.22em] text-[#A1A1A8] uppercase">Rewind</p>
           <h1 className="font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            Your track record<span className="text-lime-300">.</span>
+            Your track record<span style={{ color: "#E9A13B" }}>.</span>
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -240,7 +240,7 @@ export default function HistoryPage() {
                   className={cn(
                     'flex aspect-square flex-col items-center justify-center rounded-2xl text-sm transition',
                     STATUS_STYLE[s.status],
-                    isSel && 'ring-2 ring-lime-300',
+                    isSel && 'ring-2 ring-[#E9A13B]',
                   )}
                 >
                   {c.n}
@@ -249,9 +249,9 @@ export default function HistoryPage() {
             })}
           </div>
           <div className="mt-4 flex flex-wrap gap-3 text-[11px] text-slate-500">
-            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-lime-300" />Full house</span>
-            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-300" />Patchy</span>
-            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-400" />Ghosted</span>
+            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-[#34D399]" />Full house</span>
+            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-[#E9A13B]" />Patchy</span>
+            <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-[#F87171]" />Ghosted</span>
             <span><span className="mr-1 inline-block h-2 w-2 rounded-full border border-dashed border-slate-500" />Unlogged</span>
           </div>
         </GlassPanel>
@@ -281,13 +281,13 @@ export default function HistoryPage() {
                             whileTap={{ scale: 0.85 }}
                             title="Showed up"
                             onClick={() => setLogEntry(selectedDay, key, v === true ? null : true)}
-                            className={cn('rounded-xl px-2.5 py-1.5 text-xs font-black', v === true ? 'bg-lime-300 text-[#0b0f0a]' : 'bg-white/[0.06] text-slate-400')}
+                            className={cn('rounded-xl px-2.5 py-1.5 text-xs font-black', v === true ? 'bg-[#34D399] text-[#0A0A0B]' : 'bg-white/[0.06] text-[#A1A1A8]')}
                           >✓</motion.button>
                           <motion.button
                             whileTap={{ scale: 0.85 }}
                             title="Bunked"
                             onClick={() => setLogEntry(selectedDay, key, v === false ? null : false)}
-                            className={cn('rounded-xl px-2.5 py-1.5 text-xs font-black', v === false ? 'bg-rose-400 text-[#0b0f0a]' : 'bg-white/[0.06] text-slate-400')}
+                            className={cn('rounded-xl px-2.5 py-1.5 text-xs font-black', v === false ? 'bg-[#F87171] text-[#0A0A0B]' : 'bg-white/[0.06] text-[#A1A1A8]')}
                           >✗</motion.button>
                         </div>
                       </div>

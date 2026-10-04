@@ -359,9 +359,9 @@ type TermChoice = { id: string; label: string };
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="absolute inset-0 flex items-center justify-center bg-[#060714]/80 backdrop-blur-sm"
+                        className="absolute inset-0 flex items-center justify-center bg-[#0A0A0B]/80 backdrop-blur-sm"
                       >
-                        <span className="decoding text-xs font-bold text-cyan-200">Decoding</span>
+                        <span className="decoding text-xs font-bold text-[#E9A13B]">Decoding</span>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -370,12 +370,12 @@ type TermChoice = { id: string; label: string };
                   <button
                     type="button"
                     onClick={loadCaptcha}
-                    className="text-xs font-bold text-cyan-300 hover:text-cyan-200 hover:underline"
+                    className="text-xs font-bold text-[#E9A13B] hover:brightness-110 hover:underline"
                   >
                     ↻ New captcha
                   </button>
                   {solverAvailable && (
-                    <Chip tone="cyan" className="text-[10px]">Auto-decode on</Chip>
+                    <Chip tone="amber" className="text-[10px]">Auto-decode on</Chip>
                   )}
                 </div>
               </div>
@@ -438,7 +438,7 @@ type TermChoice = { id: string; label: string };
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-300/15 text-xl"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#34D399]/15 text-xl text-[#34D399]"
             >
               ✓
             </motion.span>
@@ -458,7 +458,7 @@ type TermChoice = { id: string; label: string };
                   onChange={(e) => setYearIdx(Number(e.target.value))}
                 >
                   {termYears.map((y, i) => (
-                    <option key={y.id} value={i} className="bg-[#0a0c1d]">
+                    <option key={y.id} value={i} className="bg-[#141416]">
                       {y.label}
                     </option>
                   ))}
@@ -472,7 +472,7 @@ type TermChoice = { id: string; label: string };
                   onChange={(e) => setSemIdx(Number(e.target.value))}
                 >
                   {termSemesters.map((s, i) => (
-                    <option key={s.id} value={i} className="bg-[#0a0c1d]">
+                    <option key={s.id} value={i} className="bg-[#141416]">
                       {s.label}
                     </option>
                   ))}
@@ -515,7 +515,7 @@ type TermChoice = { id: string; label: string };
             <motion.p
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-4 text-sm font-bold text-lime-200"
+              className="mt-4 text-sm font-bold text-[#34D399]"
             >
               ✓ Snapshot stashed in MongoDB · {savedAt}
             </motion.p>
