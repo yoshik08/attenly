@@ -4,11 +4,12 @@ import './globals.css';
 import { DataProvider } from '@/components/data-context';
 import { Nav, Footer } from '@/components/nav';
 import { AuroraBackground } from '@/components/ui';
+import { AuthProvider } from '@/components/auth-provider';
 
 export const metadata: Metadata = {
-  title: 'Skipwise — read the room before you bunk it',
+  title: 'Attenly — the KLU ERP, rebuilt for students',
   description:
-    'Unofficial KL University attendance companion. Link your ERP, watch your bunk balance, and play the what-if lab before you skip.',
+    'A student-built front for the KL University ERP. Live attendance intelligence, timetable, and smart bunk planning in one clean interface.',
 };
 
 const sora = Sora({ subsets: ['latin'], variable: '--font-sora', display: 'swap' });
@@ -20,11 +21,13 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="en" suppressHydrationWarning>
       <body className={`${sora.variable} ${inter.variable} ${fraunces.variable} flex min-h-screen flex-col`}>
         <AuroraBackground />
-        <DataProvider>
-          <Nav />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </DataProvider>
+        <AuthProvider>
+          <DataProvider>
+            <Nav />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </DataProvider>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner, type TermInfo } from '@/components/data-context';
 import { Button, Chip, Container, Field, GlassPanel, SectionHeader, inputClass } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useSession, signIn, signOut } from 'next-auth/react';
 
 
 function defaultTerm(): TermInfo {
@@ -47,8 +48,8 @@ type TermChoice = { id: string; label: string };
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const [lastId, setLastId] = useState<string | null>(null);
   const [relinking, setRelinking] = useState(false);
+  const [me, setMe] = useState<{ signedIn: boolean; googleConfigured: boolean; linked: boolean; universityId: string | null; name: string | null } | null>(null);
   const passwordRef = useRef('');
   const decodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,23 +61,16 @@ type TermChoice = { id: string; label: string };
       setTermSemesters(opts.semesters ?? []);
       setYearIdx(0);
       setSemIdx(0);
-      setLastId(id);
-      try {
-        localStorage.setItem('skipwise:lastId', id);
-      } catch {
-        /* storage unavailable — non-fatal */
-      }
+      void id;
     },
     [],
   );
 
   useEffect(() => {
-    try {
-      const id = localStorage.getItem('skipwise:lastId');
-      if (id) setLastId(id);
-    } catch {
-      /* storage unavailable — non-fatal */
-    }
+    fetch(api('/api/me'))
+      .then((r) => r.json())
+      .then((d) => setMe(d))
+      .catch(() => setMe({ signedIn: false, googleConfigured: false, linked: false, universityId: null, name: null }));
   }, []);
 
   const loadManualCaptcha = useCallback(async () => {
@@ -173,19 +167,15 @@ type TermChoice = { id: string; label: string };
   }
 
   async function handleRelink() {
-    if (!lastId || relinking) return;
+    if (relinking || !me?.linked || !me.universityId) return;
     setRelinking(true);
     setError(null);
     try {
-      const res = await fetch(api('/api/erp/relink'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ universityId: lastId }),
-      });
+      const res = await fetch(api('/api/erp/relink'), { method: 'POST' });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Re-link failed.');
-      setUniversityId(lastId);
-      applyLoginSuccess(data, lastId);
+      setUniversityId(me.universityId);
+      applyLoginSuccess(data, me.universityId);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Re-link failed.');
     } finally {
@@ -299,15 +289,34 @@ type TermChoice = { id: string; label: string };
 
       {!loggedIn ? (
         <GlassPanel className="p-6 sm:p-8">
-          {lastId && (
+          {me && !me.signedIn && me.googleConfigured && (
             <div className="mb-5">
-              <Button variant="glass" onClick={handleRelink} disabled={relinking} className="w-full">
-                {relinking ? 'Re-linking…' : `Re-link as ${lastId} →`}
+              <Button onClick={() => signIn('google', { callbackUrl: `${window.location.pathname}` })} className="w-full">
+                Continue with Google
               </Button>
               <p className="mt-2 text-center text-xs text-slate-500">
-                Saved login, sealed in MongoDB — no typing needed.
+                Your ERP login gets remembered against your Google account.
               </p>
             </div>
+          )}
+          {me?.signedIn && me.linked && me.universityId && (
+            <div className="mb-5">
+              <Button variant="glass" onClick={handleRelink} disabled={relinking} className="w-full">
+                {relinking ? 'Re-linking…' : `Welcome back${me.name ? `, ${me.name.split(' ')[0]}` : ''} — re-link as ${me.universityId} →`}
+              </Button>
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Saved login, sealed in MongoDB — no typing needed.{' '}
+                <button type="button" onClick={() => signOut()} className="underline hover:text-slate-300">
+                  Sign out of Google
+                </button>
+              </p>
+            </div>
+          )}
+          {me?.signedIn && !me.linked && (
+            <p className="mb-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm text-slate-300">
+              Signed in as <span className="font-semibold text-white">{me.name ?? 'you'}</span> — link your
+              ERP below and it will be remembered for next time.
+            </p>
           )}
           <form onSubmit={handleLogin} className="flex flex-col gap-5">
             <Field label="University ID" htmlFor="uid">

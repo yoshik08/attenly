@@ -35,7 +35,7 @@ function LandingNav() {
           >
             ◑
           </span>
-          <span className={cn(SERIF, 'text-xl font-bold tracking-tight', INK)}>Skipwise</span>
+          <span className={cn(SERIF, 'text-xl font-bold tracking-tight', INK)}>Attenly</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm font-medium text-[#6E6459] sm:flex">
           <a href="#how" className="transition hover:text-[#191410]">
@@ -130,7 +130,7 @@ function LandingHero() {
           <motion.div {...rise}>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#E9E1D1] bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-[#6E6459]">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ACCENT }} />
-              Live sync · KL University ERP
+              A modern front for the KL ERP
             </span>
           </motion.div>
           <motion.h1
@@ -138,11 +138,11 @@ function LandingHero() {
             transition={{ ...rise.transition, delay: 0.08 }}
             className={cn(SERIF, 'mt-6 text-5xl font-black leading-[1.02] tracking-tight sm:text-7xl', INK)}
           >
-            Every bunk,
+            The ERP,
             <br />
             <span className="relative inline-block">
               <span className="relative z-10" style={{ color: ACCENT }}>
-                calculated.
+                rebuilt.
               </span>
               <svg
                 aria-hidden
@@ -166,9 +166,7 @@ function LandingHero() {
             transition={{ ...rise.transition, delay: 0.16 }}
             className={cn('mt-6 max-w-xl text-lg leading-relaxed', MUTED)}
           >
-            Skipwise plugs into your KL ERP and reads your real attendance — every subject, every
-            period. It tells you exactly how many classes you can skip before detention comes
-            knocking.
+            Attenly plugs into the KL University ERP and gives you what the official portal won't — live attendance intelligence, your timetable, and a plan for every bunk. One login, one clean interface.
           </motion.p>
           <motion.div
             {...rise}
@@ -180,7 +178,7 @@ function LandingHero() {
               className="rounded-full px-7 py-3.5 text-base font-bold text-white shadow-[0_14px_30px_-10px_rgba(228,87,46,0.8)] transition hover:brightness-110"
               style={{ backgroundColor: ACCENT }}
             >
-              Link your ERP →
+              Launch Attenly →
             </Link>
             <button
               onClick={loadSample}
@@ -252,10 +250,10 @@ function Features() {
         {...rise}
         className={cn(SERIF, 'text-4xl font-black tracking-tight sm:text-6xl', INK)}
       >
-        Your attendance, <span style={{ color: ACCENT }}>decoded.</span>
+        One login. <span style={{ color: ACCENT }}>The whole campus.</span>
       </motion.h2>
       <motion.p {...rise} transition={{ ...rise.transition, delay: 0.1 }} className={cn('mt-4 max-w-2xl text-lg', MUTED)}>
-        The ERP shows you raw counts. Skipwise turns them into decisions.
+        The official portal shows you raw counts. Attenly turns them into decisions.
       </motion.p>
       <div className="mt-12 grid gap-5 md:grid-cols-3">
         {cards.map((c, i) => (
@@ -316,9 +314,9 @@ function CtaBand() {
           }}
         />
         <h2 className={cn(SERIF, 'relative text-4xl font-black tracking-tight text-[#FAF5EC] sm:text-6xl')}>
-          Stop guessing.
+          The portal KLU
           <br />
-          Start skipping <span style={{ color: ACCENT }}>smart.</span>
+          should have <span style={{ color: ACCENT }}>given you.</span>
         </h2>
         <Link
           href="/sync"
@@ -336,8 +334,8 @@ function LandingFooter() {
   return (
     <footer className="border-t border-[#E9E1D1]">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-8 text-xs sm:flex-row">
-        <p className={cn('font-bold', INK)}>Skipwise — read the room before you bunk it.</p>
-        <p className={MUTED}>A student-built side project. Not affiliated with KL University.</p>
+        <p className={cn('font-bold', INK)}>Attenly — the KLU ERP, rebuilt for students.</p>
+        <p className={MUTED}>A student-built ERP front. Not affiliated with KL University.</p>
       </div>
     </footer>
   );

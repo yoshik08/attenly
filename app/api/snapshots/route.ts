@@ -1,4 +1,7 @@
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getDb, isMongoMisconfigured } from '@/lib/db/mongo';
+import { upsertUserCreds } from '@/lib/db/users';
 import { sealSession } from '@/lib/erp/client';
 
 export const dynamic = 'force-dynamic';
@@ -140,6 +143,27 @@ export async function POST(req: Request) {
     }
     console.error('[api/snapshots] POST failed:', e instanceof Error ? e.message : e);
     return Response.json({ error: 'Could not save the snapshot.' }, { status: 502 });
+  }
+
+  // If the user is signed in with Google and we sealed fresh credentials,
+  // remember them against the Google account for one-tap re-link.
+  if (creds) {
+    try {
+      const gsession = await getServerSession(authOptions);
+      const googleId = (gsession?.user as { id?: string } | undefined)?.id;
+      if (googleId) {
+        await upsertUserCreds({
+          googleId,
+          email: gsession?.user?.email ?? '',
+          name: gsession?.user?.name ?? undefined,
+          universityId,
+          creds,
+        });
+      }
+    } catch (e) {
+      // Non-fatal: the snapshot itself is saved; the Google link just didn't stick.
+      console.warn('[api/snapshots] user link skipped:', e instanceof Error ? e.message : e);
+    }
   }
 
   return Response.json({ ok: true, savedAt: doc.syncedAt.toISOString() });

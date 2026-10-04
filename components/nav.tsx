@@ -37,7 +37,7 @@ export function Nav() {
                 ✦
               </motion.span>
               <span className="font-display text-lg font-bold tracking-tight text-white">
-                Skipwise
+                Attenly
               </span>
             </Link>
             <nav className="hidden items-center gap-1 sm:flex">
@@ -96,7 +96,7 @@ export function Footer() {
     <footer className="mt-20 pb-8">
       <Container>
         <p className="text-center text-xs leading-relaxed text-slate-500">
-          Skipwise is a student-built side project, not affiliated with KL University.
+          Attenly is a student-built ERP front, not affiliated with KL University.
           <br />
           Numbers are estimates — always double-check against the official ERP before making the call.
         </p>
