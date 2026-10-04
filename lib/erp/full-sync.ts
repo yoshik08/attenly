@@ -68,6 +68,10 @@ export async function interactiveLogin(
     csrf: res.csrf ?? pre.csrf,
     exp: Date.now() + 7 * 24 * 3600 * 1000,
     term: firstTerm(res.termOptions),
+    termOptions: res.termOptions ? {
+      years: res.termOptions.years ?? [],
+      semesters: res.termOptions.semesters ?? [],
+    } : undefined,
   };
 }
 
@@ -83,6 +87,10 @@ export async function autoLogin(universityId: string, password: string): Promise
         csrf: res.csrf ?? preSession.csrf,
         exp: Date.now() + 7 * 24 * 3600 * 1000,
         term: firstTerm(res.termOptions),
+        termOptions: res.termOptions ? {
+          years: res.termOptions.years ?? [],
+          semesters: res.termOptions.semesters ?? [],
+        } : undefined,
       };
     }
     lastError = res.error ?? 'Login failed.';

@@ -107,7 +107,10 @@ export default function CgpaPage() {
       {data.terms.length === 0 ? (
         <GlassPanel className="p-8 text-center">
           <p className="text-sm text-[#A1A1A8]">
-            No grades on the ERP yet. They&apos;ll appear here after the next backend sync.
+            No grades on the ERP yet. If you&apos;ve finished a semester, hit{' '}
+            <span className="font-bold text-[#E9A13B]">⟳ hard sync</span> up top — it
+            re-pulls everything from the ERP. Otherwise they&apos;ll appear here
+            after the next backend sync.
           </p>
         </GlassPanel>
       ) : (

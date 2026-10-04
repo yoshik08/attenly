@@ -32,14 +32,6 @@ function sortedPeriods(timetable: TimetableDay[]): string[] {
     .map(([k]) => k);
 }
 
-function shortName(title: string, code: string): string {
-  const t = (title || '').trim();
-  if (!t || t === code) return code;
-  // The ERP's first cell line is already a short name ("ML", "DSA-3") — keep it tight.
-  const first = t.split('|')[0].trim();
-  return first.length > 14 ? first.slice(0, 14) + '…' : first;
-}
-
 function cellTone(type: ComponentKey | null): string {
   if (type === 'S') return 'border-[#E9A13B]/30 bg-[#E9A13B]/[0.09]';
   if (type === 'P') return 'border-[#34D399]/30 bg-[#34D399]/[0.09]';
@@ -53,13 +45,27 @@ function pillTone(type: ComponentKey | null): string {
 }
 
 export default function TimetablePage() {
-  const { ready, hasData, timetable } = usePlanner();
+  const { ready, hasData, timetable, subjects } = usePlanner();
 
   const periods = useMemo(() => sortedPeriods(timetable), [timetable]);
   const days = useMemo(
     () => DAY_ORDER.map((d) => timetable.find((t) => t.day === d)).filter(Boolean) as TimetableDay[],
     [timetable],
   );
+
+  // Course code -> full course name, from the attendance data.
+  const nameFor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of subjects) {
+      if (s.code && s.title && s.title !== s.code) m.set(s.code, s.title);
+    }
+    return (code: string, fallbackTitle: string) => {
+      const t = m.get(code) || fallbackTitle;
+      if (!t || t === code) return code;
+      const first = t.split('|')[0].trim();
+      return first.length > 26 ? first.slice(0, 26) + '…' : first;
+    };
+  }, [subjects]);
 
   if (!ready) {
     return (
@@ -108,7 +114,7 @@ export default function TimetablePage() {
                   <td className="border-b border-white/[0.05] p-3 align-top text-sm font-black uppercase tracking-wide text-[#F5F4F0]">
                     {d.day}
                   </td>
-                  {periods.map((per, i) => {
+                  {periods.map((per) => {
                     const p = d.periods.find((x) => x.period === per);
                     if (!p) {
                       return <td key={per} className="border-b border-white/[0.05] p-1.5" />;
@@ -116,11 +122,8 @@ export default function TimetablePage() {
                     return (
                       <td key={per} className="border-b border-white/[0.05] p-1.5 align-top">
                         <div className={cn('rounded-xl border px-2 py-1.5', cellTone(p.type))}>
-                          <p className="truncate text-[10px] font-semibold text-[#6B6B72]">
-                            {i + 1} {shortName(p.subjectTitle, p.subjectCode)}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs font-black text-[#F5F4F0]">
-                            {p.subjectCode}
+                          <p className="truncate text-xs font-black text-[#F5F4F0]">
+                            {nameFor(p.subjectCode, p.subjectTitle)}
                           </p>
                           <span
                             className={cn(

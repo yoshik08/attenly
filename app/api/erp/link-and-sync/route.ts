@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const googleId = (gsession?.user as { id?: string } | undefined)?.id;
 
     try {
-      await saveFullSnapshot({ universityId, googleId, term: data.term, data, password });
+      await saveFullSnapshot({ universityId, googleId, term: data.term, data, password, termOptions: authed.termOptions });
       if (googleId) {
         await upsertUserCreds({
           googleId,

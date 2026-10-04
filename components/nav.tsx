@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { usePlanner } from './data-context';
 import { cn } from './cn';
 import { Container, Chip } from './ui';
+import { api } from '@/lib/api';
 
 const LINKS = [
   { href: '/', label: 'Attendance' },
@@ -13,6 +15,75 @@ const LINKS = [
   { href: '/calculator', label: 'Calculator' },
   { href: '/internals', label: 'Internals' },
 ];
+
+function TermSelects() {
+  const { termOptions, term } = usePlanner();
+
+  if (!termOptions || termOptions.years.length === 0) return null;
+
+  const selectClass =
+    'rounded-full border border-[#232327] bg-white/[0.03] px-2.5 py-1.5 text-xs font-semibold text-[#A1A1A8] transition hover:border-white/20 hover:text-white focus:outline-none';
+  return (
+    <>
+      <select
+        aria-label="Academic year"
+        defaultValue={term?.academicyear || termOptions.years[0]?.id || ''}
+        className={selectClass}
+      >
+        {termOptions.years.map((y) => (
+          <option key={y.id} value={y.id} className="bg-[#141416]">
+            {y.label}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Semester"
+        defaultValue={term?.semesterid || termOptions.semesters[0]?.id || ''}
+        className={selectClass}
+      >
+        {termOptions.semesters.map((s) => (
+          <option key={s.id} value={s.id} className="bg-[#141416]">
+            {s.label}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+function HardSyncButton() {
+  const { loadSnapshot } = usePlanner();
+  const [syncing, setSyncing] = useState(false);
+
+  const hardSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(api('/api/erp/hard-sync'), { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.data) {
+        loadSnapshot(data.data);
+      } else {
+        alert(data.error || 'Sync failed. Try again.');
+      }
+    } catch {
+      alert('Sync failed. Check your connection and try again.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={hardSync}
+      disabled={syncing}
+      title="Hard sync — re-login to the ERP and pull everything fresh"
+      className="rounded-full border border-[#E9A13B]/40 px-3 py-1.5 text-xs font-bold text-[#E9A13B] transition hover:bg-[#E9A13B]/10 disabled:cursor-wait disabled:opacity-50"
+    >
+      {syncing ? '⟳ syncing…' : '⟳ hard sync'}
+    </button>
+  );
+}
 
 export function Nav() {
   const pathname = usePathname();
@@ -50,10 +121,14 @@ export function Nav() {
         <div className="flex items-center gap-2">
           {ready && hasData && sampleMode && <Chip tone="amber">Sample orbit</Chip>}
           {ready && hasData && !sampleMode && (
-            <Chip tone="mint">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#34D399]" />
-              Live link
-            </Chip>
+            <>
+              <TermSelects />
+              <Chip tone="mint">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#34D399]" />
+                Live link
+              </Chip>
+              <HardSyncButton />
+            </>
           )}
           <Link
             href="/settings"

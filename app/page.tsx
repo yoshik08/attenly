@@ -112,7 +112,7 @@ function CourseCard({ subj, index }: { subj: SubjectAttendance; index: number })
                   </p>
                   {planActive && (
                     <div className="flex items-center gap-2">
-                      <span className="font-display text-xl font-black" style={{ color: AMBER }}>
+                      <span className="font-display text-4xl font-black tabular-nums" style={{ color: AMBER }}>
                         → {fmtPct(projected)}
                       </span>
                       <button
@@ -155,7 +155,7 @@ function CourseCard({ subj, index }: { subj: SubjectAttendance; index: number })
 }
 
 export default function AttendancePage() {
-  const { ready, hasData, subjects, settings, term, syncedAt, loadSnapshot } = usePlanner();
+  const { ready, hasData, subjects, settings, syncedAt, loadSnapshot } = usePlanner();
   const { status } = useSession();
   const [waited, setWaited] = useState(false);
 
@@ -207,16 +207,12 @@ export default function AttendancePage() {
     <Container className="py-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#A1A1A8]">
-            [ Attendance ]
-          </p>
           <h1 className="font-display text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
             Attendance
           </h1>
-          {term && (
+          {syncedAt && (
             <p className={cn('mt-2 text-sm', MUTED)}>
-              {term.academicyear} · {term.semester}
-              {syncedAt && <> · synced {new Date(syncedAt).toLocaleString()}</>}
+              synced {new Date(syncedAt).toLocaleString()}
             </p>
           )}
         </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePlanner } from '@/components/data-context';
-import { Button, Container, Field, GlassPanel, inputClass } from '@/components/ui';
+import { Container, Field, GlassPanel, inputClass } from '@/components/ui';
 import { COMPONENT_ORDER, COMPONENT_LABELS } from '@/lib/math';
 import { cn } from '@/components/cn';
 
@@ -28,23 +28,22 @@ function SimpleCalc() {
   const [total, setTotal] = useState('');
   const [attended, setAttended] = useState('');
   const [name, setName] = useState('');
-  const [result, setResult] = useState<number | null>(null);
 
-  const calc = () => {
+  // Live percentage — recomputed on every keystroke, no button needed.
+  const result = (() => {
     const t = parseFloat(total);
     const a = parseFloat(attended);
-    if (!(t > 0) || !(a >= 0) || a > t) {
-      setResult(null);
-      return;
-    }
-    const pct = Math.round((a / t) * 10000) / 100;
-    setResult(pct);
-    if (name.trim()) {
-      const drafts = loadDrafts();
-      drafts.unshift({ name: name.trim(), kind: 'simple', result: `${pct}%`, at: new Date().toISOString() });
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts.slice(0, 20)));
-      window.dispatchEvent(new Event('attenly:drafts'));
-    }
+    if (!(t > 0) || !(a >= 0) || a > t) return null;
+    return Math.round((a / t) * 10000) / 100;
+  })();
+
+  const saveDraft = () => {
+    if (result === null || !name.trim()) return;
+    const drafts = loadDrafts();
+    drafts.unshift({ name: name.trim(), kind: 'simple', result: `${result}%`, at: new Date().toISOString() });
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts.slice(0, 20)));
+    window.dispatchEvent(new Event('attenly:drafts'));
+    setName('');
   };
 
   return (
@@ -59,12 +58,6 @@ function SimpleCalc() {
           <input id="calc-att" className={inputClass} inputMode="decimal" value={attended} onChange={(e) => setAttended(e.target.value)} placeholder="Enter classes attended" />
         </Field>
       </div>
-      <div className="mt-4">
-        <Field label="Subject Name" htmlFor="calc-name" hint="Optional - to save as draft">
-          <input id="calc-name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter subject name to save as draft" />
-        </Field>
-      </div>
-      <Button onClick={calc} className="mt-5 w-full py-3">Calculate</Button>
       <AnimatePresence>
         {result !== null && (
           <motion.p
@@ -77,6 +70,20 @@ function SimpleCalc() {
           </motion.p>
         )}
       </AnimatePresence>
+      <div className="mt-4 flex gap-2">
+        <div className="flex-1">
+          <Field label="Subject Name" htmlFor="calc-name" hint="Optional - to save as draft">
+            <input id="calc-name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter subject name to save as draft" />
+          </Field>
+        </div>
+        <button
+          onClick={saveDraft}
+          disabled={result === null || !name.trim()}
+          className="mt-6 shrink-0 rounded-xl border border-[#E9A13B]/40 px-4 text-sm font-bold text-[#E9A13B] transition disabled:cursor-not-allowed disabled:opacity-30 hover:bg-[#E9A13B]/10"
+        >
+          Save draft
+        </button>
+      </div>
     </GlassPanel>
   );
 }
@@ -86,33 +93,29 @@ function ComponentCalc() {
   const { weights } = settings;
   const [vals, setVals] = useState<Record<string, string>>({ L: '', T: '', P: '', S: '' });
   const [name, setName] = useState('');
-  const [result, setResult] = useState<number | null>(null);
 
-  const calc = () => {
+  // Live weighted percentage — recomputed on every keystroke.
+  const result = (() => {
     let attW = 0;
     let condW = 0;
     for (const k of COMPONENT_ORDER) {
       const v = parseFloat(vals[k]);
-      if (Number.isNaN(v) || v < 0 || v > 100) {
-        setResult(null);
-        return;
-      }
+      if (Number.isNaN(v) || v < 0 || v > 100) return null;
       const w = weights[k] ?? 0;
       attW += (v / 100) * w;
       condW += w;
     }
-    if (condW <= 0) {
-      setResult(null);
-      return;
-    }
-    const pct = Math.round((attW / condW) * 10000) / 100;
-    setResult(pct);
-    if (name.trim()) {
-      const drafts = loadDrafts();
-      drafts.unshift({ name: name.trim(), kind: 'components', result: `${pct}%`, at: new Date().toISOString() });
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts.slice(0, 20)));
-      window.dispatchEvent(new Event('attenly:drafts'));
-    }
+    if (condW <= 0) return null;
+    return Math.round((attW / condW) * 10000) / 100;
+  })();
+
+  const saveDraft = () => {
+    if (result === null || !name.trim()) return;
+    const drafts = loadDrafts();
+    drafts.unshift({ name: name.trim(), kind: 'components', result: `${result}%`, at: new Date().toISOString() });
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts.slice(0, 20)));
+    window.dispatchEvent(new Event('attenly:drafts'));
+    setName('');
   };
 
   return (
@@ -133,12 +136,6 @@ function ComponentCalc() {
           </Field>
         ))}
       </div>
-      <div className="mt-4">
-        <Field label="Subject Name" htmlFor="calc-cname" hint="Optional - to save as draft">
-          <input id="calc-cname" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter subject name to save as draft" />
-        </Field>
-      </div>
-      <Button onClick={calc} className="mt-5 w-full py-3">Calculate</Button>
       <AnimatePresence>
         {result !== null && (
           <motion.p
@@ -151,6 +148,20 @@ function ComponentCalc() {
           </motion.p>
         )}
       </AnimatePresence>
+      <div className="mt-4 flex gap-2">
+        <div className="flex-1">
+          <Field label="Subject Name" htmlFor="calc-cname" hint="Optional - to save as draft">
+            <input id="calc-cname" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter subject name to save as draft" />
+          </Field>
+        </div>
+        <button
+          onClick={saveDraft}
+          disabled={result === null || !name.trim()}
+          className="mt-6 shrink-0 rounded-xl border border-[#E9A13B]/40 px-4 text-sm font-bold text-[#E9A13B] transition disabled:cursor-not-allowed disabled:opacity-30 hover:bg-[#E9A13B]/10"
+        >
+          Save draft
+        </button>
+      </div>
     </GlassPanel>
   );
 }

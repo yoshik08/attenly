@@ -312,6 +312,7 @@ export interface AuthedSession {
   csrf: string;
   exp: number;
   term?: { academicyear: string; semesterid: string; semester: string };
+  termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
 }
 
 function xhrHeaders(extra?: Record<string, string>): Record<string, string> {

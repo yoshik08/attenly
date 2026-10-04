@@ -19,6 +19,7 @@ export interface SnapshotDoc {
   cgpaRows: unknown[];
   cgpa: number | null;
   sgpaTerms: unknown[];
+  termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
   creds?: string;
 }
 
@@ -33,6 +34,7 @@ export async function saveFullSnapshot(input: {
   term: { academicyear: string; semesterid: string; semester: string };
   data: FullSyncData;
   password?: string;
+  termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
 }): Promise<{ savedAt: string }> {
   let creds: string | undefined;
   if (input.password) {
@@ -51,6 +53,7 @@ export async function saveFullSnapshot(input: {
     cgpaRows: input.data.cgpaRows,
     cgpa: input.data.cgpa,
     sgpaTerms: input.data.sgpaTerms,
+    ...(input.termOptions ? { termOptions: input.termOptions } : {}),
     ...(creds ? { creds } : {}),
   };
   const db = await getDb();

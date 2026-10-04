@@ -50,6 +50,7 @@ export interface SnapshotData {
   cgpaRows?: CgpaRow[];
   cgpa?: number | null;
   sgpaTerms?: SgpaTerm[];
+  termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
   syncedAt?: string;
 }
 
@@ -61,6 +62,7 @@ interface PlannerState {
   cgpaRows: CgpaRow[];
   cgpa: number | null;
   sgpaTerms: SgpaTerm[];
+  termOptions: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] } | null;
   log: AttendanceLog;
   trends: Record<string, number[]>;
   term: TermInfo | null;
@@ -89,6 +91,7 @@ const DEFAULT_STATE: PlannerState = {
   cgpaRows: [],
   cgpa: null,
   sgpaTerms: [],
+  termOptions: null,
   log: {},
   trends: {},
   term: null,
@@ -155,6 +158,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       cgpaRows: [],
       cgpa: null,
       sgpaTerms: [],
+      termOptions: null,
       log: seedSampleLog(),
       trends: SAMPLE_TRENDS,
       term: SAMPLE_TERM,
@@ -202,6 +206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       cgpaRows: snap.cgpaRows ?? [],
       cgpa: snap.cgpa ?? null,
       sgpaTerms: snap.sgpaTerms ?? [],
+      termOptions: snap.termOptions ?? null,
       log: {},
       trends: {},
       term: snap.term,
@@ -220,6 +225,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       cgpaRows: [],
       cgpa: null,
       sgpaTerms: [],
+      termOptions: null,
       log: {},
       trends: {},
       term: null,
