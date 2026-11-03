@@ -118,16 +118,29 @@ async function detectTerm(
   const candidates = session.termOptions ? termCandidates(session.termOptions) : [];
   if (candidates.length === 0) return { term: session.term ?? fallbackTerm(), attendance: null };
   let probeError: unknown = null;
+  // One log line per sync: which terms were tried and what each returned (term ids, counts, no personal data).
+  const tried: string[] = [];
+  const report = (chosen: string) =>
+    console.info(
+      `[full-sync] term ${chosen}; tried ${tried.join(', ')}; options years=${session.termOptions?.years.map((y) => `${y.id}:${y.label}`).join('|')} sems=${session.termOptions?.semesters.map((s) => `${s.id}:${s.label}`).join('|')}`,
+    );
   for (const term of candidates) {
+    const name = `${term.semester} ${term.yearLabel ?? term.academicyear} (${term.academicyear}:${term.semesterid})`;
     try {
       const { html } = await fetchAttendanceHtml(session, term);
       const rows = parseAttendance(html);
-      if (rows.length > 0) return { term, attendance: rows };
+      tried.push(`${name}=${rows.length} rows`);
+      if (rows.length > 0) {
+        report(name);
+        return { term, attendance: rows };
+      }
     } catch (e) {
       if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
+      tried.push(`${name}=${e instanceof Error ? e.message : 'error'}`);
       probeError = e;
     }
   }
+  report('none with attendance');
   if (probeError) {
     const why = probeError instanceof Error ? probeError.message : String(probeError);
     throw coded(`The ERP's attendance pages failed (${why}).`, 'erp_unreachable');
