@@ -124,8 +124,13 @@ function Timetable() {
       <section className="page-in py-8">
         <h1 className="title-l">Timetable</h1>
         <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{term}</p>
-        <p className="mt-8 text-[15px] font-semibold">The ERP has no timetable for this term yet.</p>
-        <p className="mt-1 text-[13px] text-dropout-text">It shows up here after the next sync once your department publishes it.</p>
+        <p className="mt-8 text-[15px] font-semibold">The ERP has no timetable for this semester.</p>
+        <p className="mt-1 text-[13px] text-dropout-text">
+          It shows up here after the next sync once your department publishes it.{' '}
+          <Link href="/settings#semester" className="underline decoration-seam-strong hover:text-mark">
+            Look at another semester
+          </Link>
+        </p>
       </section>
     );
   }
@@ -135,7 +140,12 @@ function Timetable() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="title-l">Timetable</h1>
-          <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{term}</p>
+          <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">
+            {term}{' '}
+            <Link href="/settings#semester" className="ml-1 rounded font-medium text-dropout-text underline decoration-seam-strong hover:text-mark">
+              Change
+            </Link>
+          </p>
         </div>
       </div>
 

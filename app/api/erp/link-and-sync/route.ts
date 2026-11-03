@@ -1,7 +1,8 @@
 import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { interactiveLogin, pullAll, ErpRateLimited, isSessionExpiredError } from '@/lib/erp/full-sync';
 import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot } from '@/lib/db/snapshots';
-import { linkAccount } from '@/lib/db/users';
+import { findAccount, getUser, linkAccount } from '@/lib/db/users';
+import { termFromIds } from '@/lib/terms';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -60,7 +61,10 @@ export async function POST(req: Request) {
 
   // 2. Pull and save, then remember the account.
   try {
-    const data = await pullAll(session);
+    // Re-entering a password keeps the term chosen in Settings.
+    const existing = await getUser(me.googleId);
+    const chosen = existing ? findAccount(existing, universityId)?.term : null;
+    const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined);
     if (data.failed.length === 5) {
       return fail(502, 'erp_unreachable', 'The ERP accepted the login but returned no data. Try again in a moment.');
     }

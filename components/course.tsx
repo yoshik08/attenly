@@ -137,8 +137,14 @@ export function CourseRow({
           )}
         </div>
         <div className="shrink-0 text-right">
-          <Figure value={summary.pct} countUp={countUp} className="figure block text-[34px]" />
-          <p className={cn('mt-1 text-[13px] font-semibold', BAND_INK[summary.band])}>{bandLabel(summary.band)}</p>
+          {summary.pct == null ? (
+            <p className="pt-1 text-[13px] text-dropout-quiet">No classes yet</p>
+          ) : (
+            <>
+              <Figure value={summary.pct} countUp={countUp} className="figure block text-[34px]" />
+              <p className={cn('mt-1 text-[13px] font-semibold', BAND_INK[summary.band])}>{bandLabel(summary.band)}</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -183,6 +189,7 @@ export function CourseRow({
         ) : (
           <span />
         )}
+        {summary.pct != null && (
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -196,6 +203,7 @@ export function CourseRow({
             <CaretDown size={14} aria-hidden />
           </span>
         </button>
+        )}
       </div>
 
       <div className="t-acc" data-open={open}>

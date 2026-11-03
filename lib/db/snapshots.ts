@@ -2,6 +2,7 @@ import { getDb } from './mongo';
 import type { FullSyncData, SyncTerm } from '../erp/full-sync';
 import type { SubjectAttendance } from '../math';
 import type { CgpaRow, InternalRow, ResultRow, TimetableDay } from '../erp/parsers';
+import { termFromIds, type TermOptions } from '../terms';
 
 /**
  * One synced term for one ERP account. Older documents may still carry a
@@ -37,6 +38,8 @@ export interface ClientSnapshot {
   cgpaRows: CgpaRow[];
   cgpa: number | null;
   sgpaTerms: FullSyncData['sgpaTerms'];
+  /** The ERP's academic years and semesters, for choosing another term. */
+  termOptions: TermOptions | null;
 }
 
 export function termKey(term: { academicyear?: string; semesterid?: string; semester?: string }): string {
@@ -46,9 +49,12 @@ export function termKey(term: { academicyear?: string; semesterid?: string; seme
 const snapshots = async () => (await getDb()).collection<SnapshotDoc>('snapshots');
 
 export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapshot {
+  const options = doc.termOptions ?? null;
+  // Older snapshots stored only the ERP's internal year id ("30"); add its label.
+  const term = doc.term.yearLabel || !options ? doc.term : { ...termFromIds(doc.term, options), semester: doc.term.semester || termFromIds(doc.term, options).semester };
   return {
     universityId: doc.universityId,
-    term: doc.term,
+    term,
     syncedAt: new Date(doc.syncedAt).toISOString(),
     attendance: doc.attendance ?? [],
     timetable: doc.timetable ?? [],
@@ -57,6 +63,7 @@ export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapsho
     cgpaRows: doc.cgpaRows ?? [],
     cgpa: doc.cgpa ?? null,
     sgpaTerms: doc.sgpaTerms ?? [],
+    termOptions: options,
   };
 }
 

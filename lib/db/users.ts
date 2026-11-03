@@ -30,6 +30,8 @@ export interface ErpAccount {
   needsPassword?: boolean;
   lastError?: SyncErrorInfo | null;
   lastSyncAt?: Date | null;
+  /** Year and semester (ERP ids) to sync; unset means the newest term with attendance. */
+  term?: { academicyear: string; semesterid: string } | null;
 }
 
 export interface UserDoc {
@@ -94,6 +96,7 @@ export interface AccountView {
   needsPassword: boolean;
   lastError: { code: string; message: string; at: string } | null;
   lastSyncAt: string | null;
+  term: { academicyear: string; semesterid: string } | null;
 }
 
 export function viewAccounts(user: UserDoc): AccountView[] {
@@ -104,6 +107,7 @@ export function viewAccounts(user: UserDoc): AccountView[] {
     needsPassword: Boolean(a.needsPassword) || (!a.erpPass && !a.creds),
     lastError: a.lastError ? { code: a.lastError.code, message: a.lastError.message, at: new Date(a.lastError.at).toISOString() } : null,
     lastSyncAt: a.lastSyncAt ? new Date(a.lastSyncAt).toISOString() : null,
+    term: a.term ? { academicyear: a.term.academicyear, semesterid: a.term.semesterid } : null,
   }));
 }
 
@@ -196,6 +200,7 @@ export async function linkAccount(input: {
         needsPassword: false,
         lastError: null,
         lastSyncAt: now,
+        ...(prev?.term ? { term: prev.term } : {}),
       };
       if (i >= 0) accounts[i] = account;
       else accounts.push(account);
@@ -224,6 +229,26 @@ export async function makePrimary(googleId: string, universityId: string): Promi
     if (i <= 0) return null;
     const [a] = accounts.splice(i, 1);
     return [a, ...accounts];
+  });
+  return found;
+}
+
+/** Choose the year and semester an account syncs (null: the newest term with attendance). */
+export async function setAccountTerm(
+  googleId: string,
+  universityId: string,
+  term: { academicyear: string; semesterid: string } | null,
+): Promise<boolean> {
+  let found = false;
+  await mutateAccounts(googleId, (accounts) => {
+    const i = accounts.findIndex((a) => a.universityId === universityId);
+    found = i >= 0;
+    if (i < 0) return null;
+    const a = { ...accounts[i] };
+    if (term) a.term = { academicyear: term.academicyear, semesterid: term.semesterid };
+    else delete a.term;
+    accounts[i] = a;
+    return accounts;
   });
   return found;
 }

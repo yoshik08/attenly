@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { countsOf, deltaOf, minutesOf, nextClassOf, plateFor, summarize, whenLabel } from '../lib/insights';
 import { DEFAULT_TCBR, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
-import { compareTerms, termText } from '../lib/terms';
+import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
 
 const settings = { thresholds: DEFAULT_THRESHOLDS, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
 const course = (code: string, title: string, c: Partial<Record<ComponentKey, [number, number]>>): SubjectAttendance => ({
@@ -98,4 +98,29 @@ test('terms read and sort naturally', () => {
     { academicYear: '2024-2025', semester: 'Even Sem' },
   ].sort(compareTerms);
   assert.deepEqual(list.map((t) => `${t.semester} ${t.academicYear}`), ['Even Sem 2024-2025', 'Odd Sem 2025-2026', 'Even Sem 2025-2026']);
+});
+
+test('automatic term: newest year first (ERP ids, any order), even before odd', () => {
+  const options = {
+    years: [
+      { id: '29', label: '2025-2026' },
+      { id: '30', label: '2026-2027' },
+    ],
+    semesters: [
+      { id: '1', label: 'Odd Sem' },
+      { id: '2', label: 'Even Sem' },
+    ],
+  };
+  assert.deepEqual(
+    termCandidates(options).map((c) => termText(c)),
+    ['Even Sem 2026-2027', 'Odd Sem 2026-2027', 'Even Sem 2025-2026', 'Odd Sem 2025-2026'],
+  );
+  assert.deepEqual(termCandidates(options)[0], { academicyear: '30', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' });
+  assert.equal(yearStart('2026-27'), 2026);
+  assert.equal(yearStart('30'), null);
+  // Without readable labels, higher ids are newer.
+  assert.deepEqual(yearsNewestFirst([{ id: '7', label: 'A' }, { id: '12', label: 'B' }]).map((y) => y.id), ['12', '7']);
+  assert.deepEqual(termFromIds({ academicyear: '29', semesterid: '1' }, options), { academicyear: '29', semesterid: '1', semester: 'Odd Sem', yearLabel: '2025-2026' });
+  assert.equal(termText({ academicyear: '30', semester: 'Odd Sem' }), 'Odd Sem 30');
+  assert.equal(termText({ academicyear: '30', semester: 'Even Sem', yearLabel: '2026-2027' }), 'Even Sem 2026-2027');
 });

@@ -34,12 +34,10 @@ import {
 import { fetchSolvedCaptcha } from './autocaptcha';
 import { coded } from './errors';
 import type { SubjectAttendance } from '../math';
+import { termCandidates, type Term } from '../terms';
 
-export interface SyncTerm {
-  academicyear: string;
-  semesterid: string;
-  semester: string;
-}
+/** The ERP's ids for the year and semester, plus their labels. */
+export type SyncTerm = Term;
 
 export type Dataset = 'attendance' | 'timetable' | 'internals' | 'results' | 'cgpa';
 
@@ -65,7 +63,6 @@ function sessionFrom(res: LoginResult, fallbackCsrf: string): AuthedSession {
     jar: res.jar ?? {},
     csrf: res.csrf ?? fallbackCsrf,
     exp: Date.now() + 7 * 24 * 3600 * 1000,
-    term: firstTerm(res.termOptions),
     termOptions: res.termOptions
       ? { years: res.termOptions.years ?? [], semesters: res.termOptions.semesters ?? [] }
       : undefined,
@@ -99,15 +96,6 @@ export async function autoLogin(universityId: string, password: string): Promise
   throw coded(`The captcha solver misread ${CAPTCHA_ATTEMPTS} captchas in a row.`, 'bad_captcha');
 }
 
-function firstTerm(
-  termOptions?: { years?: { id: string; label: string }[]; semesters?: { id: string; label: string }[] },
-): SyncTerm | undefined {
-  const y = termOptions?.years?.[0];
-  const s = termOptions?.semesters?.[0];
-  if (!y || !s) return undefined;
-  return { academicyear: y.id, semesterid: s.id, semester: s.label };
-}
-
 /** Academic years at KLU start in June/July. */
 function fallbackTerm(now = new Date()): SyncTerm {
   const y = now.getFullYear();
@@ -116,14 +104,55 @@ function fallbackTerm(now = new Date()): SyncTerm {
 }
 
 /**
- * Pull every dataset for the term. Each fetch is independent: one failing
- * (internals not published yet, a slow page) doesn't sink the others, and
- * the failures are reported so callers can keep previously synced values.
+ * The term to show when nobody picked one: the newest term (two most recent
+ * academic years, even before odd) that has attendance on the ERP. Its
+ * attendance comes back too, so it isn't fetched twice.
+ *
+ * An ERP error while probing never falls through to an emptier term: when no
+ * candidate had rows and one of them failed, the error is thrown so the last
+ * good data stays.
+ */
+async function detectTerm(
+  session: AuthedSession,
+): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null }> {
+  const candidates = session.termOptions ? termCandidates(session.termOptions) : [];
+  if (candidates.length === 0) return { term: session.term ?? fallbackTerm(), attendance: null };
+  let probeError: unknown = null;
+  for (const term of candidates) {
+    try {
+      const { html } = await fetchAttendanceHtml(session, term);
+      const rows = parseAttendance(html);
+      if (rows.length > 0) return { term, attendance: rows };
+    } catch (e) {
+      if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
+      probeError = e;
+    }
+  }
+  if (probeError) {
+    const why = probeError instanceof Error ? probeError.message : String(probeError);
+    throw coded(`The ERP's attendance pages failed (${why}).`, 'erp_unreachable');
+  }
+  return { term: candidates[0], attendance: [] };
+}
+
+/**
+ * Pull every dataset for the term (the chosen one, or the newest with
+ * attendance). Each fetch is independent: one failing (internals not
+ * published yet, a slow page) doesn't sink the others, and the failures are
+ * reported so callers can keep previously synced values.
  */
 export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): Promise<FullSyncData> {
-  const term: SyncTerm = termOverride ?? session.term ?? fallbackTerm();
+  let term: SyncTerm;
+  let detected: SubjectAttendance[] | null = null;
+  if (termOverride) {
+    term = termOverride;
+  } else {
+    const d = await detectTerm(session);
+    term = d.term;
+    detected = d.attendance;
+  }
 
-  let attendance: SubjectAttendance[] = [];
+  let attendance: SubjectAttendance[] = detected ?? [];
   let timetable: TimetableDay[] = [];
   let internals: InternalRow[] = [];
   let results: ResultRow[] = [];
@@ -131,9 +160,11 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
 
   const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa'];
   const settled = await Promise.allSettled([
-    fetchAttendanceHtml(session, term).then(({ html }) => {
-      attendance = parseAttendance(html);
-    }),
+    detected
+      ? Promise.resolve()
+      : fetchAttendanceHtml(session, term).then(({ html }) => {
+          attendance = parseAttendance(html);
+        }),
     fetchTimetableHtml(session, term).then(({ html }) => {
       timetable = parseTimetable(html);
     }),

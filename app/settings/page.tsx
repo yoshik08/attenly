@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Minus, Plus, SignOut, Trash } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, Minus, Plus, SignOut, Trash } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { Sheet } from '@/components/overlay';
 import { LinkForm } from '@/components/link-form';
@@ -11,6 +11,8 @@ import { SignIn } from '@/components/gate';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, DETENTION_FLOOR, type ComponentKey } from '@/lib/math';
 import { ago, useNow } from '@/lib/time';
+import { Segmented } from '@/components/segmented';
+import { termText, yearsNewestFirst } from '@/lib/terms';
 
 export default function SettingsPage() {
   const { phase } = useStore();
@@ -48,6 +50,124 @@ function ConfirmButton({ label, confirm, onConfirm, busy }: { label: string; con
       <Trash size={15} aria-hidden />
       {busy ? 'Removing…' : armed ? confirm : label}
     </button>
+  );
+}
+
+function Select({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { id: string; label: string }[];
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          id={id}
+          className="field appearance-none pr-10"
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <CaretDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-dropout-text" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Which year and semester the shown ERP account syncs: automatic (the newest
+ * term with attendance on the ERP) or one picked from the ERP's own lists.
+ */
+function SemesterSection() {
+  const { activeAccount, snapshot, setTerm, sync } = useStore();
+  const options = snapshot?.termOptions ?? null;
+  const years = options ? yearsNewestFirst(options.years) : [];
+  const semesters = options?.semesters ?? [];
+  const chosen = activeAccount?.term ?? null;
+  const [mode, setMode] = useState<'auto' | 'choose'>(chosen ? 'choose' : 'auto');
+  const [year, setYear] = useState(chosen?.academicyear ?? snapshot?.term.academicyear ?? years[0]?.id ?? '');
+  const [sem, setSem] = useState(chosen?.semesterid ?? snapshot?.term.semesterid ?? semesters[0]?.id ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!activeAccount) return null;
+
+  const apply = async (term: { academicyear: string; semesterid: string } | null) => {
+    setBusy(true);
+    setError(null);
+    const r = await setTerm(term);
+    if (!r.ok) setError(r.error ?? 'Could not change the semester.');
+    setBusy(false);
+  };
+  const pending = busy || sync.running;
+  const showing = termText(snapshot?.term);
+  const sameAsChosen = chosen && chosen.academicyear === year && chosen.semesterid === sem;
+
+  return (
+    <Section
+      id="semester"
+      title="Semester"
+      note="Attenly shows the newest semester that has attendance on the ERP. Pick one yourself to look back at an earlier semester."
+    >
+      <Segmented
+        label="Semester choice"
+        value={mode}
+        onChange={(m) => {
+          setMode(m);
+          if (m === 'auto' && chosen) void apply(null);
+        }}
+        options={[
+          { value: 'auto', label: 'Automatic' },
+          { value: 'choose', label: 'Choose' },
+        ]}
+      />
+      {mode === 'auto' ? (
+        <p className="mt-4 text-[14px] text-dropout-text" aria-live="polite">
+          {pending ? 'Finding the newest semester with attendance…' : showing ? `Showing ${showing}.` : 'Sync once to find your semester.'}
+        </p>
+      ) : !options ? (
+        <p className="mt-4 text-[14px] text-dropout-text">Sync once to load the ERP’s list of semesters.</p>
+      ) : (
+        <div className="mt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select id="term-year" label="Academic year" value={year} onChange={setYear} options={years} disabled={pending} />
+            <Select id="term-sem" label="Semester" value={sem} onChange={setSem} options={semesters} disabled={pending} />
+          </div>
+          <button
+            type="button"
+            className="btn btn-mark press mt-4"
+            disabled={pending || !year || !sem || Boolean(sameAsChosen && !error)}
+            onClick={() => void apply({ academicyear: year, semesterid: sem })}
+          >
+            <ArrowsClockwise size={18} className={pending ? 'spin' : ''} aria-hidden />
+            {pending ? 'Syncing…' : sameAsChosen ? `Showing ${showing}` : 'Sync this semester'}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-[14px] text-red">
+          {error}
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -112,6 +232,8 @@ function Settings() {
   const [accError, setAccError] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
   const thresholdError = thresholds.condonationFrom >= thresholds.safeAt ? 'The cruise line has to sit above the floor.' : null;
+  // Re-mount the semester picker when the shown account or its synced term changes.
+  const activeAccountKey = `${active ?? ''}|${store.activeAccount?.term ? `${store.activeAccount.term.academicyear}:${store.activeAccount.term.semesterid}` : 'auto'}|${snapshot?.termOptions ? 'o' : ''}`;
 
   const setTcbr = (code: string, v: number) => {
     const perCourse = { ...tcbr.perCourse };
@@ -203,6 +325,8 @@ function Settings() {
           <Plus size={16} aria-hidden /> Link another ERP account
         </button>
       </Section>
+
+      <SemesterSection key={activeAccountKey} />
 
       <Section title="Red lines" note={`The bands come from these two lines. The university’s detention floor is ${DETENTION_FLOOR}%.`}>
         <div className="grid grid-cols-2 gap-3">

@@ -58,6 +58,8 @@ interface StoreValue extends StoreState {
   onLinked: (universityId: string, snapshot: ClientSnapshot) => Promise<void>;
   removeAccount: (universityId: string) => Promise<{ ok: boolean; error?: string }>;
   makePrimary: (universityId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Sync a specific year and semester (ERP ids) for the shown account, or null for automatic. */
+  setTerm: (term: { academicyear: string; semesterid: string } | null) => Promise<{ ok: boolean; error?: string }>;
   updateSettings: (patch: Partial<Settings>) => void;
   markSeen: (code?: string) => void;
   clearDevice: () => void;
@@ -386,6 +388,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [load],
   );
 
+  const setTerm = useCallback(
+    async (term: { academicyear: string; semesterid: string } | null) => {
+      const id = stateRef.current.active;
+      if (!id) return { ok: false, error: 'No ERP account is linked yet.' };
+      try {
+        const res = await fetch(api('/api/erp/accounts'), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ universityId: id, term }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: d.error ?? 'Could not change the semester.' };
+        setState((p) => ({ ...p, accounts: Array.isArray(d.accounts) ? d.accounts : p.accounts }));
+        await runSync('force');
+        return { ok: true };
+      } catch {
+        return { ok: false, error: 'You look offline. Try again.' };
+      }
+    },
+    [runSync],
+  );
+
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((s) => {
       const next = { ...s, ...patch };
@@ -436,6 +460,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     onLinked,
     removeAccount,
     makePrimary,
+    setTerm,
     updateSettings,
     markSeen,
     clearDevice,

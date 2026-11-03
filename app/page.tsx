@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowsClockwise, WarningCircle } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
@@ -121,7 +122,10 @@ function Attendance() {
       <aside className="pt-6 lg:sticky lg:top-[calc(var(--bar-h)+var(--safe-t))] lg:self-start lg:pt-10">
         <h1 className="title-l">Attendance</h1>
         <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">
-          {termLabel}
+          {termLabel}{' '}
+          <Link href="/settings#semester" className="ml-1 rounded font-medium text-dropout-text underline decoration-seam-strong hover:text-mark">
+            Change
+          </Link>
           {label && <span className="block">Showing {label}</span>}
         </p>
 
@@ -133,16 +137,18 @@ function Attendance() {
           </a>
         )}
 
-        <div className="mt-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-[13px] text-dropout-text">Overall, weighted</p>
-              <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[overallBand])}>{bandLabel(overallBand)}</p>
+        {overall != null && (
+          <div className="mt-6">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[13px] text-dropout-text">Overall, weighted</p>
+                <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[overallBand])}>{bandLabel(overallBand)}</p>
+              </div>
+              <Figure value={overall} countUp={intro} className="figure text-[48px]" />
             </div>
-            <Figure value={overall} countUp={intro} className="figure text-[48px]" />
+            <Scale pct={overall} floor={settings.thresholds.condonationFrom} cruise={settings.thresholds.safeAt} />
           </div>
-          <Scale pct={overall} floor={settings.thresholds.condonationFrom} cruise={settings.thresholds.safeAt} />
-        </div>
+        )}
 
         <div className="mt-6 hidden lg:block">
           <Legend />
@@ -155,8 +161,13 @@ function Attendance() {
         </div>
         {summaries.length === 0 ? (
           <div className="py-10">
-            <p className="text-[15px] font-semibold">The ERP shows no attendance for {termLabel || 'this term'} yet.</p>
-            <p className="mt-1 text-[13px] text-dropout-text">Courses appear here after the first classes are marked.</p>
+            <p className="text-[15px] font-semibold">The ERP shows no attendance for {termLabel || 'this term'}.</p>
+            <p className="mt-1 text-[13px] text-dropout-text">
+              Courses appear here once classes are marked.{' '}
+              <Link href="/settings#semester" className="underline decoration-seam-strong hover:text-mark">
+                Look at another semester
+              </Link>
+            </p>
           </div>
         ) : (
           <div ref={list}>

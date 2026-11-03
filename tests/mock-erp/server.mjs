@@ -34,7 +34,38 @@ const students = new Map(
 const sessions = new Map(); // PHPSESSID -> { csrf, captcha, user }
 const counters = { logins: 0, captchas: 0, solves: 0 };
 
+// Academic years use internal ids like the real ERP ("30" = 2026-2027), listed oldest first.
+const YEARS = [
+  ['29', '2025-2026'],
+  ['30', '2026-2027'],
+];
+const SEMESTERS = [
+  ['1', 'Odd Sem'],
+  ['2', 'Even Sem'],
+];
+
+// Student A: the current term is Even Sem 2026-2027 (30:2); an older Odd Sem 2025-2026 (29:1) too.
 function studentA() {
+  return {
+    terms: { '30:2': currentA(), '29:1': olderA() },
+    grades: gradesA(),
+  };
+}
+
+function olderA() {
+  return {
+    courses: [
+      { code: '24CS1205', title: 'Computer Organization', L: [40, 44], P: [20, 22] },
+      { code: '24MT1105', title: 'Numerical Methods', L: [36, 42], T: [12, 12] },
+    ],
+    timetable: {
+      Monday: ['24CS1205-L', '24MT1105-L', '', ''],
+      Thursday: ['24MT1105-T', '24CS1205-P', '24CS1205-P', ''],
+    },
+  };
+}
+
+function currentA() {
   return {
     courses: [
       { code: '24CS2201', title: 'Design and Analysis of Algorithms', L: [34, 40], T: [10, 12], P: [18, 22] },
@@ -52,18 +83,29 @@ function studentA() {
       Friday: ['24CS2202-L', '24CS2201-L', '24CS2203-L', '24MT2005-L', '', ''],
       Saturday: ['24CS2204-L', '24CS2202-L', '', '', '', ''],
     },
-    grades: [
+  };
+}
+
+function gradesA() {
+  return [
       ['2024-2025', 'Odd Sem', '24CS1101', 'Problem Solving with C', 'A+', 9, 4],
       ['2024-2025', 'Odd Sem', '24MT1001', 'Linear Algebra and Calculus', 'A', 8, 4],
       ['2024-2025', 'Odd Sem', '24EC1101', 'Digital Logic Design', 'O', 10, 3],
       ['2024-2025', 'Even Sem', '24CS1202', 'Data Structures', 'A', 8, 4],
       ['2024-2025', 'Even Sem', '24CS1203', 'Object Oriented Programming', 'A+', 9, 4],
       ['2024-2025', 'Even Sem', '24MT1102', 'Discrete Mathematics', 'B+', 7, 3],
-    ],
+  ];
+}
+
+// Student B: only Odd Sem 2026-2027 has attendance; even of the newest year is empty.
+function studentB() {
+  return {
+    terms: { '30:1': currentB() },
+    grades: [],
   };
 }
 
-function studentB() {
+function currentB() {
   return {
     courses: [
       { code: '24EE2101', title: 'Electrical Machines', L: [30, 34], P: [14, 16] },
@@ -74,7 +116,6 @@ function studentB() {
       Wednesday: ['24EE2102-T', '24EE2101-P', '24EE2101-P', ''],
       Friday: ['24EE2101-L', '24EE2102-L', '', ''],
     },
-    grades: [],
   };
 }
 
@@ -132,22 +173,27 @@ function send(res, status, html, headers = {}) {
   res.end(html);
 }
 
-function attendanceTable(st) {
+const COURSELIST_HEAD = '<thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Percentage</th></tr></thead>';
+
+// A term without attendance gets Yii's empty grid, headers and all.
+function attendanceTable(term) {
+  if (!term) return '<table class="table">' + COURSELIST_HEAD + '<tbody><tr><td colspan="8"><div class="empty">No results found.</div></td></tr></tbody></table>';
   let rows = '';
   let n = 1;
-  for (const c of st.courses) {
+  for (const c of term.courses) {
     for (const k of ['L', 'T', 'P', 'S']) {
       if (!c[k]) continue;
       const [att, cond] = c[k];
       rows += `<tr><td>${n++}</td><td>${c.code}</td><td>${c.title}</td><td>${k}</td><td>S-12</td><td>${cond}</td><td>${att}</td><td>${Math.ceil((att / cond) * 100)}</td></tr>`;
     }
   }
-  return `<table class="table"><thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Percentage</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="table">${COURSELIST_HEAD}<tbody>${rows}</tbody></table>`;
 }
 
-function timetableTable(st) {
+function timetableTable(term) {
+  if (!term) return '<table class="table"><tbody><tr><td colspan="7"><div class="empty">No results found.</div></td></tr></tbody></table>';
   const head = `<tr><th>Day</th>${PERIODS.map((p) => `<th>${p}</th>`).join('')}</tr>`;
-  const body = Object.entries(st.timetable)
+  const body = Object.entries(term.timetable)
     .map(([day, cells]) => {
       const tds = PERIODS.map((_, i) => {
         const c = cells[i] ?? '';
@@ -168,8 +214,9 @@ function cgpaTable(st) {
   return `<table class="table"><thead><tr><th>#</th><th>University</th><th>Program</th><th>Course Code</th><th>Course Name</th><th>Grade</th><th>Grade Point</th><th>Credits</th><th>Status</th><th>Academic Year</th><th>Semester</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function internalsTable(st) {
-  const rows = st.courses
+function internalsTable(term) {
+  if (!term) return '<table class="table"><tbody></tbody></table>';
+  const rows = term.courses
     .map((c, i) => `<tr><td>${i + 1}</td><td>2026-2027</td><td>Odd Sem</td><td>${c.code}</td><td>${c.title}</td><td>${18 + (i % 5)}</td><td>${8 + (i % 3)}</td></tr>`)
     .join('');
   return `<table class="table"><thead><tr><th>#</th><th>Academic Year</th><th>Semester</th><th>Course Code</th><th>Course Name</th><th>Mid Term</th><th>Assignment</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -185,7 +232,8 @@ const server = http.createServer(async (req, res) => {
     Object.assign(knobs, b.knobs ?? {});
     if (b.bump) {
       // { bump: { id, code, k, attended: +n, conducted: +n } }
-      const c = students.get(b.bump.id)?.courses.find((x) => x.code === b.bump.code);
+      const st = students.get(b.bump.id);
+      const c = st && Object.values(st.terms)[0].courses.find((x) => x.code === b.bump.code);
       if (c && c[b.bump.k]) c[b.bump.k] = [c[b.bump.k][0] + (b.bump.attended ?? 0), c[b.bump.k][1] + (b.bump.conducted ?? 0)];
     }
     if (b.password) students.get(b.password.id).password = b.password.value;
@@ -270,21 +318,25 @@ const server = http.createServer(async (req, res) => {
       res,
       200,
       page(`<form><input type="hidden" name="_csrf" value="${s.csrf}">
-<select name="DynamicModel[academicyear]" id="dynamicmodel-academicyear"><option value="">Select Academic Year</option><option value="2026-2027">2026-2027</option><option value="2025-2026">2025-2026</option></select>
-<select name="DynamicModel[semesterid]" id="dynamicmodel-semesterid"><option value="">Select Semester</option><option value="1">Odd Sem</option><option value="2">Even Sem</option></select></form>`),
+<select name="DynamicModel[academicyear]" id="dynamicmodel-academicyear"><option value="">Select Academic Year</option>${YEARS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select>
+<select name="DynamicModel[semesterid]" id="dynamicmodel-semesterid"><option value="">Select Semester</option>${SEMESTERS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></form>`),
     );
   }
   if (r === 'studentattendance/studentdailyattendance/courselist') {
     if (failing('attendance')) return send(res, 500, 'Internal Server Error');
-    return send(res, 200, attendanceTable(st));
+    const form = new URLSearchParams(await body(req));
+    counters.courselists = (counters.courselists ?? 0) + 1;
+    return send(res, 200, attendanceTable(st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semesterid]')}`]));
   }
   if (r === 'timetables/universitymasteracademictimetableview/individualstudenttimetableget') {
     if (failing('timetable')) return send(res, 500, 'Internal Server Error');
-    return send(res, 200, page(timetableTable(st)));
+    const key = `${url.searchParams.get('UniversityMasterAcademicTimetableView[academicyear]')}:${url.searchParams.get('UniversityMasterAcademicTimetableView[semesterid]')}`;
+    return send(res, 200, page(timetableTable(st.terms[key])));
   }
   if (r === 'studentinfo/studentendexamresult/getstudentinternalmarks') {
     if (failing('internals')) return send(res, 500, 'Internal Server Error');
-    return send(res, 200, internalsTable(st));
+    const form = new URLSearchParams(await body(req));
+    return send(res, 200, internalsTable(st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semester]')}`]));
   }
   if (r === 'studentinfo/studentendexamresult/semendresult') {
     if (failing('results')) return send(res, 500, 'Internal Server Error');

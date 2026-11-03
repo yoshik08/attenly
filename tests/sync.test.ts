@@ -90,6 +90,23 @@ test('sync pulls everything; a second auto sync inside 5.5 minutes stays off the
   assert.equal(await db.collection('locks').countDocuments(), 0, 'lock released');
 });
 
+test('the term is the newest with attendance; a chosen term overrides it', async () => {
+  const user = (await users.getUser(G))!;
+  const auto = await sync.syncAccount({ user, universityId: A, force: true });
+  assert.equal(auto.code, 'synced');
+  assert.deepEqual(auto.snapshot?.term, { academicyear: '30', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' });
+  assert.ok(auto.snapshot?.termOptions?.years.some((x) => x.label === '2025-2026'));
+  assert.equal(await users.setAccountTerm(G, A, { academicyear: '29', semesterid: '1' }), true);
+  const older = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.deepEqual(older.snapshot?.term, { academicyear: '29', semesterid: '1', semester: 'Odd Sem', yearLabel: '2025-2026' });
+  assert.deepEqual(older.snapshot?.attendance.map((s) => s.code), ['24CS1205', '24MT1105']);
+  assert.deepEqual(users.viewAccounts((await users.getUser(G))!)[0].term, { academicyear: '29', semesterid: '1' });
+  await users.setAccountTerm(G, A, null);
+  const back = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(back.snapshot?.attendance.length, 6);
+  assert.equal(users.viewAccounts((await users.getUser(G))!)[0].term, null);
+});
+
 test('a legacy sealed password this server can open is converted to plaintext', async () => {
   const sealed = erp.sealSession({ pw: 'kl-test-pass' });
   await db.collection('users').updateOne(
@@ -189,6 +206,7 @@ test('multiple accounts: each syncs; removing one deletes its password and data'
   const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: B, force: true });
   assert.equal(r.code, 'synced');
   assert.equal(r.snapshot?.attendance.length, 2);
+  assert.equal(r.snapshot?.term.semester, 'Odd Sem', 'even of the newest year is empty, so odd');
   assert.equal((await userDoc())?.erpUid, A, 'first account stays primary');
   assert.equal(await users.makePrimary(G, B), true);
   assert.equal((await userDoc())?.erpUid, B);

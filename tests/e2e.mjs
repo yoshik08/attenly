@@ -365,6 +365,32 @@ test('tab bar navigates on phones; desktop shows inline navigation', async () =>
   await desk.ctx.close();
 });
 
+test('semester: automatic finds the newest with attendance; Settings can pick another', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+  await page.getByText('Even Sem 2026-2027').first().waitFor();
+  await page.getByRole('link', { name: 'Change' }).first().click();
+  await page.waitForURL(/\/settings#semester$/);
+  await page.getByText('Showing Even Sem 2026-2027.').waitFor();
+  await page.getByRole('tab', { name: 'Choose' }).click();
+  await page.getByLabel('Academic year').selectOption({ label: '2025-2026' });
+  await page.getByLabel('Semester', { exact: true }).selectOption({ label: 'Odd Sem' });
+  const synced = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  await page.getByRole('button', { name: 'Sync this semester' }).click();
+  assert.equal((await (await synced).json()).code, 'synced');
+  await page.getByRole('button', { name: 'Showing Odd Sem 2025-2026' }).waitFor();
+  await page.getByRole('navigation', { name: 'Sections' }).last().getByRole('link', { name: 'Attendance' }).click();
+  await page.getByRole('article', { name: 'Computer Organization' }).waitFor();
+  await page.getByText('Odd Sem 2025-2026').first().waitFor();
+  await page.goto(`${st.app}/settings`);
+  const back = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  await page.getByRole('tab', { name: 'Automatic' }).click();
+  await back;
+  await page.getByText('Showing Even Sem 2026-2027.').waitFor();
+  await ctx.close();
+});
+
 test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', async () => {
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {

@@ -2,6 +2,7 @@ import { findAccount, recordSync, resolvePassword, type UserDoc } from './db/use
 import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot, type ClientSnapshot } from './db/snapshots';
 import { withLock } from './db/locks';
 import { autoLogin, coded, pullAll, ErpRateLimited, isSessionExpiredError } from './erp/full-sync';
+import { termFromIds } from './terms';
 
 /** Cloud data younger than this is served as-is; older data triggers a sync (~5.5 min). */
 export const FRESH_MS = 330_000;
@@ -93,7 +94,8 @@ export async function syncAccount(opts: {
   try {
     const run = await withLock(`sync:${universityId}`, LOCK_MS, async () => {
       const session = await autoLogin(universityId, creds.password);
-      const data = await pullAll(session);
+      // The term the person picked in Settings, else the newest with attendance.
+      const data = await pullAll(session, account.term ? termFromIds(account.term, session.termOptions) : undefined);
       if (data.failed.length === 5) throw coded(MESSAGES.erp_unreachable, 'erp_unreachable');
       const saved = await saveFullSnapshot({
         universityId,

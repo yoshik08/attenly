@@ -52,6 +52,16 @@ test('KL courselist layout: one row per course and component', () => {
   assert.deepEqual(rows[1].components.S, { conducted: 16, attended: 14 });
 });
 
+test('an empty course list ("No results found.") is no courses, not a course', () => {
+  const head = '<thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Percentage</th></tr></thead>';
+  assert.deepEqual(parseAttendance(`<table>${head}<tbody><tr><td colspan="8"><div class="empty">No results found.</div></td></tr></tbody></table>`), []);
+  // A generic grid with the same placeholder row
+  assert.deepEqual(
+    parseAttendance('<table><thead><tr><th>Course Code</th><th>Course Title</th><th>Conducted</th><th>Attended</th></tr></thead><tbody><tr><td colspan="4">No results found.</td></tr></tbody></table>'),
+    [],
+  );
+});
+
 test('unrelated HTML yields no courses and no timetable', () => {
   assert.deepEqual(parseAttendance('<html><body><p>hello</p></body></html>'), []);
   assert.deepEqual(parseTimetable('<p>Internal Server Error</p>'), []);

@@ -136,10 +136,9 @@ export function parseAttendance(html: string): SubjectAttendance[] {
       const $t = $(t);
       const htxt = $t.find('thead th').toArray().map((th) => norm($(th).text())).join(' | ')
         || $t.find('tr').first().find('th, td').toArray().map((c) => norm($(c).text())).join(' | ');
-      if (/ltps/.test(htxt) && /course\s*code/.test(htxt)) {
-        const parsed = parseCourselistTable($t, $);
-        if (parsed.length > 0) return parsed;
-      }
+      // The ERP's own course list: trust it even when it's empty (Yii prints
+      // "No results found." for a term without attendance; that is not a course).
+      if (/ltps/.test(htxt) && /course\s*code/.test(htxt)) return parseCourselistTable($t, $);
     }
 
     let best: { score: number; el: unknown } | null = null;
@@ -186,6 +185,8 @@ export function parseAttendance(html: string): SubjectAttendance[] {
       if (!headerRowSkipped && ri === 0) return; // first row was the header
       const cells = $(tr).find('td').toArray().map((td) => $(td).text().trim());
       if (cells.length === 0) return;
+      // Grid placeholders ("No results found.", a single colspan cell) aren't courses.
+      if (cells.length === 1 || $(tr).find('.empty').length > 0 || /^no (results|records|data)\b/i.test(cells[0])) return;
 
       const get = (i: number): string => (i >= 0 && i < cells.length ? cells[i] : '');
       let code = '';
