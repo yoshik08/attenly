@@ -438,7 +438,35 @@ export async function fetchAttendanceHtml(
     if (!is500(e) && !(e instanceof Error && /HTTP \d/.test(e.message))) throw e;
     failures.push(`filter form: ${why(e)}`);
   }
+  console.info(`[erp] attendance page hints: ${attendancePageHints(page.text)}`);
   throw Object.assign(new Error(`attendance failed (${failures.join('; ')})`), { status: 500 });
+}
+
+/**
+ * The parts of the ERP's attendance filter page that say how it loads the
+ * grid (its form and the script around "courselist"), for diagnosing a
+ * changed ERP. Tokens and id-like numbers are masked.
+ */
+function attendancePageHints(html: string): string {
+  const chunks = [
+    ...[...html.matchAll(/<form\b[\s\S]*?<\/form>/gi)].map((m) => m[0]),
+    ...[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]),
+  ];
+  const hits: string[] = [];
+  for (const chunk of chunks) {
+    for (const m of chunk.matchAll(/courselist|studentdailyattendance|DynamicModel\[|\$\.(ajax|post|get)\s*\(|pjax/gi)) {
+      const i = m.index ?? 0;
+      const piece = chunk.slice(Math.max(0, i - 250), i + 450);
+      if (!hits.some((h) => h.includes(piece.slice(200, 300)))) hits.push(piece);
+      if (hits.length >= 8) break;
+    }
+  }
+  return hits
+    .join(' ⟂ ')
+    .replace(/(value|content)="[A-Za-z0-9_\-=+/]{20,}"/g, '$1="…"')
+    .replace(/\b\d{8,12}\b/g, '#')
+    .replace(/\s+/g, ' ')
+    .slice(0, 6000);
 }
 
 export async function fetchTimetableHtml(
