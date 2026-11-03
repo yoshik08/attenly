@@ -22,6 +22,9 @@ const knobs = {
   rateLimitLogins: false,
   failDatasets: [], // e.g. ['timetable']
   loginDelayMs: 0,
+  // Like the real ERP (Nov 2026): the course list answers 500 for a term with rows
+  // unless the request comes from the filter page.
+  strictReferer: false,
 };
 
 const students = new Map(
@@ -326,7 +329,11 @@ const server = http.createServer(async (req, res) => {
     if (failing('attendance')) return send(res, 500, 'Internal Server Error');
     const form = new URLSearchParams(await body(req));
     counters.courselists = (counters.courselists ?? 0) + 1;
-    return send(res, 200, attendanceTable(st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semesterid]')}`]));
+    const term = st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semesterid]')}`];
+    if (knobs.strictReferer && term && !String(req.headers.referer ?? '').includes('searchgetinput')) {
+      return send(res, 500, '<html><head><title>Internal Server Error</title></head><body><h1>Internal Server Error</h1></body></html>');
+    }
+    return send(res, 200, attendanceTable(term));
   }
   if (r === 'timetables/universitymasteracademictimetableview/individualstudenttimetableget') {
     if (failing('timetable')) return send(res, 500, 'Internal Server Error');

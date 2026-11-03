@@ -14,6 +14,7 @@ import {
   classifyLoginError,
   pickLoginMessage,
   parseTermOptions,
+  parseAttendance,
   type LoginErrorCode,
   type TermList,
 } from './parsers';
@@ -133,8 +134,16 @@ export async function erpFetch(
 
     const text = await res.text();
     if (looksRateLimited(res.status, text)) throw new ErpRateLimited();
-    // An error page parses as "no rows"; never let it pass for real data.
-    if (res.status >= 400) throw new Error(`ERP answered HTTP ${res.status}`);
+    // An error page parses as "no rows"; never let it pass for real data. The
+    // page's own heading (e.g. Yii's exception name) goes into the message.
+    if (res.status >= 400) {
+      const heading = (text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 140);
+      throw Object.assign(new Error(`ERP answered HTTP ${res.status}${heading ? ` (${heading})` : ''}`), { status: res.status });
+    }
     return { status: res.status, text, jar: currentJar, finalUrl: url };
   }
   throw new Error('Too many redirects talking to the ERP');
@@ -370,7 +379,66 @@ export async function fetchAttendanceHtml(
     'DynamicModel[academicyear]': term.academicyear,
     'DynamicModel[semesterid]': term.semesterid,
   };
-  return postXhr(session, ATTENDANCE_PATH, fields);
+  const is500 = (e: unknown) => (e as { status?: number })?.status === 500;
+  const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  let first: unknown;
+  try {
+    return await postXhr(session, ATTENDANCE_PATH, fields);
+  } catch (e) {
+    if (!is500(e)) throw e;
+    first = e;
+  }
+
+  // The ERP answers 500 only for terms that have rows to render, so the data
+  // is there. Retry the way the ERP's own page does it: open the filter page,
+  // then post the filter from it (its token, its URL as referrer).
+  const failures = [`direct: ${why(first)}`];
+  const pageUrl = new URL(ATTENDANCE_PAGE_PATH, ERP_BASE).toString();
+  const page = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, session.jar);
+  if (detectLoginForm(page.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
+  const csrf = extractCsrf(page.text) ?? session.csrf;
+  const variants: [string, Record<string, string>][] = [
+    ['from the filter page', { ...fields, _csrf: csrf }],
+    ['with semester', { ...fields, _csrf: csrf, 'DynamicModel[semester]': term.semesterid }],
+  ];
+  for (const [name, body] of variants) {
+    try {
+      const res = await erpFetch(
+        ATTENDANCE_PATH,
+        { method: 'POST', headers: xhrHeaders({ Referer: pageUrl }), body: formBody(body) },
+        page.jar,
+      );
+      if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
+      console.info(`[erp] attendance ${term.academicyear}:${term.semesterid} answered ${name}`);
+      return { html: res.text, jar: res.jar, csrf };
+    } catch (e) {
+      if (!is500(e)) throw e;
+      failures.push(`${name}: ${why(e)}`);
+    }
+  }
+
+  // Last resort: submit the filter form itself and read the grid from the page.
+  try {
+    const res = await erpFetch(
+      ATTENDANCE_PAGE_PATH,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: new URL(ERP_BASE).origin, Referer: pageUrl },
+        body: formBody({ ...fields, _csrf: csrf }),
+      },
+      page.jar,
+    );
+    if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
+    if (parseAttendance(res.text).length > 0) {
+      console.info(`[erp] attendance ${term.academicyear}:${term.semesterid} answered the filter form`);
+      return { html: res.text, jar: res.jar, csrf };
+    }
+    failures.push('filter form: no attendance grid');
+  } catch (e) {
+    if (!is500(e) && !(e instanceof Error && /HTTP \d/.test(e.message))) throw e;
+    failures.push(`filter form: ${why(e)}`);
+  }
+  throw Object.assign(new Error(`attendance failed (${failures.join('; ')})`), { status: 500 });
 }
 
 export async function fetchTimetableHtml(

@@ -35,7 +35,7 @@ async function control(body: unknown) {
 }
 const counters = async () => (await control({})).counters;
 async function resetKnobs() {
-  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0 } });
+  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false } });
 }
 const userDoc = () => db.collection('users').findOne({ googleId: G });
 const latest = (id: string) => snapshots.getLatestSnapshot(G, id);
@@ -105,6 +105,15 @@ test('the term is the newest with attendance; a chosen term overrides it', async
   const back = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
   assert.equal(back.snapshot?.attendance.length, 6);
   assert.equal(users.viewAccounts((await users.getUser(G))!)[0].term, null);
+});
+
+test('an ERP that errors on direct course-list requests is read the way its own page does', async () => {
+  await control({ knobs: { strictReferer: true } });
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(r.code, 'synced');
+  assert.equal(r.snapshot?.attendance.length, 6);
+  assert.equal(r.snapshot?.term.semester, 'Even Sem');
+  await resetKnobs();
 });
 
 test('a legacy sealed password this server can open is converted to plaintext', async () => {
