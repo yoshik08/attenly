@@ -296,7 +296,7 @@ function inferType(subjectLine: string): ComponentKey | null {
 }
 
 /** HTML entities left after stripping tags (&amp;, &nbsp;, &#39;, …) as plain text. */
-function decodeEntities(html: string): string {
+export function decodeEntities(html: string): string {
   return cheerio.load(`<p>${html}</p>`)('p').text().replace(/ /g, ' ');
 }
 

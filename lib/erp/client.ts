@@ -15,6 +15,7 @@ import {
   pickLoginMessage,
   parseTermOptions,
   parseAttendance,
+  decodeEntities,
   type LoginErrorCode,
   type TermList,
 } from './parsers';
@@ -138,14 +139,22 @@ export async function erpFetch(
     // page's own heading (e.g. Yii's exception name) goes into the message.
     if (res.status >= 400) {
       // Yii answers XHR errors in plain text ("Name: message"), pages with an <h1>.
-      const heading = (text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? text)
-        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\b\d{8,12}\b/g, '#')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 160);
-      throw Object.assign(new Error(`ERP answered HTTP ${res.status}${heading ? ` (${heading})` : ''}`), { status: res.status });
+      const visible = (s: string) =>
+        decodeEntities(
+          s
+            .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+            .replace(/<[^>]+>/g, ' '),
+        )
+          .replace(/\b\d{8,12}\b/g, '#')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const heading = visible(
+        text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? text,
+      ).slice(0, 160);
+      throw Object.assign(new Error(`ERP answered HTTP ${res.status}${heading ? ` (${heading})` : ''}`), {
+        status: res.status,
+        detail: visible(text).slice(0, 1500),
+      });
     }
     return { status: res.status, text, jar: currentJar, finalUrl: url };
   }
@@ -400,7 +409,9 @@ export async function fetchAttendanceHtml(
   const page = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, session.jar);
   if (detectLoginForm(page.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
   const csrf = extractCsrf(page.text) ?? session.csrf;
-  console.info(`[erp] attendance session cookies: ${Object.keys(page.jar).sort().join(', ')}`);
+  console.info(
+    `[erp] attendance ${term.academicyear}:${term.semesterid} error detail: ${(first as { detail?: string })?.detail ?? '(none)'}`,
+  );
   // A plain form post (no XHR header), the way other working ERP clients send it.
   const navHeaders = {
     'Content-Type': 'application/x-www-form-urlencoded',
