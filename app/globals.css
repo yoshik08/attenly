@@ -1,93 +1,733 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Attenly — the answer sheet on true black.                           */
+/* Structure is printed in dropout ink (the colour an OMR scanner       */
+/* ignores); marks are graphite-white; state inks only where they mean  */
+/* something.                                                           */
+/* ------------------------------------------------------------------ */
+
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-system, system-ui, sans-serif;
-  --font-display: var(--font-fraunces), Georgia, serif;
-  --color-ink: #0a0a0b;
-  --color-amber-glow: #e9a13b;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #000000;
+  --color-seam: #1a2130;
+  --color-seam-strong: #283247;
+  --color-dropout: #4d6185;
+  --color-dropout-text: #9eabc2;
+  --color-dropout-quiet: #75829b;
+  --color-mark: #eef1f6;
+  --color-pencil: #8996ad;
+  --color-cruise: #3ddc97;
+  --color-thin: #f5b544;
+  --color-red: #ff6b5e;
+  --color-focus: #7ea6ff;
+  --color-sheet: #0a0e16;
+  /* State inks for text on the light plate */
+  --color-cruise-deep: #04704a;
+  --color-thin-deep: #7c5200;
+  --color-red-deep: #b42318;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Motion tokens (transitions.dev scale + Emil Kowalski's curves) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 140ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+
+  --dropdown-open-dur: 250ms;
+  --dropdown-close-dur: 150ms;
+  --dropdown-pre-scale: 0.97;
+  --dropdown-closing-scale: 0.99;
+  --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --toast-open: 350ms;
+  --toast-close: 250ms;
+  --toast-distance: 16px;
+  --toast-blur: 2px;
+  --toast-scale: 0.97;
+  --toast-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --acc-expand: 300ms;
+  --acc-collapse: 200ms;
+  --acc-chevron: 250ms;
+  --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --tabs-dur: 250ms;
+  --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tabs-bar-bg: #0c111b;
+  --tabs-pill-bg: #1f2738;
+  --tabs-text-muted: #9eabc2;
+  --tabs-text-active: #eef1f6;
+
+  --shimmer-base: #75829b;
+  --shimmer-highlight: #eef1f6;
+  --shimmer-band: 250%;
+  --shimmer-dur: 1.6s;
+  --shimmer-ease: linear;
+
+  --digit-dur: 420ms;
+  --digit-distance: 8px;
+  --digit-stagger: 40ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --bar-h: 52px;
+  --tab-h: 58px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
 }
 
 html {
-  scroll-behavior: smooth;
+  background: #000;
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--bar-h) + var(--safe-t) + 12px);
 }
 
 body {
-  background: #0a0a0b;
-  color: #f5f4f0;
+  background: #000;
+  color: var(--color-mark);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01" 0;
   overflow-x: hidden;
+  min-height: 100dvh;
 }
 
-/* font-display comes from @theme inline (--font-display → Fraunces). Do not
-   redeclare it manually: inline themes don't emit the var at runtime. */
-
+/* Browser surfaces carry the design too. */
 ::selection {
-  background: rgba(233, 161, 59, 0.35);
+  background: rgba(126, 166, 255, 0.35);
   color: #fff;
 }
-
-/* film grain */
-.grain {
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
-
-/* ---------- fuel gauge shimmer ---------- */
-
-.fuel-fill {
-  position: relative;
+input,
+textarea {
+  caret-color: var(--color-cruise);
 }
-
-.fuel-shimmer {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.45) 50%,
-    transparent 80%
-  );
-  background-size: 200% 100%;
-  animation: fuel-sweep 2.8s linear infinite;
-  pointer-events: none;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #283247 transparent;
 }
-
-@keyframes fuel-sweep {
-  0% {
-    background-position: 180% 0;
-  }
-  100% {
-    background-position: -80% 0;
-  }
-}
-
-/* ---------- misc ---------- */
-
-.thin-scroll::-webkit-scrollbar {
-  height: 8px;
+::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
-.thin-scroll::-webkit-scrollbar-track {
+::-webkit-scrollbar-thumb {
+  background: #283247;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
   background: transparent;
 }
-.thin-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 9999px;
+a {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 
-.text-glow-amber {
-  text-shadow: 0 0 28px rgba(233, 161, 59, 0.45);
+/* ------------------------------------------------------------------ */
+/* Type                                                                */
+/* ------------------------------------------------------------------ */
+
+.figure {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 125;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 0.92;
+}
+.title-l {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 116;
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+  font-size: 30px;
+}
+@media (min-width: 1024px) {
+  .title-l {
+    font-size: 36px;
+  }
+}
+.title-s {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 112;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  font-size: 17px;
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 125;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-size: 19px;
+  line-height: 1;
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.balance {
+  text-wrap: balance;
+}
+.pretty {
+  text-wrap: pretty;
 }
 
-/* decoding dots */
-.decoding::after {
-  content: '';
-  animation: dots 1.2s steps(4) infinite;
+/* ------------------------------------------------------------------ */
+/* Chrome: translucent bars over true black                            */
+/* ------------------------------------------------------------------ */
+
+.material {
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
 }
-@keyframes dots {
-  0% { content: ''; }
-  25% { content: '.'; }
-  50% { content: '..'; }
-  75% { content: '...'; }
+@media (prefers-reduced-transparency: reduce) {
+  .material {
+    background: #000;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.topbar {
+  padding-top: var(--safe-t);
+  transition: box-shadow var(--duration-fast) ease;
+}
+.topbar[data-scrolled="true"] {
+  box-shadow: inset 0 -1px 0 var(--color-seam);
+}
+.tabbar {
+  padding-bottom: var(--safe-b);
+  box-shadow: inset 0 1px 0 var(--color-seam);
+}
+.page-bottom {
+  padding-bottom: calc(var(--tab-h) + var(--safe-b) + 24px);
+}
+@media (min-width: 1024px) {
+  .page-bottom {
+    padding-bottom: 64px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Controls                                                            */
+/* ------------------------------------------------------------------ */
+
+.press {
+  transition: transform var(--duration-press) var(--ease-out), background-color var(--duration-quick) ease,
+    color var(--duration-quick) ease, box-shadow var(--duration-quick) ease, opacity var(--duration-quick) ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.btn-mark {
+  background: var(--color-mark);
+  color: #000;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-mark:hover:not(:disabled) {
+    background: #ffffff;
+  }
+}
+.btn-line {
+  background: transparent;
+  color: var(--color-mark);
+  box-shadow: inset 0 0 0 1px var(--color-seam-strong);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-line:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px var(--color-dropout);
+  }
+}
+/* Destructive: outline only, red only on intent. */
+.btn-danger {
+  background: transparent;
+  color: var(--color-dropout-text);
+  box-shadow: inset 0 0 0 1px var(--color-seam-strong);
+}
+.btn-danger:focus-visible,
+.btn-danger[data-armed="true"] {
+  color: var(--color-red);
+  box-shadow: inset 0 0 0 1px rgba(255, 107, 94, 0.55);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-danger:hover:not(:disabled) {
+    color: var(--color-red);
+    box-shadow: inset 0 0 0 1px rgba(255, 107, 94, 0.55);
+  }
+}
+.btn-sm {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: #05070b;
+  color: var(--color-mark);
+  font-size: 16px; /* no iOS zoom on focus */
+  box-shadow: inset 0 0 0 1px var(--color-seam-strong);
+  transition: box-shadow var(--duration-quick) ease;
+}
+.field::placeholder {
+  color: var(--color-dropout-quiet);
+}
+.field:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--color-focus);
+}
+.field[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-red);
+}
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-dropout-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.seam-b {
+  box-shadow: inset 0 -1px 0 var(--color-seam);
+}
+.seam-t {
+  box-shadow: inset 0 1px 0 var(--color-seam);
+}
+.ring-seam {
+  box-shadow: inset 0 0 0 1px var(--color-seam);
+}
+
+/* ------------------------------------------------------------------ */
+/* The answer sheet: one bubble per class                              */
+/* ------------------------------------------------------------------ */
+
+.sheet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  --b: 10px;
+}
+.sheet[data-dense="true"] {
+  gap: 3px;
+  --b: 8px;
+}
+.bub {
+  width: var(--b);
+  height: var(--b);
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1.5px var(--color-dropout);
+}
+.bub[data-s="on"] {
+  background: var(--color-mark);
+  box-shadow: none;
+}
+.bub[data-s="pre"] {
+  /* held before you registered (TCBR): printed, not counted */
+  box-shadow: inset 0 0 0 1px var(--color-seam-strong);
+  opacity: 0.6;
+}
+.bub[data-s="spare"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-cruise);
+}
+.bub[data-s="need-thin"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-thin);
+}
+.bub[data-s="need-red"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-red);
+}
+.bub[data-s="plan-on"] {
+  background: var(--color-pencil);
+  box-shadow: none;
+}
+.bub[data-s="plan-off"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-red);
+  background: radial-gradient(circle, var(--color-red) 0 1.5px, transparent 2px);
+}
+.bub[data-new="true"] {
+  outline: 2px solid rgba(61, 220, 151, 0.55);
+  outline-offset: 1.5px;
+}
+.bub[data-new="true"][data-s="off"] {
+  outline-color: rgba(255, 107, 94, 0.6);
+}
+.sheet-gap {
+  width: 6px;
+  flex: none;
+}
+.more-count {
+  font-size: 11px;
+  line-height: var(--b);
+  color: var(--color-dropout-text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The plate: one reversed verdict per screen                          */
+/* ------------------------------------------------------------------ */
+
+.plate {
+  background: var(--color-mark);
+  color: #05070b;
+  border-radius: 16px;
+}
+
+/* ------------------------------------------------------------------ */
+/* transitions.dev — accordion (grid rows)                             */
+/* ------------------------------------------------------------------ */
+
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition: opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition: opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-chevron {
+  transform: scaleY(-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron {
+    transition: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* transitions.dev — sliding tabs (segmented control)                  */
+/* ------------------------------------------------------------------ */
+
+.t-tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 48px;
+  background: var(--tabs-bar-bg);
+  box-shadow: inset 0 0 0 1px var(--color-seam);
+}
+.t-tab {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  height: 34px;
+  padding: 4px 14px;
+  color: var(--tabs-text-muted);
+  cursor: pointer;
+  border-radius: 48px;
+  z-index: 1;
+  font-size: 14px;
+  font-weight: 600;
+  transition: color var(--tabs-dur) var(--tabs-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.t-tab:not([aria-selected="true"]):hover,
+.t-tab[aria-selected="true"] {
+  color: var(--tabs-text-active);
+}
+.t-tabs-pill {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  height: 34px;
+  width: 0;
+  background: var(--tabs-pill-bg);
+  border-radius: 48px;
+  transform: translateX(0);
+  transition: transform var(--tabs-dur) var(--tabs-ease), width var(--tabs-dur) var(--tabs-ease);
+  will-change: transform, width;
+  z-index: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-tabs-pill,
+  .t-tab {
+    transition: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* transitions.dev — dropdown, modal, toast                            */
+/* ------------------------------------------------------------------ */
+
+.t-dropdown {
+  transform-origin: top right;
+  transform: scale(var(--dropdown-pre-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--dropdown-open-dur) var(--dropdown-ease), opacity var(--dropdown-open-dur) var(--dropdown-ease);
+  will-change: transform, opacity;
+}
+.t-dropdown.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-dropdown.is-closing {
+  transform: scale(var(--dropdown-closing-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--dropdown-close-dur) var(--dropdown-ease), opacity var(--dropdown-close-dur) var(--dropdown-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-dropdown {
+    transition: none !important;
+  }
+}
+
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--modal-open-dur) var(--modal-ease), opacity var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--modal-close-dur) var(--modal-ease), opacity var(--modal-close-dur) var(--modal-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-modal {
+    transition: none !important;
+  }
+}
+.scrim {
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity var(--modal-close-dur) ease;
+}
+.scrim.is-open {
+  opacity: 1;
+  transition: opacity var(--modal-open-dur) ease;
+}
+
+.t-toast {
+  opacity: 0;
+  transform: translateY(var(--toast-distance)) scale(var(--toast-scale));
+  filter: blur(var(--toast-blur));
+  will-change: transform, opacity, filter;
+  transition: opacity var(--toast-close) var(--toast-ease), transform var(--toast-close) var(--toast-ease),
+    filter var(--toast-close) var(--toast-ease);
+}
+.t-toast.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  transition: opacity var(--toast-open) var(--toast-ease), transform var(--toast-open) var(--toast-ease),
+    filter var(--toast-open) var(--toast-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-toast {
+    transition: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* transitions.dev — shimmer text (sync in progress)                   */
+/* ------------------------------------------------------------------ */
+
+.t-shimmer {
+  position: relative;
+  display: inline-block;
+  color: var(--shimmer-base);
+}
+.t-shimmer::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg, transparent 0%, transparent 40%, var(--shimmer-highlight) 50%, transparent 60%, transparent 100%);
+  background-size: var(--shimmer-band) 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-shimmer var(--shimmer-dur) var(--shimmer-ease) infinite;
+}
+@keyframes t-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-shimmer::before {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* transitions.dev — number pop-in (figures that just changed)         */
+/* ------------------------------------------------------------------ */
+
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translateY(var(--digit-distance));
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+.t-digit-group {
+  display: inline-flex;
+  align-items: baseline;
+}
+.t-digit {
+  display: inline-block;
+}
+.t-digit-group.is-animating .t-digit:not([data-same]) {
+  animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both;
+  animation-delay: calc(var(--digit-stagger) * var(--i, 0));
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-digit-group.is-animating .t-digit {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Small pieces                                                        */
+/* ------------------------------------------------------------------ */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Content arrives with one quiet fade; nothing slides on every tab switch. */
+.page-in {
+  animation: page-in 160ms ease-out both;
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A course that was just jumped to from the timetable or the plate. */
+.flash {
+  animation: flash 1400ms var(--ease-out) both;
+}
+@keyframes flash {
+  0% {
+    background-color: rgba(126, 166, 255, 0.14);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-in {
+    animation: none;
+  }
+}
+
+/* Skeleton for first paint without cached data. */
+.skel {
+  background: #0d121c;
+  border-radius: 8px;
 }

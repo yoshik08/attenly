@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- Login form from the real KL ERP login page (session tokens replaced). -->
+<html><body>
+<form id="login-form" action="/index.php?r=site%2Flogin" method="post" data-pjax>
+<input type="hidden" name="_csrf" value="TEST_CSRF_TOKEN">
+          <div class="form-group">
+            <div class="floating-label field-loginFormUserNameID required">
+<input type="text" id="loginFormUserNameID" class="form-control" name="LoginForm[username]" autofocus onchange="onUserNameChange()" placeholder=" " aria-required="true">
+<label class="control-label" for="loginFormUserNameID">Enter Username <span class="text-danger">*</span></label>
+<div class="help-block"></div>
+</div>        </div>
+
+        <div class="form-group">
+            <div class="floating-label field-loginFormPasswordID required">
+<input type="password" id="loginFormPasswordID" class="form-control" name="LoginForm[password]" placeholder=" " aria-required="true">
+<label class="control-label" for="loginFormPasswordID">Enter Password <span class="text-danger">*</span></label>
+<div class="help-block"></div>
+</div>        </div>
+    <!--
+        -->        <div class="form-group field-loginFormCaptcha">
+<label class="control-label" for="loginform-captcha"></label>
+<img id="loginFormCaptcha-image" src="/index.php?r=site%2Fcaptcha&amp;v=TEST" alt=""><input type="text" id="loginFormCaptcha" class="form-control" name="LoginForm[captcha]" placeholder="Enter verification Code">
+
+<div class="help-block"></div>
+</div>                <div class="text-center">
+            <a class="btn btn-link crudjax1" value="/index.php?r=site%2Frequest-password-reset">Forgot Password?</a>            <span>&nbsp;|&nbsp;</span>
+            <a class="btn btn-link crudjax1" value="/index.php?r=site%2Fparent-registration">Parent Registration?</a>
+
+    <a class="btn btn-link crudjax1" value="/index.php?r=usermanagement%2Fmfa-processing%2Fmfa-registration">MFA Registration?</a></div>
+                    <div class="form-group field-loginFormQRCodeID">
+<label class="control-label" style="visibility:hidden" for="loginFormQRCodeID">MFA Code</label>
+<input type="text" id="loginFormQRCodeID" class="form-control" name="LoginForm[qr_code]" placeholder="Enter MFA Code" style="visibility:hidden" onchange="onQrCodeChange()">
+
+<div class="help-block"></div>
+</div>
+
+
+        <div class="form-group">
+        <div class="text-center d-grid" >
+                <button type="submit" class="btn btn-custom mb-3 w-auto" name="login-button">Login</button>        </div>
+        </div>
+
+    </form>
+<script>
+userHelpBlock.innerHTML = "<span class='text-danger'>Too many requests. Please try again in one minute.</span>";
+</script>
+</body></html>

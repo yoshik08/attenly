@@ -1,81 +1,117 @@
 import { getDb } from './mongo';
-import { sealSession } from '../erp/client';
-import type { FullSyncData } from '../erp/full-sync';
+import type { FullSyncData, SyncTerm } from '../erp/full-sync';
+import type { SubjectAttendance } from '../math';
+import type { CgpaRow, InternalRow, ResultRow, TimetableDay } from '../erp/parsers';
 
 /**
- * Snapshot document. Credentials live ONLY as the AES-256-GCM sealed `creds`
- * blob — never plaintext. GET projections always exclude `creds`.
+ * One synced term for one ERP account. Older documents may still carry a
+ * `creds` field from the Oct 2026 build; it is never read, never returned,
+ * and removed on the next save.
  */
 export interface SnapshotDoc {
   universityId: string;
   googleId?: string;
-  term: { academicyear: string; semesterid: string; semester: string };
+  term: SyncTerm;
   termKey: string;
   syncedAt: Date;
-  attendance: unknown[];
-  timetable: unknown[];
-  internals: unknown[];
-  results: unknown[];
-  cgpaRows: unknown[];
+  attendance: SubjectAttendance[];
+  timetable: TimetableDay[];
+  internals: InternalRow[];
+  results: ResultRow[];
+  cgpaRows: CgpaRow[];
   cgpa: number | null;
-  sgpaTerms: unknown[];
+  sgpaTerms: FullSyncData['sgpaTerms'];
   termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
   creds?: string;
+}
+
+/** What the browser receives. */
+export interface ClientSnapshot {
+  universityId: string;
+  term: SyncTerm;
+  syncedAt: string;
+  attendance: SubjectAttendance[];
+  timetable: TimetableDay[];
+  internals: InternalRow[];
+  results: ResultRow[];
+  cgpaRows: CgpaRow[];
+  cgpa: number | null;
+  sgpaTerms: FullSyncData['sgpaTerms'];
 }
 
 export function termKey(term: { academicyear?: string; semesterid?: string; semester?: string }): string {
   return [term.academicyear ?? '', term.semesterid ?? '', term.semester ?? ''].join('::');
 }
 
-/** Persist a full sync. When `password` is supplied it is sealed into `creds`. */
-export async function saveFullSnapshot(input: {
-  universityId: string;
-  googleId?: string;
-  term: { academicyear: string; semesterid: string; semester: string };
-  data: FullSyncData;
-  password?: string;
-  termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
-}): Promise<{ savedAt: string }> {
-  let creds: string | undefined;
-  if (input.password) {
-    creds = sealSession({ pw: input.password });
-  }
-  const doc: SnapshotDoc = {
-    universityId: input.universityId,
-    ...(input.googleId ? { googleId: input.googleId } : {}),
-    term: input.term,
-    termKey: termKey(input.term),
-    syncedAt: new Date(input.data.syncedAt),
-    attendance: input.data.attendance,
-    timetable: input.data.timetable,
-    internals: input.data.internals,
-    results: input.data.results,
-    cgpaRows: input.data.cgpaRows,
-    cgpa: input.data.cgpa,
-    sgpaTerms: input.data.sgpaTerms,
-    ...(input.termOptions ? { termOptions: input.termOptions } : {}),
-    ...(creds ? { creds } : {}),
+const snapshots = async () => (await getDb()).collection<SnapshotDoc>('snapshots');
+
+export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapshot {
+  return {
+    universityId: doc.universityId,
+    term: doc.term,
+    syncedAt: new Date(doc.syncedAt).toISOString(),
+    attendance: doc.attendance ?? [],
+    timetable: doc.timetable ?? [],
+    internals: doc.internals ?? [],
+    results: doc.results ?? [],
+    cgpaRows: doc.cgpaRows ?? [],
+    cgpa: doc.cgpa ?? null,
+    sgpaTerms: doc.sgpaTerms ?? [],
   };
-  const db = await getDb();
-  // $set only touches the listed fields, so a sync without a password keeps
-  // any previously sealed creds blob intact.
-  await db.collection<SnapshotDoc>('snapshots').updateOne(
-    { universityId: doc.universityId, termKey: doc.termKey },
-    { $set: doc },
-    { upsert: true },
-  );
-  return { savedAt: doc.syncedAt.toISOString() };
 }
 
-/** Latest snapshot for a Google user (creds excluded). */
-export async function getLatestSnapshotForGoogle(googleId: string, universityId?: string): Promise<Omit<SnapshotDoc, 'creds'> | null> {
-  const db = await getDb();
-  const filter: Record<string, string> = { googleId };
-  if (universityId) filter.universityId = universityId;
-  return db
-    .collection<SnapshotDoc>('snapshots')
-    .find(filter, { projection: { creds: 0 } })
+/** Latest snapshot for one of a Google user's ERP accounts. */
+export async function getLatestSnapshot(googleId: string, universityId: string): Promise<SnapshotDoc | null> {
+  return (await snapshots())
+    .find({ googleId, universityId }, { projection: { creds: 0 } })
     .sort({ syncedAt: -1 })
     .limit(1)
     .next();
+}
+
+/**
+ * Persist a sync. Datasets that failed this run keep the values from the
+ * previous snapshot so a flaky ERP page never blanks out good data.
+ */
+export async function saveFullSnapshot(input: {
+  universityId: string;
+  googleId: string;
+  data: FullSyncData;
+  previous?: SnapshotDoc | null;
+  termOptions?: SnapshotDoc['termOptions'];
+}): Promise<SnapshotDoc> {
+  const { data, previous } = input;
+  const keep = <K extends keyof SnapshotDoc>(dataset: FullSyncData['failed'][number], key: K, fresh: SnapshotDoc[K]) =>
+    data.failed.includes(dataset) && previous && termKey(previous.term) === termKey(data.term) ? previous[key] : fresh;
+
+  const cgpaRows = keep('cgpa', 'cgpaRows', data.cgpaRows);
+  const doc: SnapshotDoc = {
+    universityId: input.universityId,
+    googleId: input.googleId,
+    term: data.term,
+    termKey: termKey(data.term),
+    syncedAt: new Date(data.syncedAt),
+    attendance: keep('attendance', 'attendance', data.attendance),
+    timetable: keep('timetable', 'timetable', data.timetable),
+    internals: keep('internals', 'internals', data.internals),
+    results: keep('results', 'results', data.results),
+    cgpaRows,
+    cgpa: cgpaRows === data.cgpaRows ? data.cgpa : (previous?.cgpa ?? null),
+    sgpaTerms: cgpaRows === data.cgpaRows ? data.sgpaTerms : (previous?.sgpaTerms ?? []),
+    ...(input.termOptions ? { termOptions: input.termOptions } : {}),
+  };
+  // Keyed by the Google user too: the same ERP account under two Google
+  // accounts must never overwrite (or, on removal, delete) the other's data.
+  await (await snapshots()).updateOne(
+    { googleId: doc.googleId, universityId: doc.universityId, termKey: doc.termKey },
+    { $set: doc, $unset: { creds: '' } },
+    { upsert: true },
+  );
+  return doc;
+}
+
+/** Remove every synced term of one account (used when the account is unlinked). */
+export async function deleteSnapshots(googleId: string, universityId: string): Promise<number> {
+  const res = await (await snapshots()).deleteMany({ googleId, universityId });
+  return res.deletedCount;
 }

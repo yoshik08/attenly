@@ -1,33 +1,34 @@
 import { Db, MongoClient } from 'mongodb';
 
+/** The live data has always lived in this database; keep it. */
 const DB_NAME = 'skipwise';
 
 declare global {
-  var __skipwiseMongoClient: MongoClient | undefined;
+  var __attenlyMongo: Promise<MongoClient> | undefined;
 }
 
 /**
- * Returns a cached MongoClient, reusing the same client across hot reloads
- * (dev) and warm serverless invocations. Never stores credentials — this is
- * only the database connection.
+ * One shared connection per server instance. The promise is cached (not the
+ * client) so concurrent first requests share a single connect, and a failed
+ * connect is forgotten so the next request retries instead of failing forever.
  */
-async function getClient(): Promise<MongoClient> {
+function connect(): Promise<MongoClient> {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    throw new Error(
-      'MONGODB_URI is not set. Add it to .env (see .env.example) to enable MongoDB snapshots.',
-    );
+    return Promise.reject(new Error('MONGODB_URI is not set.'));
   }
-  if (!globalThis.__skipwiseMongoClient) {
-    const client = new MongoClient(uri);
-    await client.connect();
-    globalThis.__skipwiseMongoClient = client;
+  if (!globalThis.__attenlyMongo) {
+    const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10_000 });
+    globalThis.__attenlyMongo = client.connect().catch((e: unknown) => {
+      globalThis.__attenlyMongo = undefined;
+      throw e;
+    });
   }
-  return globalThis.__skipwiseMongoClient;
+  return globalThis.__attenlyMongo;
 }
 
 export async function getDb(): Promise<Db> {
-  const client = await getClient();
+  const client = await connect();
   return client.db(DB_NAME);
 }
 

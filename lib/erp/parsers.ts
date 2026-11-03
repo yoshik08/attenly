@@ -16,6 +16,7 @@ import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import type { ComponentKey, ComponentMap, SubjectAttendance } from '../math';
 import { COMPONENT_ORDER } from '../math';
+import { compareTerms } from '../terms';
 
 function norm(s: string): string {
   return s.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -247,7 +248,6 @@ export interface TimetableDay {
   periods: TimetablePeriod[];
 }
 
-const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_SHORT: Record<string, string> = {
   monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu',
   friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
@@ -294,6 +294,11 @@ function inferType(subjectLine: string): ComponentKey | null {
   return null;
 }
 
+/** HTML entities left after stripping tags (&amp;, &nbsp;, &#39;, …) as plain text. */
+function decodeEntities(html: string): string {
+  return cheerio.load(`<p>${html}</p>`)('p').text().replace(/ /g, ' ');
+}
+
 /** Parse a day/period timetable grid. Handles days-as-rows and days-as-columns. */
 export function parseTimetable(html: string): TimetableDay[] {
   try {
@@ -311,10 +316,12 @@ export function parseTimetable(html: string): TimetableDay[] {
           .find('th, td')
           .toArray()
           .map((c) =>
-            ($(c).html() ?? '')
-              .replace(/<br\s*\/?>/gi, ' | ')
-              .replace(/<\/(p|div|li)>/gi, ' | ')
-              .replace(/<[^>]*>/g, ' ')
+            decodeEntities(
+              ($(c).html() ?? '')
+                .replace(/<br\s*\/?>/gi, ' | ')
+                .replace(/<\/(p|div|li)>/gi, ' | ')
+                .replace(/<[^>]*>/g, ' '),
+            )
               .replace(/\s+/g, ' ')
               .trim(),
           ),
@@ -423,26 +430,63 @@ export function detectLoginForm(html: string): boolean {
   }
 }
 
-/** Scrape a human-readable login error from the login page, if any. */
-export function parseLoginError(html: string): string | null {
+/**
+ * Every validation message on the ERP login page, in page order. The ERP is a
+ * Yii2/Bootstrap form: each field has its own `.help-block` (empty unless that
+ * field failed), so reading only the first block misses the real error.
+ */
+export function parseLoginErrors(html: string): string[] {
   try {
     const $ = cheerio.load(html);
-    const err = $('.help-block-error').first().text().trim()
-      || $('.alert-danger').first().text().trim()
-      || $('.help-block').first().text().trim();
-    return err || null;
+    const fieldErrors = '.help-block, .help-block-error, .invalid-feedback';
+    const form = $('#login-form');
+    const out: string[] = [];
+    const push = (t: string) => {
+      const s = t.replace(/\s+/g, ' ').trim();
+      if (s && !out.includes(s)) out.push(s);
+    };
+    (form.length > 0 ? form.find(fieldErrors) : $(fieldErrors)).each((_, el) => push($(el).text()));
+    $('.alert-danger, .alert-error').each((_, el) => push($(el).text()));
+    return out;
   } catch {
-    return null;
+    return [];
   }
 }
 
-/** Classify a scraped login error into a machine-readable code. */
-export function classifyLoginError(err: string | null): 'bad_captcha' | 'bad_credentials' | 'unknown' {
-  if (!err) return 'unknown';
-  const e = norm(err);
-  if (/captcha|verification/.test(e)) return 'bad_captcha';
-  if (/password|username|credential|invalid|incorrect/.test(e)) return 'bad_credentials';
+/** All login errors joined into one readable line, or null when there are none. */
+export function parseLoginError(html: string): string | null {
+  const errs = parseLoginErrors(html);
+  return errs.length > 0 ? errs.join(' ') : null;
+}
+
+export type LoginErrorCode = 'bad_captcha' | 'bad_credentials' | 'rate_limited' | 'unknown';
+
+/**
+ * Classify login errors. A wrong captcha wins: when the captcha is wrong the
+ * ERP also prints "Incorrect username or password." (Yii validates both
+ * fields), so the password error alone proves nothing in that case.
+ */
+export function classifyLoginError(err: string | string[] | null): LoginErrorCode {
+  const list = (Array.isArray(err) ? err : err ? [err] : []).map(norm);
+  if (list.length === 0) return 'unknown';
+  if (list.some((e) => /captcha|verification code/.test(e))) return 'bad_captcha';
+  if (list.some((e) => /incorrect username or password|password|username|credential|invalid|incorrect/.test(e))) {
+    return 'bad_credentials';
+  }
+  if (list.some((e) => /too many requests/.test(e))) return 'rate_limited';
   return 'unknown';
+}
+
+/** The one message worth showing for a classified login failure. */
+export function pickLoginMessage(errs: string[], code: LoginErrorCode): string | null {
+  const n = errs.map(norm);
+  const at = (re: RegExp) => {
+    const i = n.findIndex((e) => re.test(e));
+    return i >= 0 ? errs[i] : null;
+  };
+  if (code === 'bad_captcha') return at(/captcha|verification code/);
+  if (code === 'bad_credentials') return at(/password|username|credential|invalid|incorrect/);
+  return errs[0] ?? null;
 }
 
 export interface TermList {
@@ -767,7 +811,8 @@ export function computeGpa(rows: CgpaRow[]): {
     sgpa: t.c > 0 ? Math.round((t.p / t.c) * 100) / 100 : null,
     credits: t.c,
   }));
-  // Sort terms chronologically by academic year start.
-  terms.sort((a, b) => a.academicYear.localeCompare(b.academicYear) || a.semester.localeCompare(b.semester));
+  // Chronological: academic year, then odd (Jul–Dec) before even (Jan–Jun)
+  // before summer. Alphabetical order would put "Even Sem" first.
+  terms.sort(compareTerms);
   return { cgpa: totC > 0 ? Math.round((totP / totC) * 100) / 100 : null, terms };
 }

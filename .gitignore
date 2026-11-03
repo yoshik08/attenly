@@ -21,3 +21,6 @@ npm-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+# local test stack
+tests/.stack.json

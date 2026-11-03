@@ -1,13 +1,12 @@
 /**
- * Aurora Ink attendance engine.
+ * Attendance engine — weighted LTPS (Lecture / Tutorial / Practical /
+ * Skilling), the way the KL University ERP computes it:
  *
- * Weighted LTPS (Lecture / Tutorial / Practical / Skilling) math that mirrors
- * the KL University NewERP style of percentage calculation:
+ *   course % = ceil( Σ(attended_k × w_k) / Σ(conducted_k × w_k) × 100 )
  *
- *   overall % = Math.ceil( Σ(attended_i × w_i) / Σ(conducted_i × w_i) × 100 )
- *
- * Component weights: L = 100, T = 100, P = 50, S = 25.
- * The university's hard detention floor is 75%.
+ * Weights L 100, T 100, P 50, S 25. 85% is the cruise line, 75% the
+ * detention floor. Every budget below is derived by stepping the same rounded
+ * figure the app displays, so "2 to spare" always agrees with the percentage.
  */
 
 export type ComponentKey = 'L' | 'T' | 'P' | 'S';
@@ -27,19 +26,19 @@ export interface SubjectAttendance {
 
 export type Weights = Record<ComponentKey, number>;
 
-/** Per-component TCBR overrides (classes held before registration). */
+/** Classes held before registration, per component (the ERP's TCBR). */
 export type TcbrMap = Partial<Record<ComponentKey, number>>;
 
 export interface Thresholds {
-  /** e.g. 85 — at or above this you're cruising */
+  /** At or above: cruising (85). */
   safeAt: number;
-  /** e.g. 75 — at or above this (but below safeAt) you're on thin ice */
+  /** At or above but below safeAt: thin ice (75). Below: in the red. */
   condonationFrom: number;
 }
 
 export interface TcbrSettings {
   enabled: boolean;
-  /** course code -> TCBR count, applied to every component's conducted total */
+  /** course code -> classes held before you registered */
   perCourse: Record<string, number>;
 }
 
@@ -52,11 +51,18 @@ export const COMPONENT_LABELS: Record<ComponentKey, string> = {
   S: 'Skilling',
 };
 
-export const COMPONENT_SHORT: Record<ComponentKey, string> = {
-  L: 'Lec',
-  T: 'Tut',
-  P: 'Prac',
-  S: 'Skill',
+export const COMPONENT_PLURAL: Record<ComponentKey, string> = {
+  L: 'lectures',
+  T: 'tutorials',
+  P: 'practicals',
+  S: 'skilling sessions',
+};
+
+export const COMPONENT_SINGULAR: Record<ComponentKey, string> = {
+  L: 'lecture',
+  T: 'tutorial',
+  P: 'practical',
+  S: 'skilling session',
 };
 
 export const DEFAULT_WEIGHTS: Weights = { L: 100, T: 100, P: 50, S: 25 };
@@ -65,56 +71,84 @@ export const DEFAULT_TCBR: TcbrSettings = { enabled: false, perCourse: {} };
 /** The university's hard detention floor. */
 export const DETENTION_FLOOR = 75;
 
-interface WeightedSums {
-  attW: number;
-  condW: number;
-  /** total number of conducted sessions (unweighted) */
-  count: number;
+/** Budgets stop counting here; anything beyond reads as "plenty". */
+export const BUDGET_CAP = 999;
+
+/**
+ * ceil(num / den × 100) without floating-point drift: 7/100 is 7%, not 8%.
+ * The small epsilon absorbs representation error from fractional weights.
+ */
+export function ceilPct(num: number, den: number): number {
+  const v = Math.ceil((num * 100) / den - 1e-9);
+  return v === 0 ? 0 : v; // never -0
 }
 
 function tcbrOf(tcbr: TcbrMap | undefined, k: ComponentKey): number {
   return Math.max(0, Math.floor(tcbr?.[k] ?? 0));
 }
 
+/** Effective conducted count for a component (TCBR removed); ≤ 0 means not applicable. */
+export function effectiveConducted(subj: SubjectAttendance, k: ComponentKey, tcbr?: TcbrMap): number {
+  return (subj.components[k]?.conducted ?? 0) - tcbrOf(tcbr, k);
+}
+
+/** Per-component plan: upcoming classes you attend vs. skip. */
+export type SandboxPlan = Record<ComponentKey, { attend: number; skip: number }>;
+
+export function emptyPlan(): SandboxPlan {
+  return { L: { attend: 0, skip: 0 }, T: { attend: 0, skip: 0 }, P: { attend: 0, skip: 0 }, S: { attend: 0, skip: 0 } };
+}
+
 export function weightedSums(
   subj: SubjectAttendance,
   weights: Weights,
   tcbr?: TcbrMap,
-): WeightedSums {
+  plan?: SandboxPlan,
+): { attW: number; condW: number } {
   let attW = 0;
   let condW = 0;
-  let count = 0;
   for (const k of COMPONENT_ORDER) {
     const c = subj.components[k] ?? { conducted: 0, attended: 0 };
     const w = weights[k] ?? 0;
-    const effConducted = c.conducted - tcbrOf(tcbr, k);
-    if (effConducted <= 0) continue; // TCBR'd out — component is N/A
-    attW += c.attended * w;
-    condW += effConducted * w;
-    count += effConducted;
+    const eff = c.conducted - tcbrOf(tcbr, k);
+    if (eff <= 0) continue; // TCBR'd out or never held: not applicable
+    const attend = Math.max(0, plan?.[k].attend ?? 0);
+    const skip = Math.max(0, plan?.[k].skip ?? 0);
+    attW += (c.attended + attend) * w;
+    condW += (eff + attend + skip) * w;
   }
-  return { attW, condW, count };
+  return { attW, condW };
 }
 
-/** Weighted attendance %, ceiled like the ERP. Null when nothing counts yet. */
-export function weightedPct(
-  subj: SubjectAttendance,
-  weights: Weights,
-  tcbr?: TcbrMap,
-): number | null {
+/** Weighted course %, rounded up like the ERP. Null when nothing counts yet. */
+export function weightedPct(subj: SubjectAttendance, weights: Weights, tcbr?: TcbrMap): number | null {
   const { attW, condW } = weightedSums(subj, weights, tcbr);
-  if (condW <= 0) return null;
-  return Math.ceil((attW / condW) * 100);
+  return condW > 0 ? ceilPct(attW, condW) : null;
 }
 
-/** Per-component effective %, mirroring the ERP's TCBR adjustment. Null = N/A. */
-export function tcbrPct(c: ComponentCounts, tcbr: number): number | null {
-  const denom = c.conducted - tcbr;
-  if (denom <= 0) return null;
-  return Math.ceil((c.attended / denom) * 100);
+/** Projected % after a what-if plan (attending adds to both counts, skipping only to conducted). */
+export function sandboxPct(subj: SubjectAttendance, weights: Weights, plan: SandboxPlan, tcbr?: TcbrMap): number | null {
+  const { attW, condW } = weightedSums(subj, weights, tcbr, plan);
+  return condW > 0 ? ceilPct(attW, condW) : null;
 }
 
-/** Resolve the TCBR map for a course from settings (undefined = feature off). */
+/** Overall weighted % across courses. */
+export function overallPct(
+  subjects: SubjectAttendance[],
+  weights: Weights,
+  tcbrFor: (code: string) => TcbrMap | undefined,
+): number | null {
+  let attW = 0;
+  let condW = 0;
+  for (const s of subjects) {
+    const p = weightedSums(s, weights, tcbrFor(s.code));
+    attW += p.attW;
+    condW += p.condW;
+  }
+  return condW > 0 ? ceilPct(attW, condW) : null;
+}
+
+/** Resolve a course's TCBR from settings (undefined when off or zero). */
 export function courseTcbr(code: string, tcbr: TcbrSettings): TcbrMap | undefined {
   if (!tcbr.enabled) return undefined;
   const v = Math.max(0, Math.floor(tcbr.perCourse[code] ?? 0));
@@ -122,195 +156,96 @@ export function courseTcbr(code: string, tcbr: TcbrSettings): TcbrMap | undefine
   return { L: v, T: v, P: v, S: v };
 }
 
-/* ------------------------------------------------------------------ */
-/* What-if lab (sandbox simulation)                                    */
-/* ------------------------------------------------------------------ */
-
-/** Per-component plan: how many upcoming classes you attend vs. bunk. */
-export type SandboxPlan = Record<ComponentKey, { attend: number; skip: number }>;
-
-export function emptyPlan(): SandboxPlan {
-  return {
-    L: { attend: 0, skip: 0 },
-    T: { attend: 0, skip: 0 },
-    P: { attend: 0, skip: 0 },
-    S: { attend: 0, skip: 0 },
-  };
+export interface Budget {
+  /** Classes of this type you can miss in a row and still show ≥ target. */
+  spare: number;
+  /** Classes of this type you must attend in a row to show ≥ target (Infinity: not reachable). */
+  needed: number;
 }
 
 /**
- * Projected % after applying a what-if plan.
- * Attending a class: conducted + 1 AND attended + 1.
- * Bunking a class: conducted + 1 only.
+ * Skip/attend budget for one component, with every other component held
+ * where it is. Null when the component doesn't apply to the course.
  */
-export function sandboxPct(
+export function componentBudget(
   subj: SubjectAttendance,
   weights: Weights,
-  plan: SandboxPlan,
-  tcbr?: TcbrMap,
-): number | null {
-  let attW = 0;
-  let condW = 0;
-  for (const k of COMPONENT_ORDER) {
-    const c = subj.components[k] ?? { conducted: 0, attended: 0 };
-    const w = weights[k] ?? 0;
-    const effConducted = c.conducted - tcbrOf(tcbr, k);
-    if (effConducted <= 0) continue;
-    const p = plan[k] ?? { attend: 0, skip: 0 };
-    const attend = Math.max(0, p.attend);
-    const skip = Math.max(0, p.skip);
-    attW += (c.attended + attend) * w;
-    condW += (effConducted + attend + skip) * w;
-  }
-  if (condW <= 0) return null;
-  return Math.ceil((attW / condW) * 100);
-}
-
-/**
- * Impact of a single upcoming class of the given component:
- * `gain` = points added by showing up, `loss` = points lost by bunking.
- */
-export function classImpact(
-  subj: SubjectAttendance,
-  weights: Weights,
-  type: ComponentKey,
-  tcbr?: TcbrMap,
-): { gain: number; loss: number } {
-  const cur = weightedPct(subj, weights, tcbr);
-  const w = weights[type] ?? 0;
-  const { attW, condW } = weightedSums(subj, weights, tcbr);
-  if (cur == null || condW <= 0 || w <= 0) return { gain: 0, loss: 0 };
-  const ifAttended = Math.ceil(((attW + w) / (condW + w)) * 100);
-  const ifMissed = Math.ceil((attW / (condW + w)) * 100);
-  return { gain: ifAttended - cur, loss: cur - ifMissed };
-}
-
-/* ------------------------------------------------------------------ */
-/* Bunk balance (per-component skip margin) & catch-up (needed)        */
-/* ------------------------------------------------------------------ */
-
-interface SplitSums {
-  /** other components' weighted conducted / attended */
-  otherCondW: number;
-  otherAttW: number;
-  /** this component's raw conducted / attended */
-  compCond: number;
-  compAtt: number;
-  weight: number;
-}
-
-function splitSums(
-  subj: SubjectAttendance,
-  weights: Weights,
+  target: number,
   k: ComponentKey,
   tcbr?: TcbrMap,
-): SplitSums {
-  let otherCondW = 0;
-  let otherAttW = 0;
-  let compCond = 0;
-  let compAtt = 0;
-  for (const key of COMPONENT_ORDER) {
-    const c = subj.components[key] ?? { conducted: 0, attended: 0 };
-    const w = weights[key] ?? 0;
-    const eff = c.conducted - tcbrOf(tcbr, key);
-    if (key === k) {
-      if (eff > 0) {
-        compCond = eff;
-        compAtt = c.attended;
+): Budget | null {
+  if (effectiveConducted(subj, k, tcbr) <= 0) return null;
+  const current = weightedPct(subj, weights, tcbr);
+  if (current == null) return null;
+  const w = weights[k] ?? 0;
+  if (w <= 0) {
+    return { spare: current >= target ? Number.POSITIVE_INFINITY : 0, needed: current >= target ? 0 : Number.POSITIVE_INFINITY };
+  }
+  const plan = emptyPlan();
+  if (current >= target) {
+    let spare = 0;
+    while (spare < BUDGET_CAP) {
+      plan[k].skip = spare + 1;
+      const p = sandboxPct(subj, weights, plan, tcbr);
+      if (p == null || p < target) break;
+      spare++;
+    }
+    return { spare, needed: 0 };
+  }
+  for (let n = 1; n <= BUDGET_CAP; n++) {
+    plan[k].attend = n;
+    const p = sandboxPct(subj, weights, plan, tcbr);
+    if (p != null && p >= target) return { spare: 0, needed: n };
+  }
+  return { spare: 0, needed: Number.POSITIVE_INFINITY };
+}
+
+/* ------------------------------------------------------------------ */
+/* Plain attended / total maths (the calculator)                        */
+/* ------------------------------------------------------------------ */
+
+export interface SimpleResult {
+  /** The figure the ERP would show (rounded up). */
+  shown: number;
+  /** Before rounding, two decimals. */
+  exact: number;
+  spare: number;
+  needed: number;
+}
+
+/** attended / total with the ERP's rounding, plus the skip and catch-up budget against `target`. */
+export function simpleAttendance(attended: number, total: number, target: number): SimpleResult | null {
+  if (!Number.isFinite(attended) || !Number.isFinite(total)) return null;
+  if (total <= 0 || attended < 0 || attended > total) return null;
+  const a = Math.floor(attended);
+  const t = Math.floor(total);
+  if (a !== attended || t !== total) return null;
+  const shown = ceilPct(a, t);
+  const exact = Math.round((a / t) * 10000) / 100;
+  let spare = 0;
+  let needed = 0;
+  if (shown >= target) {
+    while (spare < BUDGET_CAP * 10 && ceilPct(a, t + spare + 1) >= target) spare++;
+  } else {
+    needed = Number.POSITIVE_INFINITY;
+    for (let n = 1; n <= BUDGET_CAP * 10; n++) {
+      if (ceilPct(a + n, t + n) >= target) {
+        needed = n;
+        break;
       }
-    } else {
-      if (eff <= 0) continue;
-      otherCondW += eff * w;
-      otherAttW += c.attended * w;
     }
   }
-  return { otherCondW, otherAttW, compCond, compAtt, weight: weights[k] ?? 0 };
-}
-
-/**
- * How many of component `k` you can bunk in a row while staying >= `target`.
- *   floor((100×(O_a + A_a×W) − T×(O_d + C_d×W)) / (T×W)), min 0.
- * Returns Infinity when the target is <= 0 (unlimited runway).
- */
-export function skipMargin(
-  subj: SubjectAttendance,
-  weights: Weights,
-  target: number,
-  k: ComponentKey,
-  tcbr?: TcbrMap,
-): number {
-  if (target <= 0) return Number.POSITIVE_INFINITY;
-  const { otherCondW, otherAttW, compCond, compAtt, weight: W } = splitSums(subj, weights, k, tcbr);
-  if (W <= 0) return 0;
-  const num = 100 * (otherAttW + compAtt * W) - target * (otherCondW + compCond * W);
-  const m = Math.floor(num / (target * W));
-  return Math.max(0, m);
-}
-
-/**
- * How many of component `k` you must attend in a row to reach `target`.
- *   ceil((T×(O_d + C_d×W) − 100×(O_a + A_a×W)) / (W×(100−T))), min 0.
- * Returns Infinity when the target is unreachable from here.
- */
-export function neededToReach(
-  subj: SubjectAttendance,
-  weights: Weights,
-  target: number,
-  k: ComponentKey,
-  tcbr?: TcbrMap,
-): number {
-  if (target <= 0) return 0;
-  const { otherCondW, otherAttW, compCond, compAtt, weight: W } = splitSums(subj, weights, k, tcbr);
-  if (W <= 0) return Number.POSITIVE_INFINITY;
-  const denom = W * (100 - target);
-  const num = target * (otherCondW + compCond * W) - 100 * (otherAttW + compAtt * W);
-  if (num <= 0) return 0;
-  if (denom <= 0) return Number.POSITIVE_INFINITY;
-  return Math.ceil(num / denom);
-}
-
-/**
- * Overall bunk balance: max extra bunks (at the course's average weight)
- * before the weighted % would drop strictly below `linePct`.
- */
-export function maxSkippable(
-  subj: SubjectAttendance,
-  weights: Weights,
-  linePct: number,
-  tcbr?: TcbrMap,
-): number {
-  const { attW, condW, count } = weightedSums(subj, weights, tcbr);
-  if (count <= 0) return 0;
-  const avgW = condW / count;
-  if (avgW <= 0) return 0;
-  const line = linePct / 100;
-  if (line <= 0) return Number.MAX_SAFE_INTEGER;
-  const n = Math.floor((attW / line - condW) / avgW);
-  return Math.max(0, n);
-}
-
-/** Bunk-balance guidance at both red lines. */
-export function skipGuidance(
-  subj: SubjectAttendance,
-  weights: Weights,
-  t: Thresholds,
-  tcbr?: TcbrMap,
-): { keepCruising: number; stayAboveFloor: number } {
-  return {
-    keepCruising: maxSkippable(subj, weights, t.safeAt, tcbr),
-    stayAboveFloor: maxSkippable(subj, weights, t.condonationFrom, tcbr),
-  };
+  return { shown, exact, spare, needed };
 }
 
 /* ------------------------------------------------------------------ */
-/* Bands, labels, formatting                                           */
+/* Bands and formatting                                                */
 /* ------------------------------------------------------------------ */
 
 export type Band = 'cruising' | 'thin-ice' | 'in-the-red';
 
 export function policyBand(pct: number | null, t: Thresholds): Band {
-  if (pct == null) return 'cruising';
-  if (pct >= t.safeAt) return 'cruising';
+  if (pct == null || pct >= t.safeAt) return 'cruising';
   if (pct >= t.condonationFrom) return 'thin-ice';
   return 'in-the-red';
 }
@@ -322,26 +257,16 @@ export function bandLabel(band: Band): string {
     case 'thin-ice':
       return 'Thin ice';
     case 'in-the-red':
-      return 'In the red';
+      return 'Below floor';
   }
 }
 
-/** Format a ceiled percentage, e.g. 79%. Null -> em dash. */
+/** Format a percentage; null renders as an em dash. */
 export function fmtPct(pct: number | null): string {
-  if (pct == null) return '—';
-  return `${Math.round(pct)}%`;
+  return pct == null ? '—' : `${Math.round(pct)}%`;
 }
 
-/** Format a delta, e.g. +2 / −3 (percentage points). */
-export function fmtDelta(delta: number): string {
-  const r = Math.round(delta);
-  const sign = r > 0 ? '+' : r < 0 ? '−' : '';
-  return `${sign}${Math.abs(r)}`;
-}
-
-/** Friendly bunk-balance phrasing, e.g. "3 bunks of runway" / "no runway". */
-export function fmtRunway(n: number): string {
-  if (!Number.isFinite(n)) return 'unlimited runway';
-  if (n <= 0) return 'no runway';
-  return `${n} bunk${n === 1 ? '' : 's'} of runway`;
+/** "1 lecture" / "3 lectures". */
+export function countOf(n: number, k: ComponentKey): string {
+  return `${n} ${n === 1 ? COMPONENT_SINGULAR[k] : COMPONENT_PLURAL[k]}`;
 }

@@ -1,151 +1,279 @@
 'use client';
 
-import { useMemo } from 'react';
-import { usePlanner } from '@/components/data-context';
-import { Container, GlassPanel } from '@/components/ui';
-import { NeedLink } from '@/components/need-link';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { MapPin } from '@phosphor-icons/react';
+import { useStore } from '@/components/store';
+import { DataGate } from '@/components/states';
+import { Segmented } from '@/components/segmented';
+import { BAND_INK } from '@/components/course';
 import { cn } from '@/components/cn';
-import type { TimetableDay } from '@/lib/erp/parsers';
-import type { ComponentKey } from '@/lib/math';
+import { COMPONENT_LABELS, fmtPct } from '@/lib/math';
+import { minutesOf, periodOrder, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import type { TimetableDay, TimetablePeriod } from '@/lib/erp/parsers';
+import { useNow } from '@/lib/time';
+import { termText } from '@/lib/terms';
 
-const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const TYPE_PILL: Record<string, string> = {
-  L: 'LEC',
-  T: 'TUT',
-  P: 'PRAC',
-  S: 'SKILL',
+const ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const FULL: Record<string, string> = {
+  Mon: 'Monday',
+  Tue: 'Tuesday',
+  Wed: 'Wednesday',
+  Thu: 'Thursday',
+  Fri: 'Friday',
+  Sat: 'Saturday',
+  Sun: 'Sunday',
 };
 
-function sortedPeriods(timetable: TimetableDay[]): string[] {
-  const set = new Map<string, { order: number; start: string }>();
-  for (const d of timetable) {
-    for (const p of d.periods) {
-      if (!set.has(p.period)) {
-        const n = parseInt(p.period.replace(/\D/g, ''), 10);
-        set.set(p.period, { order: Number.isNaN(n) ? 999 : n, start: p.start });
-      }
-    }
-  }
-  return [...set.entries()]
-    .sort((a, b) => a[1].order - b[1].order || a[1].start.localeCompare(b[1].start))
-    .map(([k]) => k);
-}
-
-function cellTone(type: ComponentKey | null): string {
-  if (type === 'S') return 'border-[#E9A13B]/30 bg-[#E9A13B]/[0.09]';
-  if (type === 'P') return 'border-[#34D399]/30 bg-[#34D399]/[0.09]';
-  return 'border-[#232327] bg-white/[0.02]';
-}
-
-function pillTone(type: ComponentKey | null): string {
-  if (type === 'S') return 'border-[#E9A13B]/50 text-[#E9A13B]';
-  if (type === 'P') return 'border-[#34D399]/50 text-[#34D399]';
-  return 'border-white/20 text-[#A1A1A8]';
-}
-
 export default function TimetablePage() {
-  const { ready, hasData, timetable, subjects } = usePlanner();
+  return (
+    <DataGate title="Timetable">
+      <Timetable />
+    </DataGate>
+  );
+}
 
-  const periods = useMemo(() => sortedPeriods(timetable), [timetable]);
+function typeLabel(p: TimetablePeriod) {
+  return p.type ? COMPONENT_LABELS[p.type] : 'Class';
+}
+
+function timeOf(p: TimetablePeriod) {
+  return p.start ? `${p.start}${p.end ? `–${p.end}` : ''}` : p.period.replace(/^P/, 'Period ');
+}
+
+function budgetShort(s: CourseSummary | undefined): string | null {
+  if (!s || s.pct == null) return null;
+  const pick = (f: (c: CourseSummary['components'][number]) => number | undefined) => {
+    let best: number | null = null;
+    for (const c of s.components) {
+      const v = f(c);
+      if (v != null && Number.isFinite(v) && (best == null || v > best)) best = v;
+    }
+    return best;
+  };
+  if (s.band === 'cruising') {
+    const spare = pick((c) => c.cruise?.spare);
+    return spare ? `${spare} to spare` : 'none to spare';
+  }
+  const need = s.components
+    .map((c) => (s.band === 'thin-ice' ? c.cruise?.needed : c.floor?.needed))
+    .filter((n): n is number => n != null && Number.isFinite(n) && n > 0);
+  return need.length ? `attend ${Math.min(...need)}` : null;
+}
+
+function Timetable() {
+  const { snapshot, settings } = useStore();
+  const now = useNow(60_000);
+  const timetable: TimetableDay[] = useMemo(() => snapshot?.timetable ?? [], [snapshot]);
   const days = useMemo(
-    () => DAY_ORDER.map((d) => timetable.find((t) => t.day === d)).filter(Boolean) as TimetableDay[],
+    () => ORDER.filter((d) => (timetable.find((t) => t.day === d)?.periods.length ?? 0) > 0),
     [timetable],
   );
+  const byCode = useMemo(() => {
+    const m = new Map<string, CourseSummary>();
+    for (const s of snapshot?.attendance ?? []) m.set(s.code, summarize(s, settings));
+    return m;
+  }, [snapshot, settings]);
 
-  // Course code -> full course name, from the attendance data.
-  const nameFor = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const s of subjects) {
-      if (s.code && s.title && s.title !== s.code) m.set(s.code, s.title);
+  const today = WEEK[new Date(now).getDay()];
+  const defaultDay = useMemo(() => {
+    if (days.includes(today)) return today;
+    const start = ORDER.indexOf(today);
+    for (let i = 1; i <= 7; i++) {
+      const d = ORDER[(start + i) % 7];
+      if (days.includes(d)) return d;
     }
-    return (code: string, fallbackTitle: string) => {
-      const t = m.get(code) || fallbackTitle;
-      if (!t || t === code) return code;
-      const first = t.split('|')[0].trim();
-      return first.length > 26 ? first.slice(0, 26) + '…' : first;
-    };
-  }, [subjects]);
+    return days[0] ?? 'Mon';
+  }, [days, today]);
+  const [picked, setPicked] = useState<string | null>(null);
+  const day = picked && days.includes(picked) ? picked : defaultDay;
 
-  if (!ready) {
+  // Deep link from a course's "Next class": ?day=Tue#slot-Tue-P3
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('day');
+    // Read once after hydration; the server render can't see the query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q && ORDER.includes(q)) setPicked(q);
+    const hash = window.location.hash.slice(1);
+    if (hash.startsWith('slot-')) {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(hash);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('flash');
+      });
+    }
+  }, []);
+
+  const nowMin = new Date(now).getHours() * 60 + new Date(now).getMinutes();
+  const periods = sortPeriods(timetable.find((t) => t.day === day)?.periods ?? []);
+  const isToday = day === today;
+  const current = isToday
+    ? periods.find((p) => {
+        const s = minutesOf(p.start);
+        const e = minutesOf(p.end);
+        return s != null && e != null && s <= nowMin && nowMin < e;
+      })
+    : undefined;
+  const upcoming = isToday && !current ? periods.find((p) => (minutesOf(p.start) ?? -1) > nowMin) : undefined;
+
+  const term = termText(snapshot?.term);
+
+  if (days.length === 0) {
     return (
-      <Container className="py-10">
-        <p className="text-sm text-[#A1A1A8]">Warming up…</p>
-      </Container>
+      <section className="page-in py-8">
+        <h1 className="title-l">Timetable</h1>
+        <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{term}</p>
+        <p className="mt-8 text-[15px] font-semibold">The ERP has no timetable for this term yet.</p>
+        <p className="mt-1 text-[13px] text-dropout-text">It shows up here after the next sync once your department publishes it.</p>
+      </section>
     );
   }
-  if (!hasData || timetable.length === 0) return <NeedLink what="timetable" />;
 
   return (
-    <Container className="max-w-7xl py-8">
-      <div className="mb-6">
-        <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#A1A1A8]">
-          [ Timetable ]
-        </p>
-        <h1 className="font-display text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
-          The week
-        </h1>
-        <p className="mt-2 text-sm text-[#A1A1A8]">
-          Every period, every room. Amber is skilling, green is practical.
-        </p>
+    <div className="page-in py-6 lg:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="title-l">Timetable</h1>
+          <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{term}</p>
+        </div>
       </div>
 
-      <GlassPanel className="overflow-hidden">
-        <div className="thin-scroll overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-collapse">
-            <thead>
-              <tr>
-                <th className="w-20 border-b border-[#232327] p-3 text-left text-xs font-bold uppercase tracking-wider text-[#A1A1A8]">
-                  Day
-                </th>
-                {periods.map((_, i) => (
-                  <th
-                    key={i}
-                    className="border-b border-[#232327] p-3 text-center text-xs font-bold uppercase tracking-wider text-[#A1A1A8]"
-                  >
-                    Period {i + 1}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((d) => (
-                <tr key={d.day}>
-                  <td className="border-b border-white/[0.05] p-3 align-top text-sm font-black uppercase tracking-wide text-[#F5F4F0]">
-                    {d.day}
-                  </td>
-                  {periods.map((per) => {
-                    const p = d.periods.find((x) => x.period === per);
-                    if (!p) {
-                      return <td key={per} className="border-b border-white/[0.05] p-1.5" />;
-                    }
-                    return (
-                      <td key={per} className="border-b border-white/[0.05] p-1.5 align-top">
-                        <div className={cn('rounded-xl border px-2 py-1.5', cellTone(p.type))}>
-                          <p className="truncate text-xs font-black text-[#F5F4F0]">
-                            {nameFor(p.subjectCode, p.subjectTitle)}
-                          </p>
-                          <span
-                            className={cn(
-                              'mt-1 inline-block rounded-md border px-1.5 py-px text-[10px] font-black tracking-wide',
-                              pillTone(p.type),
-                            )}
-                          >
-                            {TYPE_PILL[p.type ?? 'L'] ?? 'LEC'}
-                          </span>
-                          {p.room && (
-                            <p className="mt-1 truncate text-[10px] text-[#6B6B72]">{p.room}</p>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Phones: one day at a time */}
+      <div className="lg:hidden">
+        <div className="-mx-4 mt-5 overflow-x-auto px-4 pb-1">
+          <Segmented
+            label="Day"
+            value={day}
+            onChange={setPicked}
+            options={days.map((d) => ({ value: d, label: d, hint: d === today ? `${FULL[d]} (today)` : FULL[d] }))}
+            size="sm"
+          />
         </div>
-      </GlassPanel>
-    </Container>
+        <h2 className="title-s mt-6">
+          {FULL[day]}
+          {isToday && <span className="ml-2 text-[13px] font-medium text-dropout-text">today</span>}
+        </h2>
+        <ol className="mt-3">
+          {periods.map((p) => {
+            const s = byCode.get(p.subjectCode);
+            const state = p === current ? 'Now' : p === upcoming ? 'Next' : null;
+            return (
+              <li key={`${p.period}-${p.subjectCode}`} id={`slot-${day}-${p.period}`} className="seam-b scroll-mt-28">
+                <Link href={`/#course-${p.subjectCode}`} className="press grid grid-cols-[72px_1fr_auto] items-start gap-3 py-4">
+                  <span className="pt-0.5 text-[13px] text-dropout-text tnum">
+                    {p.start || p.period.replace(/^P/, 'P ')}
+                    {p.end && <span className="block text-[12px] text-dropout-quiet">{p.end}</span>}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-semibold">{s?.title ?? p.subjectCode}</span>
+                      {state && (
+                        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', state === 'Now' ? 'bg-mark text-black' : 'bg-[#121826] text-mark')}>
+                          {state}
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-dropout-text">
+                      {typeLabel(p)}
+                      {p.room && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin size={13} aria-hidden /> {p.room}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  {s && s.pct != null && (
+                    <span className="text-right">
+                      <span className={cn('figure block text-[18px]', BAND_INK[s.band])}>{fmtPct(s.pct)}</span>
+                      <span className="text-[11px] text-dropout-quiet">{budgetShort(s)}</span>
+                    </span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      {/* Desktop: the week */}
+      <Week timetable={timetable} days={days} today={today} byCode={byCode} />
+    </div>
+  );
+}
+
+function Week({
+  timetable,
+  days,
+  today,
+  byCode,
+}: {
+  timetable: TimetableDay[];
+  days: string[];
+  today: string;
+  byCode: Map<string, CourseSummary>;
+}) {
+  const rows = useMemo(() => {
+    const m = new Map<string, TimetablePeriod>();
+    for (const d of timetable) for (const p of d.periods) if (!m.has(p.period)) m.set(p.period, p);
+    return [...m.values()].sort((a, b) => periodOrder(a) - periodOrder(b) || (minutesOf(a.start) ?? 0) - (minutesOf(b.start) ?? 0));
+  }, [timetable]);
+
+  return (
+    <div className="mt-8 hidden lg:block">
+      <div
+        className="grid gap-px overflow-hidden rounded-2xl bg-seam ring-seam"
+        style={{ gridTemplateColumns: `88px repeat(${days.length}, minmax(0, 1fr))` }}
+        role="table"
+        aria-label="Weekly timetable"
+      >
+        <div className="contents" role="row">
+          <div className="bg-black p-3" role="columnheader">
+            <span className="sr-only">Time</span>
+          </div>
+          {days.map((d) => (
+            <div key={d} role="columnheader" className={cn('p-3 text-[13px] font-semibold', d === today ? 'bg-[#121826] text-mark' : 'bg-black text-dropout-text')}>
+              {FULL[d]}
+            </div>
+          ))}
+        </div>
+        {rows.map((row) => (
+          <div key={row.period} className="contents" role="row">
+            <div role="rowheader" className="bg-black p-3 text-[12px] text-dropout-text tnum">
+              {row.start ? (
+                <>
+                  {row.start}
+                  {row.end && <span className="block text-dropout-quiet">{row.end}</span>}
+                </>
+              ) : (
+                row.period.replace(/^P/, 'Period ')
+              )}
+            </div>
+            {days.map((d) => {
+              const p = timetable.find((t) => t.day === d)?.periods.find((x) => x.period === row.period);
+              if (!p) return <div key={d} className={cn('bg-black', d === today && 'bg-[#05070b]')} role="cell" />;
+              const s = byCode.get(p.subjectCode);
+              return (
+                <Link
+                  key={d}
+                  id={`slot-${d}-${p.period}`}
+                  href={`/#course-${p.subjectCode}`}
+                  role="cell"
+                  className={cn('press block min-h-[84px] p-3 hover:bg-[#0c111b]', d === today ? 'bg-[#05070b]' : 'bg-black')}
+                  title={timeOf(p)}
+                >
+                  <span className="line-clamp-2 text-[13px] font-semibold leading-snug">{s?.title ?? p.subjectCode}</span>
+                  <span className="mt-1 block text-[12px] text-dropout-text">
+                    {typeLabel(p)}
+                    {p.room ? ` in ${p.room}` : ''}
+                  </span>
+                  {s && s.pct != null && <span className={cn('mt-1 block text-[12px] font-semibold tnum', BAND_INK[s.band])}>{fmtPct(s.pct)}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

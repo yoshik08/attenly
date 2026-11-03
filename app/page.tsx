@@ -1,236 +1,249 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useSession } from 'next-auth/react';
-import { usePlanner } from '@/components/data-context';
-import { ErpGate } from '@/components/erp-gate';
-import {
-  Chip,
-  Container,
-  CountUp,
-  FuelGauge,
-  GlassPanel,
-  Stepper,
-  bandChip,
-  AMBER,
-  MUTED,
-} from '@/components/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowsClockwise, WarningCircle } from '@phosphor-icons/react';
+import { useStore } from '@/components/store';
+import { SignIn, FirstLink } from '@/components/gate';
+import { CourseRow, BAND_INK } from '@/components/course';
+import { Figure, claimIntro, pencilSweep } from '@/components/motion';
+import { Sheet } from '@/components/overlay';
+import { LinkForm } from '@/components/link-form';
+import { BootScreen, LoadError } from '@/components/states';
 import { cn } from '@/components/cn';
-import {
-  COMPONENT_ORDER,
-  COMPONENT_SHORT,
-  bandLabel,
-  courseTcbr,
-  emptyPlan,
-  fmtPct,
-  policyBand,
-  sandboxPct,
-  weightedPct,
-  weightedSums,
-  type SandboxPlan,
-  type SubjectAttendance,
-} from '@/lib/math';
-import { SUBJECT_COLORS } from '@/lib/sample-data';
+import { bandLabel, courseTcbr, overallPct, policyBand } from '@/lib/math';
+import { deltaOf, nextClassOf, plateFor, summarize } from '@/lib/insights';
+import { useNow } from '@/lib/time';
+import { termText } from '@/lib/terms';
 
-function colorFor(code: string): string {
-  if (SUBJECT_COLORS[code]) return SUBJECT_COLORS[code];
-  let h = 0;
-  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
-  return `hsl(${h}, 80%, 62%)`;
+export default function AttendancePage() {
+  const store = useStore();
+  if (store.phase === 'boot') return <BootScreen />;
+  if (store.phase === 'signed-out') return <SignIn />;
+  if (store.phase === 'error' && !store.snapshot) return <LoadError message={store.loadError} onRetry={store.refresh} />;
+  if (store.accounts.length === 0) return <FirstLink />;
+  return <Attendance />;
 }
 
-function CourseCard({ subj, index }: { subj: SubjectAttendance; index: number }) {
-  const { settings } = usePlanner();
-  const { thresholds, weights, tcbr } = settings;
-  const t = courseTcbr(subj.code, tcbr);
-  const pct = weightedPct(subj, weights, t);
-  const band = policyBand(pct, thresholds);
-  const [open, setOpen] = useState(false);
-  const [plan, setPlan] = useState<SandboxPlan>(emptyPlan());
-  const projected = sandboxPct(subj, weights, plan, t);
-  const planActive = COMPONENT_ORDER.some((k) => plan[k].attend > 0 || plan[k].skip > 0);
-  const setPlanFor = (k: (typeof COMPONENT_ORDER)[number], patch: Partial<{ attend: number; skip: number }>) =>
-    setPlan((p) => ({ ...p, [k]: { ...p[k], ...patch } }));
-
+function Legend() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(0.05 * index, 0.4), duration: 0.4 }}
-    >
-      <GlassPanel className="overflow-hidden">
-        <button onClick={() => setOpen((o) => !o)} className="block w-full p-5 text-left sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <span
-                className="rounded-lg px-2.5 py-1 text-xs font-black tracking-wide text-[#0A0A0B]"
-                style={{ backgroundColor: colorFor(subj.code) }}
-              >
-                {subj.code}
-              </span>
-              <h2 className="font-display mt-2 text-xl font-black text-[#F5F4F0]">{subj.title}</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <CountUp value={pct} className="font-display text-4xl font-black tabular-nums" />
-              <Chip tone={bandChip(band)}>{bandLabel(band)}</Chip>
-            </div>
-          </div>
-          <FuelGauge pct={pct} thresholds={thresholds} className="mt-4" />
-          <div className={cn('mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs', MUTED)}>
-            {COMPONENT_ORDER.map((k) => {
-              const c = subj.components[k];
-              if (!c || c.conducted - (t?.[k] ?? 0) <= 0) return null;
-              const cp = c.conducted > 0 ? Math.round((c.attended / c.conducted) * 100) : 0;
-              return (
-                <span key={k}>
-                  {COMPONENT_SHORT[k]} <b className="text-[#F5F4F0] tabular-nums">{c.attended}/{c.conducted}</b>{' '}
-                  <span className="text-[#6B6B72]">· {cp}%</span>
-                </span>
-              );
-            })}
-          </div>
-          <p className="mt-3 text-xs font-semibold text-[#6B6B72]">
-            {open ? '▾ hide the what-if' : '▸ what if — rehearse the week'} 
-          </p>
-        </button>
-
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="overflow-hidden"
-            >
-              <div className="border-t border-[#232327] p-5 sm:p-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-bold text-[#F5F4F0]">
-                    🧪 What if{' '}
-                    <span className="font-normal text-[#A1A1A8]">— rehearse the week before you live it</span>
-                  </p>
-                  {planActive && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-display text-4xl font-black tabular-nums" style={{ color: AMBER }}>
-                        → {fmtPct(projected)}
-                      </span>
-                      <button
-                        onClick={() => setPlan(emptyPlan())}
-                        className="text-xs font-semibold text-[#A1A1A8] hover:text-white hover:underline"
-                      >
-                        reset
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {COMPONENT_ORDER.map((k) => {
-                    const c = subj.components[k];
-                    if (!c || c.conducted - (t?.[k] ?? 0) <= 0) return null;
-                    return (
-                      <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-black/20 px-3 py-2">
-                        <span className="text-xs font-semibold text-[#F5F4F0]">{COMPONENT_SHORT[k]}</span>
-                        <div className="flex items-center gap-3">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-[#34D399]/80">show up</span>
-                            <Stepper small value={plan[k].attend} onChange={(v) => setPlanFor(k, { attend: v })} />
-                          </div>
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-[#F87171]/80">bunk</span>
-                            <Stepper small value={plan[k].skip} onChange={(v) => setPlanFor(k, { skip: v })} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </GlassPanel>
-    </motion.div>
+    <ul className="flex flex-wrap gap-x-3.5 gap-y-2 text-[12px] text-dropout-text" aria-label="How to read the bubbles">
+      <li className="flex items-center gap-1.5">
+        <span className="bub [--b:10px]" data-s="on" aria-hidden /> attended
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="bub [--b:10px]" data-s="off" aria-hidden /> missed
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="bub [--b:10px]" data-s="spare" aria-hidden /> can skip
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="bub [--b:10px]" data-s="need-thin" aria-hidden /> must attend
+      </li>
+    </ul>
   );
 }
 
-export default function AttendancePage() {
-  const { ready, hasData, subjects, settings, syncedAt, loadSnapshot } = usePlanner();
-  const { status } = useSession();
-  const [waited, setWaited] = useState(false);
+function Attendance() {
+  const { snapshot, settings, seen, markSeen, activeAccount, accounts, sync, forceSync, onLinked } = useStore();
+  const now = useNow(60_000);
+  const list = useRef<HTMLDivElement>(null);
+  const [intro] = useState(() => claimIntro());
+  const [repairing, setRepairing] = useState(false);
+
+  const subjects = useMemo(() => snapshot?.attendance ?? [], [snapshot]);
+  const summaries = useMemo(() => subjects.map((s) => summarize(s, settings)), [subjects, settings]);
+  const plate = useMemo(() => plateFor(summaries, settings.thresholds), [summaries, settings.thresholds]);
+  const overall = useMemo(
+    () => overallPct(subjects, settings.weights, (code) => courseTcbr(code, settings.tcbr)),
+    [subjects, settings.weights, settings.tcbr],
+  );
+  const overallBand = policyBand(overall, settings.thresholds);
+  const onSeen = useCallback((code: string) => markSeen(code), [markSeen]);
 
   useEffect(() => {
-    if (status === 'authenticated' && !hasData) {
-      const t = setTimeout(() => setWaited(true), 5000);
-      return () => clearTimeout(t);
-    }
-  }, [status, hasData]);
+    if (intro) pencilSweep(list.current);
+  }, [intro]);
 
-  const { thresholds, weights, tcbr } = settings;
-  const overall = useMemo(() => {
-    let attW = 0;
-    let condW = 0;
-    for (const s of subjects) {
-      const p = weightedSums(s, weights, courseTcbr(s.code, tcbr));
-      attW += p.attW;
-      condW += p.condW;
-    }
-    return condW > 0 ? Math.ceil((attW / condW) * 100) : null;
-  }, [subjects, weights, tcbr]);
+  // Arriving from the plate or the timetable: bring the course into view and mark it.
+  useEffect(() => {
+    const go = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (!id.startsWith('course-')) return;
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      el.classList.remove('flash');
+      void el.offsetWidth;
+      el.classList.add('flash');
+    };
+    go();
+    window.addEventListener('hashchange', go);
+    return () => window.removeEventListener('hashchange', go);
+  }, [summaries.length]);
 
-  if (!ready || status === 'loading') {
+  const termLabel = termText(snapshot?.term);
+  const label = activeAccount?.label ?? (accounts.length > 1 ? activeAccount?.universityId : null);
+
+  if (!snapshot) {
     return (
-      <Container className="py-10">
-        <p className={cn('text-sm', MUTED)}>Warming up…</p>
-      </Container>
-    );
-  }
-
-  if (!hasData) {
-    // Signed in + linked but the snapshot is still arriving — brief patience,
-    // then fall through to the gate (covers re-link).
-    if (status === 'authenticated' && !waited) {
-      return (
-        <Container className="py-10">
-          <p className={cn('text-sm', MUTED)}>Pulling your latest sync…</p>
-        </Container>
-      );
-    }
-    return (
-      <Container>
-        <ErpGate onLinked={loadSnapshot} />
-      </Container>
+      <section className="page-in mx-auto max-w-[520px] py-12">
+        <h1 className="title-l">Attendance</h1>
+        {activeAccount?.needsPassword ? (
+          <RepairNotice message={activeAccount.lastError?.message} onRepair={() => setRepairing(true)} />
+        ) : (
+          <div className="mt-6 rounded-2xl p-5 ring-seam">
+            <p className="text-[15px] font-semibold">
+              {sync.running ? (
+                <span className="t-shimmer" data-text="Signing into the ERP and pulling your data">
+                  Signing into the ERP and pulling your data
+                </span>
+              ) : (
+                'Nothing synced for this account yet.'
+              )}
+            </p>
+            <p className="mt-1 text-[13px] text-dropout-text">
+              {sync.running ? 'The first sync takes about 20 seconds.' : (sync.message ?? 'Sync now to pull it from the ERP.')}
+            </p>
+            {!sync.running && (
+              <button type="button" className="btn btn-mark press mt-4" onClick={() => void forceSync()}>
+                <ArrowsClockwise size={18} aria-hidden /> Sync now
+              </button>
+            )}
+          </div>
+        )}
+        <RepairSheet open={repairing} onClose={() => setRepairing(false)} universityId={activeAccount?.universityId} onLinked={onLinked} />
+      </section>
     );
   }
 
   return (
-    <Container className="py-8">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl font-black tracking-tight text-[#F5F4F0] sm:text-5xl">
-            Attendance
-          </h1>
-          {syncedAt && (
-            <p className={cn('mt-2 text-sm', MUTED)}>
-              synced {new Date(syncedAt).toLocaleString()}
-            </p>
-          )}
-        </div>
-        <GlassPanel className="w-full max-w-xs px-5 py-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#A1A1A8]">Overall</p>
-          <div className="flex items-baseline gap-2">
-            <CountUp value={overall} className="font-display text-5xl font-black" suffix="%" />
-            <span className="text-xs text-[#A1A1A8]">weighted</span>
-          </div>
-          <FuelGauge pct={overall} thresholds={thresholds} className="mt-3" />
-        </GlassPanel>
-      </div>
+    <div className="page-in lg:grid lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-14">
+      <aside className="pt-6 lg:sticky lg:top-[calc(var(--bar-h)+var(--safe-t))] lg:self-start lg:pt-10">
+        <h1 className="title-l">Attendance</h1>
+        <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">
+          {termLabel}
+          {label && <span className="block">Showing {label}</span>}
+        </p>
 
-      <div className="flex flex-col gap-4">
-        {subjects.map((s, i) => (
-          <CourseCard key={s.code} subj={s} index={i} />
-        ))}
+        {activeAccount?.needsPassword && <RepairNotice message={activeAccount.lastError?.message} onRepair={() => setRepairing(true)} />}
+
+        {plate && (
+          <a href={plate.code ? `#course-${plate.code}` : undefined} className="plate press mt-5 block p-4 lg:p-5">
+            <p className="text-[17px] font-semibold leading-snug balance">{plate.sentence}</p>
+          </a>
+        )}
+
+        <div className="mt-6">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[13px] text-dropout-text">Overall, weighted</p>
+              <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[overallBand])}>{bandLabel(overallBand)}</p>
+            </div>
+            <Figure value={overall} countUp={intro} className="figure text-[48px]" />
+          </div>
+          <Scale pct={overall} floor={settings.thresholds.condonationFrom} cruise={settings.thresholds.safeAt} />
+        </div>
+
+        <div className="mt-6 hidden lg:block">
+          <Legend />
+        </div>
+      </aside>
+
+      <section aria-label="Courses" className="mt-6 lg:mt-6">
+        <div className="seam-b pb-4 lg:hidden">
+          <Legend />
+        </div>
+        {summaries.length === 0 ? (
+          <div className="py-10">
+            <p className="text-[15px] font-semibold">The ERP shows no attendance for {termLabel || 'this term'} yet.</p>
+            <p className="mt-1 text-[13px] text-dropout-text">Courses appear here after the first classes are marked.</p>
+          </div>
+        ) : (
+          <div ref={list}>
+            {subjects.map((s, i) => (
+              <CourseRow
+                key={s.code}
+                subject={s}
+                summary={summaries[i]}
+                settings={settings}
+                delta={deltaOf(s, seen)}
+                next={nextClassOf(s.code, snapshot.timetable, new Date(now))}
+                onSeen={onSeen}
+                countUp={intro}
+              />
+            ))}
+          </div>
+        )}
+        <p className="mt-6 text-[12px] text-dropout-quiet pretty">
+          Figures follow the ERP’s weighted formula (lecture and tutorial 100, practical 50, skilling 25), rounded up.
+          Each bubble row on its own: skipping one class type assumes you attend the rest. Double-check the ERP before
+          making the call.
+        </p>
+      </section>
+      <RepairSheet open={repairing} onClose={() => setRepairing(false)} universityId={activeAccount?.universityId} onLinked={onLinked} />
+    </div>
+  );
+}
+
+function Scale({ pct, floor, cruise }: { pct: number | null; floor: number; cruise: number }) {
+  const v = pct == null ? 0 : Math.min(100, Math.max(0, pct));
+  const ink = pct == null ? 'bg-dropout' : pct >= cruise ? 'bg-cruise' : pct >= floor ? 'bg-thin' : 'bg-red';
+  return (
+    <div className="mt-3" aria-hidden>
+      <div className="relative h-1.5 rounded-full bg-seam">
+        <div className={cn('absolute inset-y-0 left-0 rounded-full', ink)} style={{ width: `${v}%` }} />
+        <span className="absolute -top-1 h-3.5 w-px bg-dropout-text" style={{ left: `${floor}%` }} />
+        <span className="absolute -top-1 h-3.5 w-px bg-mark" style={{ left: `${cruise}%` }} />
       </div>
-    </Container>
+      <div className="relative mt-1.5 h-4 text-[11px] text-dropout-quiet tnum">
+        <span className="absolute -translate-x-1/2" style={{ left: `${floor}%` }}>
+          {floor}
+        </span>
+        <span className="absolute -translate-x-1/2 text-dropout-text" style={{ left: `${cruise}%` }}>
+          {cruise}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RepairNotice({ message, onRepair }: { message?: string | null; onRepair: () => void }) {
+  return (
+    <div className="mt-5 rounded-2xl bg-[#1a1306] p-4 ring-1 ring-[#3d2c0a]">
+      <p className="flex gap-2 text-[14px] text-[#ffd8a0]">
+        <WarningCircle size={18} className="mt-px shrink-0" aria-hidden />
+        <span>{message ?? 'Syncing is paused until you enter your ERP password again.'}</span>
+      </p>
+      <button type="button" onClick={onRepair} className="btn btn-mark btn-sm press mt-3">
+        Enter password
+      </button>
+    </div>
+  );
+}
+
+function RepairSheet({
+  open,
+  onClose,
+  universityId,
+  onLinked,
+}: {
+  open: boolean;
+  onClose: () => void;
+  universityId?: string;
+  onLinked: (id: string, snap: import('@/lib/db/snapshots').ClientSnapshot) => Promise<void>;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title="Enter your ERP password">
+      {open && universityId && (
+        <LinkForm
+          mode="repair"
+          universityId={universityId}
+          onLinked={(id, snap) => {
+            onClose();
+            void onLinked(id, snap);
+          }}
+        />
+      )}
+    </Sheet>
   );
 }

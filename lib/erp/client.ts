@@ -10,9 +10,11 @@ import {
   extractCsrf,
   extractCaptchaSrc,
   detectLoginForm,
-  parseLoginError,
+  parseLoginErrors,
   classifyLoginError,
+  pickLoginMessage,
   parseTermOptions,
+  type LoginErrorCode,
   type TermList,
 } from './parsers';
 
@@ -131,6 +133,8 @@ export async function erpFetch(
 
     const text = await res.text();
     if (looksRateLimited(res.status, text)) throw new ErpRateLimited();
+    // An error page parses as "no rows"; never let it pass for real data.
+    if (res.status >= 400) throw new Error(`ERP answered HTTP ${res.status}`);
     return { status: res.status, text, jar: currentJar, finalUrl: url };
   }
   throw new Error('Too many redirects talking to the ERP');
@@ -232,6 +236,7 @@ export async function startLoginSession(): Promise<{
     redirect: 'manual',
   });
   if (bin.status === 429) throw new ErpRateLimited();
+  if (!bin.ok) throw new Error(`ERP captcha answered HTTP ${bin.status}`);
   const jar = mergeCookies(page.jar, bin.headers);
   const buf = Buffer.from(await bin.arrayBuffer());
   const contentType = bin.headers.get('content-type') ?? 'image/png';
@@ -253,8 +258,15 @@ export interface LoginResult {
   csrf?: string;
   termOptions?: TermList;
   error?: string;
-  code?: 'bad_captcha' | 'bad_credentials' | 'rate_limited' | 'unknown';
+  code?: LoginErrorCode;
 }
+
+const LOGIN_MESSAGES: Record<LoginErrorCode, string> = {
+  bad_captcha: 'The captcha was read wrong.',
+  bad_credentials: 'The ERP rejected that University ID or password.',
+  rate_limited: 'The ERP is rate-limiting logins. Try again in a minute.',
+  unknown: 'The ERP did not accept the login.',
+};
 
 export async function performLogin(
   session: CaptchaSession,
@@ -285,6 +297,14 @@ export async function performLogin(
       session.jar,
     );
 
+    // A failed login re-renders the login form with per-field errors; read
+    // them straight away instead of spending another ERP request on a probe.
+    const formErrors = detectLoginForm(res.text) ? parseLoginErrors(res.text) : [];
+    if (formErrors.length > 0) {
+      const code = classifyLoginError(formErrors);
+      return { ok: false, code, error: pickLoginMessage(formErrors, code) ?? LOGIN_MESSAGES[code] };
+    }
+
     // Verify auth by loading an authenticated page (the filter shell — the
     // courselist action needs a POSTed filter and can't serve as a probe).
     const probe = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, res.jar);
@@ -296,9 +316,9 @@ export async function performLogin(
         termOptions: parseTermOptions(probe.text),
       };
     }
-    const errText = parseLoginError(res.text) ?? parseLoginError(probe.text);
-    const code = classifyLoginError(errText);
-    return { ok: false, error: errText ?? 'Login failed. Please try again.', code };
+    const errs = parseLoginErrors(probe.text);
+    const code = classifyLoginError(errs);
+    return { ok: false, code, error: pickLoginMessage(errs, code) ?? LOGIN_MESSAGES[code] };
   } catch (e) {
     if (e instanceof ErpRateLimited) {
       return { ok: false, error: e.message, code: 'rate_limited' };
@@ -407,69 +427,6 @@ export async function fetchCgpaHtml(
     throw e;
   }
   return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
-}
-
-/**
- * Fetch an arbitrary same-origin ERP page (e.g. a booklet popup URL scraped
- * from the results grid). Refuses off-origin targets.
- */
-export async function fetchErpPageHtml(
-  session: AuthedSession,
-  url: string,
-): Promise<{ html: string; jar: CookieJar }> {
-  const target = new URL(url, ERP_BASE);
-  if (target.origin !== new URL(ERP_BASE).origin) throw new Error('Refusing off-origin ERP fetch');
-  const path = target.pathname + target.search;
-  const res = await erpFetch(path, { method: 'GET' }, session.jar);
-  if (detectLoginForm(res.text)) {
-    const e = new Error('ERP session expired') as Error & { expired?: boolean };
-    e.expired = true;
-    throw e;
-  }
-  return { html: res.text, jar: res.jar };
-}
-
-/**
- * Fetch a binary payload (answer-script PDF) from the ERP with the session.
- * Returns raw bytes + content type for proxying to the browser.
- */
-export async function fetchErpBinary(
-  session: AuthedSession,
-  url: string,
-): Promise<{ bytes: Buffer; contentType: string }> {
-  const target = new URL(url, ERP_BASE);
-  if (target.origin !== new URL(ERP_BASE).origin) throw new Error('Refusing off-origin ERP fetch');
-  const path = target.pathname + target.search;
-  let current = new URL(path, ERP_BASE).toString();
-  let jar = { ...session.jar };
-  const headers: Record<string, string> = {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-    Referer: new URL(LOGIN_PATH, ERP_BASE).toString(),
-  };
-  for (let i = 0; i < 8; i++) {
-    if (Object.keys(jar).length > 0) headers['Cookie'] = jarHeader(jar);
-    const res = await fetch(current, { method: 'GET', headers, redirect: 'manual' });
-    jar = mergeCookies(jar, res.headers);
-    if ([301, 302, 303].includes(res.status)) {
-      const loc = res.headers.get('location');
-      if (!loc) throw new Error('ERP redirect without location');
-      const next = new URL(loc, current);
-      if (next.origin !== new URL(ERP_BASE).origin) throw new Error('ERP redirected off-origin; refusing');
-      current = next.toString();
-      await res.arrayBuffer().catch(() => null);
-      continue;
-    }
-    const buf = Buffer.from(await res.arrayBuffer());
-    const ct = res.headers.get('content-type') ?? '';
-    if (/text\/html/i.test(ct) && detectLoginForm(buf.toString('utf8', 0, Math.min(buf.length, 20000)))) {
-      const e = new Error('ERP session expired') as Error & { expired?: boolean };
-      e.expired = true;
-      throw e;
-    }
-    return { bytes: buf, contentType: ct || 'application/pdf' };
-  }
-  throw new Error('Too many redirects fetching the ERP file');
 }
 
 export function isSessionExpiredError(e: unknown): boolean {

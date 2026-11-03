@@ -1,0 +1,395 @@
+/**
+ * End-to-end: drives the real UI in headless Chromium against the local stack
+ * (in-memory MongoDB, mock ERP + solver, synthetic Google sessions).
+ *
+ *   npm run test:e2e              starts its own stack (next dev)
+ *   E2E_PROD=1 npm run test:e2e   against `next build` output (run the build first)
+ *   E2E_REUSE=1 npm run test:e2e  reuses a stack already started with `npm run stack`
+ */
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { chromium } from 'playwright';
+import AxeBuilder from '@axe-core/playwright';
+import { MongoClient } from 'mongodb';
+
+let stack;
+let st;
+let browser;
+let mongo;
+const consoleErrors = [];
+
+async function control(body) {
+  const r = await fetch(`${st.mock}/__mock/control`, { method: 'POST', body: JSON.stringify(body) });
+  return r.json();
+}
+async function resetMock() {
+  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0 } });
+}
+
+async function ctxFor(user, opts = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, ...opts });
+  if (user) {
+    await ctx.addCookies([{ name: st.cookieName, value: st.users[user].cookie, domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+  }
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => consoleErrors.push(`${user}: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    // Expected answers (wrong password 401, wrong captcha 422, paused 409) surface as
+    // "Failed to load resource" in Chrome; they are part of the flows under test.
+    const expected = /Failed to load resource: the server responded with a status of (401|409|422)/.test(m.text()) && /\/api\/erp\//.test(m.location().url ?? '');
+    if (!expected) consoleErrors.push(`${user}: ${m.text()} @ ${m.location().url ?? ''}`);
+  });
+  return { ctx, page };
+}
+
+async function linkVia(page, id, password) {
+  const captcha = page.getByLabel('Captcha', { exact: true });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('input[id^="cap-"]');
+    return el && el.value.length > 0;
+  });
+  if (id) await page.getByLabel('University ID', { exact: true }).fill(id);
+  await page.getByLabel('ERP password', { exact: true }).fill(password);
+  assert.ok((await captcha.inputValue()).length >= 4, 'captcha auto-filled');
+}
+
+before(async () => {
+  if (!process.env.E2E_REUSE) {
+    stack = spawn(process.execPath, ['tests/stack.mjs', ...(process.env.E2E_PROD ? ['--prod'] : [])], {
+      env: { ...process.env, APP_PORT: '3200', MOCK_ERP_PORT: '4200' },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('stack did not start')), 180_000);
+      stack.stdout.on('data', (b) => {
+        if (b.toString().includes('READY')) {
+          clearTimeout(t);
+          resolve();
+        }
+      });
+    });
+  }
+  st = JSON.parse(readFileSync('tests/.stack.json', 'utf8'));
+  mongo = await MongoClient.connect(st.mongoUri);
+  browser = await chromium.launch({ headless: true });
+  // Warm the dev server so the first assertions don't race compilation.
+  for (const p of ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
+});
+
+after(async () => {
+  await browser?.close();
+  await mongo?.close();
+  stack?.kill();
+  assert.deepEqual(consoleErrors, [], 'no console errors or page errors');
+});
+
+test('the bare deployment URL redirects into the app', async () => {
+  const origin = new URL(st.app).origin;
+  const r = await fetch(origin + '/', { redirect: 'manual' });
+  assert.equal(r.status, 307);
+  assert.equal(r.headers.get('location'), '/attenly');
+});
+
+test('health check reports the database and solver without any data', async () => {
+  const r = await fetch(st.app + '/api/health');
+  const d = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(d.ok, true);
+  assert.equal(d.db, 'ok');
+  assert.equal(typeof d.linkedUsers, 'number');
+  assert.equal(d.solver, true);
+  assert.deepEqual(Object.keys(d).sort(), ['db', 'linkedUsers', 'ms', 'ok', 'solver']);
+});
+
+test('signed out: the gate explains the app and starts Google sign-in', async () => {
+  const { ctx, page } = await ctxFor(null);
+  await page.goto(st.app);
+  await page.getByRole('heading', { name: 'Your KL attendance, without the ERP.' }).waitFor();
+  let googleUrl = null;
+  await page.route('https://accounts.google.com/**', (route) => {
+    googleUrl = route.request().url();
+    return route.abort();
+  });
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.waitForFunction(() => true);
+  for (let i = 0; i < 50 && !googleUrl; i++) await page.waitForTimeout(100);
+  assert.ok(googleUrl, 'navigated to Google');
+  const u = new URL(googleUrl);
+  assert.equal(u.searchParams.get('client_id'), 'local-test-client.apps.googleusercontent.com');
+  assert.equal(u.searchParams.get('redirect_uri'), `${st.app}/api/auth/callback/google`);
+  await ctx.close();
+});
+
+test('a failed Google sign-in comes back with a readable message', async () => {
+  const { ctx, page } = await ctxFor(null);
+  await page.goto(`${st.app}?error=OAuthCallback`);
+  await page.getByRole('alert').filter({ hasText: 'Google sign-in didn’t finish. Try again.' }).waitFor();
+  assert.ok(!page.url().includes('error='), 'error param removed from the address bar');
+  await ctx.close();
+});
+
+test('privacy page says how credentials are stored', async () => {
+  const { ctx, page } = await ctxFor(null);
+  await page.goto(`${st.app}/privacy`);
+  await page.getByText('They are stored as you typed them, not encrypted').waitFor();
+  await ctx.close();
+});
+
+test('first link: a wrong password is explained, the right one syncs and shows attendance', async () => {
+  const { ctx, page } = await ctxFor('fresh');
+  await page.goto(st.app);
+  await page.getByRole('heading', { name: 'Link your ERP account' }).waitFor();
+  await linkVia(page, '9900000002', 'wrong-password');
+  await page.getByRole('button', { name: 'Link and sync' }).click();
+  await page.getByRole('alert').filter({ hasText: 'Incorrect username or password.' }).waitFor();
+  assert.equal(await page.getByLabel('ERP password').getAttribute('aria-invalid'), 'true');
+  await linkVia(page, null, 'other-pass-2');
+  await page.getByRole('button', { name: 'Link and sync' }).click();
+  await page.getByRole('heading', { name: 'Attendance' }).waitFor();
+  await page.getByRole('article', { name: 'Electrical Machines' }).waitFor();
+  await page.getByRole('article', { name: 'Signals and Systems' }).waitFor();
+  await ctx.close();
+});
+
+test('a typo in the captcha loads a fresh one and says so', async () => {
+  const { ctx, page } = await ctxFor('fresh');
+  await page.goto(st.app);
+  await page.getByRole('button', { name: /^Account/ }).click();
+  await page.getByRole('button', { name: 'Link another ERP account' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Link another ERP account' });
+  await sheet.waitFor();
+  await linkVia(page, '9900000002', 'other-pass-2');
+  await sheet.getByLabel('Captcha', { exact: true }).fill('zzzzzz');
+  await sheet.getByRole('button', { name: 'Link and sync' }).click();
+  await sheet.getByRole('alert').filter({ hasText: 'The captcha didn’t match. Here’s a fresh one.' }).waitFor();
+  await page.waitForFunction(() => document.querySelector('dialog input[id^="cap-"]')?.value.length > 0);
+  await page.keyboard.press('Escape');
+  await sheet.waitFor({ state: 'detached' });
+  await ctx.close();
+});
+
+test('attendance: plate, bubbles, planner and keyboard', async () => {
+  // Make sure the main user has an account (the smoke run may not have happened).
+  const u = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  if (!u) {
+    await linkVia(page, '9900000001', 'kl-test-pass');
+    await page.getByRole('button', { name: 'Link and sync' }).click();
+  }
+  const os = page.getByRole('article', { name: 'Operating Systems' });
+  await os.waitFor();
+  await page.locator('.plate').filter({ hasText: 'Computer Networks is at 69%, below the 75% floor.' }).waitFor();
+  assert.equal(await os.locator('.bub[data-s="need-thin"]').count() > 0, true, 'needed classes drawn');
+  // Planner via keyboard
+  const plan = os.getByRole('button', { name: 'Plan the week' });
+  await plan.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await plan.getAttribute('aria-expanded'), 'true');
+  const more = os.getByRole('button', { name: 'Attend upcoming lectures: one more' });
+  for (let i = 0; i < 20; i++) await more.click();
+  await os.getByText('After that plan').waitFor();
+  await os.locator('.figure').filter({ hasText: '85%' }).last().waitFor();
+  await os.getByRole('button', { name: 'Reset' }).click();
+  await os.getByText('Add classes to see where you’d land').waitFor();
+  await ctx.close();
+});
+
+test('force sync from the status pill, then a change badge until seen', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
+  await control({ bump: { id: '9900000001', code: '24CS2202', k: 'L', attended: 1, conducted: 1 } });
+  await page.getByRole('button', { name: /Synced|Not synced|Sync failed/ }).click();
+  const status = page.getByRole('dialog', { name: 'Sync status' });
+  const done = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  await status.getByRole('button', { name: 'Sync now' }).click();
+  assert.equal((await (await done).json()).code, 'synced');
+  await page.keyboard.press('Escape');
+  const db = page.getByRole('article', { name: 'Database Management Systems' });
+  await db.getByText('+1 lecture attended since you last looked').waitFor();
+  await db.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(2200);
+  await page.reload();
+  await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
+  assert.equal(await page.getByText('+1 lecture attended since you last looked').count(), 0, 'badge cleared after being seen');
+  await ctx.close();
+});
+
+test('auto-sync: data older than 5.5 minutes re-syncs on its own', async () => {
+  await mongo.db('skipwise').collection('snapshots').updateMany({ googleId: st.users.main.sub }, { $set: { syncedAt: new Date(Date.now() - 10 * 60_000) } });
+  const { ctx, page } = await ctxFor('main');
+  const autoSync = page.waitForRequest((r) => r.url().endsWith('/api/erp/hard-sync') && r.postData()?.includes('"auto"'));
+  await page.goto(st.app);
+  await autoSync;
+  await page.getByRole('button', { name: /Synced just now/ }).waitFor({ timeout: 30_000 });
+  await ctx.close();
+});
+
+test('timetable: a course’s next class opens its day; slots link back', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  const link = page.getByRole('article', { name: 'Probability and Statistics' }).getByRole('link', { name: /^Next class/ });
+  await link.click();
+  await page.waitForURL(/\/timetable\?day=/);
+  await page.getByRole('heading', { name: 'Timetable' }).waitFor();
+  const day = new URL(page.url()).searchParams.get('day');
+  await page.getByRole('tab', { name: day, exact: true }).and(page.locator('[aria-selected="true"]')).waitFor();
+  const slot = page.locator('ol li a').filter({ hasText: 'Probability and Statistics' }).first();
+  await slot.click();
+  await page.waitForURL(/#course-24MT2005/);
+  await page.getByRole('article', { name: 'Probability and Statistics' }).waitFor();
+  await ctx.close();
+});
+
+test('CGPA: latest semester first with its grades', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/cgpa`);
+  await page.getByText('8.50').first().waitFor();
+  await page.getByRole('heading', { name: /Even Sem/ }).waitFor();
+  await page.getByRole('button', { name: /Odd Sem/ }).click();
+  await page.getByRole('cell', { name: /Problem Solving with C/ }).waitFor();
+  await ctx.close();
+});
+
+test('calculator: rounding, both lines, validation, saved results', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/calculator`);
+  await page.getByLabel('Classes held').fill('39');
+  await page.getByLabel('Classes attended').fill('33');
+  await page.getByText('84.62% before rounding up').waitFor();
+  await page.getByText('You’re on the 85% line. Missing the next class drops you below it.').waitFor();
+  await page.getByRole('tab', { name: '75%' }).click();
+  await page.getByText(/You can miss \d+ more and still show 75%\./).waitFor();
+  await page.getByLabel('Classes attended').fill('40');
+  await page.getByText('You can’t attend more classes than were held.').waitFor();
+  await page.getByLabel('Classes attended').fill('33');
+  await page.getByLabel('Save this result as').fill('Operating Systems');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const saved = page.getByRole('region', { name: 'Saved results' });
+  await saved.getByText('Operating Systems').waitFor();
+  await page.getByRole('tab', { name: 'By component' }).click();
+  await page.getByLabel('Lecture %').fill('80');
+  await page.getByLabel('Practical %').fill('100');
+  await page.getByText('86.67% before rounding up').waitFor();
+  await saved.getByRole('button', { name: 'Delete Operating Systems' }).click();
+  assert.equal(await page.getByRole('region', { name: 'Saved results' }).count(), 0);
+  await ctx.close();
+});
+
+test('settings: thresholds change the bands; invalid input is rejected', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/settings`);
+  await page.getByLabel('Cruise line (%)').fill('90');
+  await page.goto(st.app);
+  const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
+  await daa.getByText('Thin ice').waitFor();
+  await page.goto(`${st.app}/settings`);
+  await page.getByLabel('Floor (%)').fill('95');
+  await page.getByRole('alert').filter({ hasText: 'The cruise line has to sit above the floor.' }).waitFor();
+  await page.getByRole('button', { name: 'Reset to 85 / 75' }).click();
+  assert.equal(await page.getByLabel('Cruise line (%)').inputValue(), '85');
+  await ctx.close();
+});
+
+test('accounts: add, switch, make primary, remove', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+  await page.getByRole('button', { name: /^Account/ }).click();
+  await page.getByRole('button', { name: 'Link another ERP account' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Link another ERP account' });
+  await linkVia(page, '9900000002', 'other-pass-2');
+  await sheet.getByLabel('Name for this account').fill('Sibling');
+  await sheet.getByRole('button', { name: 'Link and sync' }).click();
+  await page.getByRole('article', { name: 'Electrical Machines' }).waitFor();
+  await page.getByText('Showing Sibling').waitFor();
+  // switch back from the account menu
+  await page.getByRole('button', { name: /^Account/ }).click();
+  await page.getByRole('button', { name: /^9900000001/ }).click();
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+  // settings: make primary, then remove (two taps)
+  await page.goto(`${st.app}/settings`);
+  const card = page.locator('li').filter({ hasText: 'Sibling' });
+  await card.getByRole('button', { name: 'Make primary' }).click();
+  await card.getByText('primary').waitFor();
+  await card.getByRole('button', { name: 'Remove' }).click();
+  await card.getByRole('button', { name: 'Remove it and its data' }).click();
+  await page.locator('li').filter({ hasText: 'Sibling' }).waitFor({ state: 'detached' });
+  const doc = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.equal(doc.accounts.length, 1);
+  assert.equal(doc.erpUid, '9900000001');
+  assert.equal(await mongo.db('skipwise').collection('snapshots').countDocuments({ googleId: st.users.main.sub, universityId: '9900000002' }), 0);
+  await ctx.close();
+});
+
+test('a password changed on the ERP pauses syncing until it is re-entered', async () => {
+  await control({ password: { id: '9900000001', value: 'new-erp-pass' } });
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  await page.getByRole('button', { name: /Synced|Sync failed/ }).click();
+  await page.getByRole('dialog', { name: 'Sync status' }).getByRole('button', { name: 'Sync now' }).click();
+  await page.getByRole('button', { name: 'Password needed' }).waitFor({ timeout: 30_000 });
+  await page.keyboard.press('Escape');
+  await page.getByText('The ERP rejected the saved password. Enter your current ERP password.').first().waitFor();
+  await page.getByRole('button', { name: 'Enter password' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'Enter your ERP password' });
+  await sheet.waitFor();
+  await linkVia(page, null, 'new-erp-pass');
+  await sheet.getByRole('button', { name: 'Save password and sync' }).click();
+  await page.getByRole('button', { name: /Synced just now/ }).waitFor({ timeout: 30_000 });
+  const doc = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.equal(doc.erpPass, 'new-erp-pass');
+  await control({ password: { id: '9900000001', value: 'kl-test-pass' } });
+  await mongo.db('skipwise').collection('users').updateOne({ googleId: st.users.main.sub }, { $set: { erpPass: 'kl-test-pass', 'accounts.0.erpPass': 'kl-test-pass' } });
+  await ctx.close();
+});
+
+test('tab bar navigates on phones; desktop shows inline navigation', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
+  await tabs.getByRole('link', { name: 'Timetable' }).click();
+  await page.waitForURL(/\/timetable$/);
+  await tabs.getByRole('link', { name: 'CGPA' }).click();
+  await page.waitForURL(/\/cgpa$/);
+  assert.equal(await tabs.getByRole('link', { name: 'CGPA' }).getAttribute('aria-current'), 'page');
+  await ctx.close();
+  const desk = await ctxFor('main', { viewport: { width: 1440, height: 900 } });
+  await desk.page.goto(st.app);
+  await desk.page.getByRole('navigation', { name: 'Sections' }).first().getByRole('link', { name: 'Settings' }).click();
+  await desk.page.waitForURL(/\/settings$/);
+  await desk.ctx.close();
+});
+
+test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', async () => {
+  const problems = [];
+  for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
+    const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
+    for (const path of who ? ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+      await page.goto(st.app + path, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(500);
+      const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+      for (const v of r.violations.filter((x) => x.impact === 'serious' || x.impact === 'critical')) {
+        problems.push(`${who ?? 'signed-out'} ${viewport.width}px ${path}: ${v.id} (${v.nodes.map((n) => n.target.join(' ')).join(', ')})`);
+      }
+    }
+    await ctx.close();
+  }
+  assert.deepEqual(problems, []);
+});
+
+test('sign out returns to the gate', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/settings`);
+  await page.getByRole('button', { name: 'Sign out of Google' }).click();
+  await page.getByRole('heading', { name: 'Your KL attendance, without the ERP.' }).waitFor({ timeout: 20_000 });
+  await ctx.close();
+});
+
+test('reset mock', async () => {
+  await resetMock();
+});

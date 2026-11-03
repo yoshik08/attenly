@@ -1,41 +1,119 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { usePlanner } from '@/components/data-context';
-import { Button, Container, Field, GlassPanel, SectionHeader, Stepper, Toggle, inputClass } from '@/components/ui';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { Minus, Plus, SignOut, Trash } from '@phosphor-icons/react';
+import { useStore } from '@/components/store';
+import { Sheet } from '@/components/overlay';
+import { LinkForm } from '@/components/link-form';
+import { BootScreen } from '@/components/states';
+import { SignIn } from '@/components/gate';
 import { cn } from '@/components/cn';
-import { api } from '@/lib/api';
-import {
-  DEFAULT_THRESHOLDS,
-  DEFAULT_WEIGHTS,
-  DETENTION_FLOOR,
-  COMPONENT_ORDER,
-  COMPONENT_LABELS,
-  type ComponentKey,
-} from '@/lib/math';
+import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, DETENTION_FLOOR, type ComponentKey } from '@/lib/math';
+import { ago, useNow } from '@/lib/time';
 
 export default function SettingsPage() {
-  const { ready, settings, updateSettings, clearData, sampleMode, subjects } = usePlanner();
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [loggedOut, setLoggedOut] = useState(false);
+  const { phase } = useStore();
+  if (phase === 'boot') return <BootScreen />;
+  if (phase === 'signed-out') return <SignIn />;
+  return <Settings />;
+}
 
-  if (!ready)
-    return (
-      <Container className="py-10">
-        <p className="text-sm text-slate-500">Warming up…</p>
-      </Container>
-    );
+function Section({ id, title, children, note }: { id?: string; title: string; note?: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="seam-b scroll-mt-24 py-8">
+      <h2 className="title-s text-[19px]">{title}</h2>
+      {note && <p className="mt-1.5 max-w-[60ch] text-[14px] text-dropout-text pretty">{note}</p>}
+      <div className="mt-5">{children}</div>
+    </section>
+  );
+}
 
-  const { thresholds, weights, tcbr } = settings;
-  const invalid = thresholds.safeAt <= thresholds.condonationFrom;
+/** A two-step destructive button: the first tap arms it, the second confirms. */
+function ConfirmButton({ label, confirm, onConfirm, busy }: { label: string; confirm: string; onConfirm: () => void; busy?: boolean }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), 5000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      className="btn btn-danger btn-sm press"
+      data-armed={armed}
+      disabled={busy}
+      onClick={() => (armed ? (setArmed(false), onConfirm()) : setArmed(true))}
+    >
+      <Trash size={15} aria-hidden />
+      {busy ? 'Removing…' : armed ? confirm : label}
+    </button>
+  );
+}
 
-  async function logoutErp() {
-    await fetch(api('/api/erp/logout'), { method: 'POST' });
-    setLoggedOut(true);
+function NumberField({
+  id,
+  label,
+  value,
+  onCommit,
+  min,
+  max,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onCommit: (v: number) => void;
+  min: number;
+  max: number;
+  hint?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  const [prev, setPrev] = useState(value);
+  if (value !== prev) {
+    setPrev(value);
+    setText(String(value));
   }
+  const n = Number(text);
+  const valid = text.trim() !== '' && Number.isFinite(n) && n >= min && n <= max;
+  return (
+    <div>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        className="field tnum"
+        inputMode="decimal"
+        value={text}
+        aria-invalid={valid ? undefined : true}
+        onChange={(e) => {
+          setText(e.target.value);
+          const v = Number(e.target.value);
+          if (e.target.value.trim() !== '' && Number.isFinite(v) && v >= min && v <= max) onCommit(v);
+        }}
+        onBlur={() => {
+          if (!valid) setText(String(value));
+        }}
+      />
+      {hint && <p className="mt-1.5 text-[12px] text-dropout-quiet">{hint}</p>}
+    </div>
+  );
+}
 
-  const setTcbrCourse = (code: string, v: number) => {
+function Settings() {
+  const store = useStore();
+  const { settings, updateSettings, accounts, active, user, snapshot } = store;
+  const { thresholds, weights, tcbr } = settings;
+  const now = useNow(30_000);
+  const [repair, setRepair] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [accError, setAccError] = useState<string | null>(null);
+  const [cleared, setCleared] = useState(false);
+  const thresholdError = thresholds.condonationFrom >= thresholds.safeAt ? 'The cruise line has to sit above the floor.' : null;
+
+  const setTcbr = (code: string, v: number) => {
     const perCourse = { ...tcbr.perCourse };
     if (v <= 0) delete perCourse[code];
     else perCourse[code] = v;
@@ -43,181 +121,208 @@ export default function SettingsPage() {
   };
 
   return (
-    <Container className="max-w-2xl py-8">
-      <SectionHeader
-        kicker="Control deck"
-        title="Dial the math"
-        sub="Every number below feeds the engine live — no save button, it just updates."
-      />
+    <div className="page-in mx-auto max-w-[720px] py-6 lg:py-10">
+      <h1 className="title-l">Settings</h1>
 
-      {/* red lines */}
-      <GlassPanel className="mb-5 p-6">
-        <h3 className="font-display text-lg font-bold text-white">Your red lines</h3>
-        <p className="mb-5 text-sm text-slate-400">
-          The bands are drawn from these. The university&apos;s detention floor sits at {DETENTION_FLOOR}% —
-          the “floor” line should never dip below it.
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Cruise line (%)" htmlFor="safeAt" hint="At or above this: cruising.">
-            <input
-              id="safeAt"
-              type="number"
-              min={0}
-              max={100}
-              className={inputClass}
-              value={thresholds.safeAt}
-              onChange={(e) => updateSettings({ thresholds: { ...thresholds, safeAt: Number(e.target.value) } })}
-            />
-          </Field>
-          <Field label="Floor (%)" htmlFor="condFrom" hint="Below this: in the red.">
-            <input
-              id="condFrom"
-              type="number"
-              min={0}
-              max={100}
-              className={inputClass}
-              value={thresholds.condonationFrom}
-              onChange={(e) => updateSettings({ thresholds: { ...thresholds, condonationFrom: Number(e.target.value) } })}
-            />
-          </Field>
+      <Section id="accounts" title="ERP accounts" note="Each linked account syncs on its own. The primary one opens first.">
+        {accounts.length === 0 ? (
+          <p className="text-[14px] text-dropout-text">No ERP account linked yet. Link one on the Attendance tab.</p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {accounts.map((a) => (
+              <li key={a.universityId} className="rounded-2xl p-4 ring-seam">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold">
+                      {a.label ?? <span className="tnum">{a.universityId}</span>}
+                      {a.primary && <span className="ml-2 rounded-full bg-[#121826] px-2 py-0.5 align-middle text-[11px] font-medium text-dropout-text">primary</span>}
+                      {a.universityId === active && <span className="ml-2 rounded-full bg-[#0d1a14] px-2 py-0.5 align-middle text-[11px] font-medium text-cruise">showing</span>}
+                    </p>
+                    {a.label && <p className="text-[13px] text-dropout-quiet tnum">{a.universityId}</p>}
+                    <p className={cn('mt-1 text-[13px]', a.needsPassword ? 'text-thin' : a.lastError ? 'text-[#ffb4ab]' : 'text-dropout-text')}>
+                      {a.needsPassword
+                        ? (a.lastError?.message ?? 'Syncing is paused until you enter the ERP password again.')
+                        : a.lastError
+                          ? `Last sync didn’t finish: ${a.lastError.message}`
+                          : a.lastSyncAt
+                            ? `Synced ${ago(a.lastSyncAt, now)}`
+                            : 'Not synced yet'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    {a.universityId !== active && (
+                      <button type="button" className="btn btn-line btn-sm press" onClick={() => void store.switchAccount(a.universityId)}>
+                        Show this account
+                      </button>
+                    )}
+                    {!a.primary && (
+                      <button
+                        type="button"
+                        className="btn btn-line btn-sm press"
+                        disabled={busyId === a.universityId}
+                        onClick={async () => {
+                          setBusyId(a.universityId);
+                          setAccError(null);
+                          const r = await store.makePrimary(a.universityId);
+                          if (!r.ok) setAccError(r.error ?? null);
+                          setBusyId(null);
+                        }}
+                      >
+                        Make primary
+                      </button>
+                    )}
+                    <button type="button" className={cn('btn btn-sm press', a.needsPassword ? 'btn-mark' : 'btn-line')} onClick={() => setRepair(a.universityId)}>
+                      {a.needsPassword ? 'Enter password' : 'Change password'}
+                    </button>
+                  </div>
+                  <ConfirmButton
+                    label="Remove"
+                    confirm="Remove it and its data"
+                    busy={busyId === `rm-${a.universityId}`}
+                    onConfirm={async () => {
+                      setBusyId(`rm-${a.universityId}`);
+                      setAccError(null);
+                      const r = await store.removeAccount(a.universityId);
+                      if (!r.ok) setAccError(r.error ?? null);
+                      setBusyId(null);
+                    }}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {accError && (
+          <p role="alert" className="mt-3 text-[14px] text-red">
+            {accError}
+          </p>
+        )}
+        <button type="button" className="btn btn-line press mt-4" onClick={() => setAdding(true)}>
+          <Plus size={16} aria-hidden /> Link another ERP account
+        </button>
+      </Section>
+
+      <Section title="Red lines" note={`The bands come from these two lines. The university’s detention floor is ${DETENTION_FLOOR}%.`}>
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField id="safe" label="Cruise line (%)" value={thresholds.safeAt} min={1} max={100} onCommit={(v) => updateSettings({ thresholds: { ...thresholds, safeAt: v } })} hint="At or above this a course is cruising." />
+          <NumberField id="floor" label="Floor (%)" value={thresholds.condonationFrom} min={0} max={99} onCommit={(v) => updateSettings({ thresholds: { ...thresholds, condonationFrom: v } })} hint="Under this a course is below the floor." />
         </div>
-        <AnimatePresence>
-          {invalid && (
-            <motion.p
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-2 text-sm font-medium text-rose-300"
-            >
-              The cruise line has to sit above the floor.
-            </motion.p>
-          )}
-        </AnimatePresence>
-        <Button
-          variant="glass"
-          className="mt-4"
-          onClick={() => updateSettings({ thresholds: DEFAULT_THRESHOLDS })}
-        >
-          Reset to 85 / 75
-        </Button>
-      </GlassPanel>
+        {thresholdError && (
+          <p role="alert" className="mt-3 text-[14px] text-red">
+            {thresholdError}
+          </p>
+        )}
+        <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ thresholds: DEFAULT_THRESHOLDS })}>
+          Reset to {DEFAULT_THRESHOLDS.safeAt} / {DEFAULT_THRESHOLDS.condonationFrom}
+        </button>
+      </Section>
 
-      {/* class gravity */}
-      <GlassPanel className="mb-5 p-6">
-        <h3 className="font-display text-lg font-bold text-white">Class gravity</h3>
-        <p className="mb-5 text-sm text-slate-400">
-          How hard each class type pulls your score. A lecture moves the needle twice as much as a lab.
-        </p>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {(COMPONENT_ORDER as ComponentKey[]).map((k) => (
-            <Field key={k} label={COMPONENT_LABELS[k]} htmlFor={`w-${k}`}>
-              <input
-                id={`w-${k}`}
-                type="number"
-                min={0}
-                className={inputClass}
-                value={weights[k]}
-                onChange={(e) => updateSettings({ weights: { ...weights, [k]: Math.max(0, Number(e.target.value)) } })}
-              />
-            </Field>
+      <Section title="Class weights" note="How much each class type counts. The ERP uses lecture 100, tutorial 100, practical 50, skilling 25.">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {COMPONENT_ORDER.map((k: ComponentKey) => (
+            <NumberField key={k} id={`w-${k}`} label={COMPONENT_LABELS[k]} value={weights[k]} min={0} max={1000} onCommit={(v) => updateSettings({ weights: { ...weights, [k]: v } })} />
           ))}
         </div>
-        <Button
-          variant="glass"
-          className="mt-4"
-          onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}
-        >
-          Reset to 100 / 100 / 50 / 25
-        </Button>
-      </GlassPanel>
+        <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}>
+          Reset to {DEFAULT_WEIGHTS.L} / {DEFAULT_WEIGHTS.T} / {DEFAULT_WEIGHTS.P} / {DEFAULT_WEIGHTS.S}
+        </button>
+      </Section>
 
-      {/* late-joiner fix */}
-      <GlassPanel className="mb-5 p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="font-display text-lg font-bold text-white">Late-joiner fix</h3>
-            <p className="mt-1 max-w-md text-sm text-slate-400">
-              Joined a course late? The ERP quietly drops classes held before you registered. Flip
-              this on and tell it how many to drop per course — your scores will match the portal.
-            </p>
-          </div>
-          <Toggle
-            checked={tcbr.enabled}
-            onChange={(v) => updateSettings({ tcbr: { ...tcbr, enabled: v } })}
-            label="Late-joiner fix"
-          />
-        </div>
-        <AnimatePresence initial={false}>
-          {tcbr.enabled && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.35 }}
-              className="overflow-hidden"
-            >
-              <div className="mt-5 flex flex-col gap-2 border-t border-white/[0.08] pt-4">
-                {subjects.length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    No courses loaded yet — link your ERP or load sample data first.
-                  </p>
-                )}
-                {subjects.map((s) => (
-                  <div
-                    key={s.code}
-                    className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-4 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-white">{s.code}</p>
-                      <p className="truncate text-xs text-slate-500">{s.title}</p>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[11px] text-slate-500">pre-reg classes</span>
-                      <Stepper
-                        small
-                        value={tcbr.perCourse[s.code] ?? 0}
-                        onChange={(v) => setTcbrCourse(s.code, v)}
-                      />
-                    </div>
+      <Section title="Late-joiner fix" note="Joined a course late? The ERP drops classes held before you registered. Tell Attenly how many, per course, so the figures match.">
+        <label className="flex cursor-pointer items-center justify-between gap-4">
+          <span className="text-[15px] font-medium">Leave out classes held before I registered</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={tcbr.enabled}
+            onClick={() => updateSettings({ tcbr: { ...tcbr, enabled: !tcbr.enabled } })}
+            className={cn('press relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors', tcbr.enabled ? 'bg-cruise' : 'bg-seam-strong')}
+          >
+            <span className={cn('absolute left-0 top-[3px] h-6 w-6 rounded-full bg-mark transition-transform duration-200 ease-out', tcbr.enabled ? 'translate-x-[23px]' : 'translate-x-[3px]')} />
+          </button>
+        </label>
+        {tcbr.enabled && (
+          <ul className="mt-4">
+            {(snapshot?.attendance ?? []).length === 0 && <li className="text-[14px] text-dropout-text">Courses appear here after your first sync.</li>}
+            {(snapshot?.attendance ?? []).map((s) => {
+              const v = tcbr.perCourse[s.code] ?? 0;
+              return (
+                <li key={s.code} className="seam-b flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-medium">{s.title || s.code}</p>
+                    <p className="text-[12px] text-dropout-quiet tnum">{s.code}</p>
                   </div>
-                ))}
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Provisional — the university can revise these counts. Don&apos;t use this for
-                  formal academic decisions; always cross-check the ERP.
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </GlassPanel>
+                  <div className="flex items-center gap-1" role="group" aria-label={`Classes before registration for ${s.code}`}>
+                    <button type="button" className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam disabled:opacity-30" disabled={v <= 0} onClick={() => setTcbr(s.code, v - 1)} aria-label="One fewer">
+                      <Minus size={16} aria-hidden />
+                    </button>
+                    <span className="figure w-8 text-center text-[20px]">{v}</span>
+                    <button type="button" className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam disabled:opacity-30" disabled={v >= 60} onClick={() => setTcbr(s.code, v + 1)} aria-label="One more">
+                      <Plus size={16} aria-hidden />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Section>
 
-      {/* danger zone */}
-      <GlassPanel className="p-6">
-        <h3 className="font-display text-lg font-bold text-white">Danger zone</h3>
-        <p className="mb-5 text-sm text-slate-400">
-          Synced data lives only in this browser{sampleMode ? ' — you’re on the sample orbit' : ''}.
-          Clearing wipes courses, timetable and the tape from this device.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {!confirmClear ? (
-            <Button variant="danger" onClick={() => setConfirmClear(true)}>
-              Clear synced data
-            </Button>
-          ) : (
-            <>
-              <Button variant="danger" onClick={() => { clearData(); setConfirmClear(false); }}>
-                Yes, wipe it all
-              </Button>
-              <Button variant="glass" onClick={() => setConfirmClear(false)}>
-                Keep it
-              </Button>
-            </>
-          )}
-          <Button variant="glass" onClick={logoutErp} disabled={loggedOut}>
-            {loggedOut ? 'Unlinked from ERP' : 'Unlink ERP session'}
-          </Button>
-        </div>
-      </GlassPanel>
-    </Container>
+      <Section title="Google account">
+        <p className="text-[15px] font-medium">{user?.name ?? 'Signed in'}</p>
+        {user?.email && <p className="text-[14px] text-dropout-text">{user.email}</p>}
+        <button type="button" className="btn btn-danger btn-sm press mt-5" onClick={() => void store.signOut()}>
+          <SignOut size={15} aria-hidden /> Sign out of Google
+        </button>
+      </Section>
+
+      <Section title="This device" note="Attenly keeps a copy of your last sync, your settings and saved calculator results in this browser so the app opens instantly.">
+        {cleared ? (
+          <p className="text-[14px] text-cruise">Cleared. The next load pulls everything from the cloud again.</p>
+        ) : (
+          <ConfirmButton
+            label="Forget data on this device"
+            confirm="Yes, forget it"
+            onConfirm={() => {
+              store.clearDevice();
+              setCleared(true);
+            }}
+          />
+        )}
+      </Section>
+
+      <p className="pt-8 text-[12px] text-dropout-quiet">
+        Attenly is an unofficial student project, not affiliated with KL University.{' '}
+        <Link href="/privacy" className="underline hover:text-mark">
+          Privacy
+        </Link>
+      </p>
+
+      <Sheet open={repair !== null} onClose={() => setRepair(null)} title={accounts.find((a) => a.universityId === repair)?.needsPassword ? 'Enter your ERP password' : 'Change the saved password'}>
+        {repair && (
+          <LinkForm
+            mode="repair"
+            universityId={repair}
+            onLinked={(id, snap) => {
+              setRepair(null);
+              void store.onLinked(id, snap);
+            }}
+          />
+        )}
+      </Sheet>
+      <Sheet open={adding} onClose={() => setAdding(false)} title="Link another ERP account">
+        {adding && (
+          <LinkForm
+            mode="add"
+            onLinked={(id, snap) => {
+              setAdding(false);
+              void store.onLinked(id, snap);
+            }}
+          />
+        )}
+      </Sheet>
+    </div>
   );
 }

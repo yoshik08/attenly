@@ -1,5 +1,5 @@
 {
-  "name": "skipwise",
+  "name": "attenly",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,11 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/parsers.test.ts tests/math.test.ts"
+    "test": "tsx --test tests/parsers.test.ts tests/math.test.ts tests/insights.test.ts tests/sync.test.ts",
+    "test:e2e": "node tests/e2e.mjs",
+    "typecheck": "tsc --noEmit",
+    "stack": "node tests/stack.mjs"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "animejs": "^4.5.0",
     "cheerio": "^1.2.0",
-    "framer-motion": "^14.0.0",
     "jose": "^4.15.9",
     "mongodb": "^7.7.0",
     "next": "16.3.8",
@@ -20,12 +24,15 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "mongodb-memory-server": "^11.3.0",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"

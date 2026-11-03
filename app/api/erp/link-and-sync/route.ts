@@ -1,76 +1,90 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { interactiveLogin, pullAll } from '@/lib/erp/full-sync';
-import { saveFullSnapshot } from '@/lib/db/snapshots';
-import { upsertUserCreds } from '@/lib/db/users';
-import { sealSession, ErpRateLimited } from '@/lib/erp/client';
-import { refreshSessionCookie } from '@/lib/erp/session';
-import { isMongoMisconfigured } from '@/lib/db/mongo';
+import { getGoogleUser, unauthorized } from '@/lib/auth';
+import { interactiveLogin, pullAll, ErpRateLimited, isSessionExpiredError } from '@/lib/erp/full-sync';
+import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot } from '@/lib/db/snapshots';
+import { linkAccount } from '@/lib/db/users';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
+
+const LOGIN_STATUS: Record<string, number> = {
+  captcha_expired: 422,
+  bad_captcha: 422,
+  bad_credentials: 401,
+  rate_limited: 429,
+};
+
+function fail(status: number, code: string, error: string) {
+  return Response.json({ ok: false, code, error }, { status });
+}
 
 /**
  * POST /api/erp/link-and-sync
- * Body: { universityId, password, captchaText, sessionToken }
+ * Body: { universityId, password, captchaText, sessionToken, label? }
  *
- * One-shot interactive link: logs into the ERP, pulls attendance + timetable
- * + internals + results + CGPA, seals the password into the user row, and
- * stores the full snapshot. Returns the parsed data so the UI can render
- * immediately without a second round-trip.
+ * Logs into the ERP with the captcha the person confirmed, pulls everything
+ * for the current term, and only then saves the account (password stored
+ * as-is, by the owner's choice) against the signed-in Google user.
  */
 export async function POST(req: Request) {
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: 'Invalid JSON body.' }, { status: 400 });
-  }
-  const universityId = typeof body.universityId === 'string' ? body.universityId.trim() : '';
-  const password = typeof body.password === 'string' ? body.password : '';
-  const captchaText = typeof body.captchaText === 'string' ? body.captchaText : '';
-  const sessionToken = typeof body.sessionToken === 'string' ? body.sessionToken : '';
+  const me = await getGoogleUser();
+  if (!me) return unauthorized();
+
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  const str = (k: string, max: number) => (typeof body?.[k] === 'string' ? (body[k] as string).slice(0, max) : '');
+  const universityId = str('universityId', 32).trim();
+  const password = str('password', 128);
+  const captchaText = str('captchaText', 16).trim();
+  const sessionToken = str('sessionToken', 4096);
+  const label = str('label', 40).trim();
   if (!universityId || !password || !captchaText || !sessionToken) {
-    return Response.json({ error: 'Missing login fields.' }, { status: 400 });
+    return fail(400, 'missing_fields', 'Fill in your University ID, password and the captcha.');
+  }
+  if (!/^[A-Za-z0-9]+$/.test(universityId)) {
+    return fail(400, 'bad_id', 'A University ID is letters and digits only.');
   }
 
+  // 1. Log in. A coded error is the ERP's own verdict and its words are the
+  //    most useful message; anything else means the ERP couldn't be reached.
+  let session: Awaited<ReturnType<typeof interactiveLogin>>;
   try {
-    const authed = await interactiveLogin(universityId, password, captchaText, sessionToken);
-    // Keep the ERP session cookie fresh for the file/booklet proxies.
-    await refreshSessionCookie(authed);
-    const data = await pullAll(authed);
-
-    const gsession = await getServerSession(authOptions);
-    const googleId = (gsession?.user as { id?: string } | undefined)?.id;
-
-    try {
-      await saveFullSnapshot({ universityId, googleId, term: data.term, data, password, termOptions: authed.termOptions });
-      if (googleId) {
-        await upsertUserCreds({
-          googleId,
-          email: gsession?.user?.email ?? '',
-          name: gsession?.user?.name ?? undefined,
-          universityId,
-          creds: sealSession({ pw: password }),
-        });
-      }
-    } catch (e) {
-      if (isMongoMisconfigured(e)) {
-        console.warn('[api/erp/link-and-sync] MongoDB not configured — skipping snapshot.');
-      } else {
-        throw e;
-      }
-    }
-
-    return Response.json({ ok: true, data });
+    session = await interactiveLogin(universityId, password, captchaText, sessionToken);
   } catch (e) {
-    if (e instanceof ErpRateLimited) {
-      return Response.json({ error: e.message, code: 'rate_limited' }, { status: 429 });
-    }
+    if (e instanceof ErpRateLimited) return fail(429, 'rate_limited', e.message);
     const code = (e as { code?: string }).code;
-    console.error('[api/erp/link-and-sync]', e instanceof Error ? e.message : e);
-    return Response.json(
-      { error: e instanceof Error ? e.message : 'Link failed.', code: code ?? 'unknown' },
-      { status: code === 'captcha_expired' || code === 'bad_captcha' ? 422 : 502 },
-    );
+    if (!code) {
+      console.error('[api/erp/link-and-sync] login', e instanceof Error ? e.message : e);
+      return fail(502, 'erp_unreachable', 'Attenly could not reach the ERP. Try again in a moment.');
+    }
+    return fail(LOGIN_STATUS[code] ?? 401, code, e instanceof Error ? e.message : 'The ERP did not accept the login.');
+  }
+
+  // 2. Pull and save, then remember the account.
+  try {
+    const data = await pullAll(session);
+    if (data.failed.length === 5) {
+      return fail(502, 'erp_unreachable', 'The ERP accepted the login but returned no data. Try again in a moment.');
+    }
+    const previous = await getLatestSnapshot(me.googleId, universityId);
+    const saved = await saveFullSnapshot({
+      universityId,
+      googleId: me.googleId,
+      data,
+      previous,
+      termOptions: session.termOptions,
+    });
+    await linkAccount({
+      googleId: me.googleId,
+      email: me.email ?? '',
+      name: me.name ?? undefined,
+      universityId,
+      password,
+      label: label || undefined,
+    });
+    return Response.json({ ok: true, universityId, snapshot: toClientSnapshot(saved) });
+  } catch (e) {
+    if (e instanceof ErpRateLimited) return fail(429, 'rate_limited', e.message);
+    if (isSessionExpiredError(e)) return fail(502, 'failed', 'The ERP session dropped mid-sync. Try again.');
+    console.error('[api/erp/link-and-sync] sync', e instanceof Error ? e.message : e);
+    return fail(502, 'failed', 'Linking stopped partway. Try again in a moment.');
   }
 }
