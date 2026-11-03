@@ -25,7 +25,7 @@ async function control(body) {
   return r.json();
 }
 async function resetMock() {
-  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0 } });
+  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, attendanceDbDown: false } });
 }
 
 async function ctxFor(user, opts = {}) {
@@ -388,6 +388,44 @@ test('semester: automatic finds the newest with attendance; Settings can pick an
   await page.getByRole('tab', { name: 'Automatic' }).click();
   await back;
   await page.getByText('Showing Even Sem 2026-2027.').waitFor();
+  await ctx.close();
+});
+
+test('attendance register down on the ERP: the home screen says so; kept numbers are dated', async () => {
+  const forceSync = async (page) => {
+    await page.getByRole('button', { name: /Synced|Not synced|Sync failed/ }).click();
+    const done = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+    await page.getByRole('dialog', { name: 'Sync status' }).getByRole('button', { name: 'Sync now' }).click();
+    assert.equal((await (await done).json()).code, 'synced');
+    await page.keyboard.press('Escape');
+  };
+  const { ctx, page } = await ctxFor('main', { reducedMotion: 'reduce' });
+  await page.goto(st.app);
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+  await control({ knobs: { attendanceDbDown: true } });
+  await forceSync(page);
+  const notice = page.getByRole('status').filter({ hasText: 'KL ERP’s attendance register is down' });
+  await notice.getByText(/These numbers are from just now/).waitFor();
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+
+  // Nothing read for this term yet (the real ERP on 3 Nov 2026): no courses, no empty-term message.
+  await mongo.db('skipwise').collection('snapshots').deleteMany({ googleId: st.users.main.sub });
+  await page.evaluate(() => localStorage.clear()); // a first visit: nothing cached on the device either
+  const synced = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  await page.reload();
+  assert.equal((await (await synced).json()).code, 'synced');
+  await notice.getByText(/Attenly checks again on every sync/).waitFor();
+  await page.getByText('Even Sem 2026-2027').first().waitFor();
+  assert.equal(await page.getByRole('article').count(), 0);
+  assert.equal(await page.getByText(/The ERP shows no attendance/).count(), 0);
+  const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+  assert.deepEqual(r.violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((v) => v.id), []);
+  if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/register-down.png`, fullPage: true });
+
+  await control({ knobs: { attendanceDbDown: false } });
+  await forceSync(page);
+  await page.getByRole('article', { name: 'Operating Systems' }).waitFor();
+  assert.equal(await notice.count(), 0);
   await ctx.close();
 });
 

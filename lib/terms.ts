@@ -65,7 +65,7 @@ function semesterTryOrder(label: string): number {
 /**
  * Terms to try when nobody picked one, newest first: the two most recent
  * academic years and, within each, even → odd → the rest. The sync takes the
- * first that has attendance on the ERP.
+ * first that has courses on the ERP.
  */
 export function termCandidates(options: TermOptions, maxYears = 2): Term[] {
   const sems = [...options.semesters].sort((a, b) => semesterTryOrder(a.label) - semesterTryOrder(b.label));

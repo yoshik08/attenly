@@ -94,7 +94,7 @@ export async function syncAccount(opts: {
   try {
     const run = await withLock(`sync:${universityId}`, LOCK_MS, async () => {
       const session = await autoLogin(universityId, creds.password);
-      // The term the person picked in Settings, else the newest with attendance.
+      // The term the person picked in Settings, else the newest with courses.
       const data = await pullAll(session, account.term ? termFromIds(account.term, session.termOptions) : undefined);
       if (data.failed.length === 5) throw coded(MESSAGES.erp_unreachable, 'erp_unreachable');
       const saved = await saveFullSnapshot({

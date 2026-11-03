@@ -14,6 +14,7 @@ import {
   fetchResultsHtml,
   fetchCgpaHtml,
   isSessionExpiredError,
+  isAttendanceDown,
   ErpRateLimited,
   type AuthedSession,
   type CaptchaSession,
@@ -53,6 +54,8 @@ export interface FullSyncData {
   syncedAt: string;
   /** Datasets whose ERP fetch failed this run (their arrays are empty, not real). */
   failed: Dataset[];
+  /** Why a failed dataset is missing, when the reason is worth showing (the ERP's attendance register is down). */
+  issues: Partial<Record<Dataset, string>>;
 }
 
 /** How many fresh captchas a headless login tries before giving up. */
@@ -105,16 +108,18 @@ function fallbackTerm(now = new Date()): SyncTerm {
 
 /**
  * The term to show when nobody picked one: the newest term (two most recent
- * academic years, even before odd) that has attendance on the ERP. Its
- * attendance comes back too, so it isn't fetched twice.
+ * academic years, even before odd) that has courses on the ERP. Its
+ * attendance comes back too, so it isn't fetched twice. A term whose
+ * attendance register crashes in the ERP's database counts as having courses
+ * (the crash happens per registered course); its attendance is reported down.
  *
- * An ERP error while probing never falls through to an emptier term: when no
- * candidate had rows and one of them failed, the error is thrown so the last
- * good data stays.
+ * Any other ERP error while probing never falls through to an emptier term:
+ * when no candidate had courses and one of them failed, the error is thrown
+ * so the last good data stays.
  */
 async function detectTerm(
   session: AuthedSession,
-): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null }> {
+): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error }> {
   const candidates = session.termOptions ? termCandidates(session.termOptions) : [];
   if (candidates.length === 0) return { term: session.term ?? fallbackTerm(), attendance: null };
   let probeError: unknown = null;
@@ -136,6 +141,11 @@ async function detectTerm(
       }
     } catch (e) {
       if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
+      if (isAttendanceDown(e)) {
+        tried.push(`${name}=courses, attendance register down`);
+        report(name);
+        return { term, attendance: null, attendanceDown: e as Error };
+      }
       tried.push(`${name}=${e instanceof Error ? e.message : 'error'}`);
       probeError = e;
     }
@@ -157,12 +167,14 @@ async function detectTerm(
 export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): Promise<FullSyncData> {
   let term: SyncTerm;
   let detected: SubjectAttendance[] | null = null;
+  let detectedDown: Error | undefined;
   if (termOverride) {
     term = termOverride;
   } else {
     const d = await detectTerm(session);
     term = d.term;
     detected = d.attendance;
+    detectedDown = d.attendanceDown;
   }
 
   let attendance: SubjectAttendance[] = detected ?? [];
@@ -173,11 +185,13 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
 
   const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa'];
   const settled = await Promise.allSettled([
-    detected
-      ? Promise.resolve()
-      : fetchAttendanceHtml(session, term).then(({ html }) => {
-          attendance = parseAttendance(html);
-        }),
+    detectedDown
+      ? Promise.reject(detectedDown)
+      : detected
+        ? Promise.resolve()
+        : fetchAttendanceHtml(session, term).then(({ html }) => {
+            attendance = parseAttendance(html);
+          }),
     fetchTimetableHtml(session, term).then(({ html }) => {
       timetable = parseTimetable(html);
     }),
@@ -193,12 +207,14 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
   ]);
 
   const failed: Dataset[] = [];
+  const issues: FullSyncData['issues'] = {};
   settled.forEach((s, i) => {
     if (s.status === 'fulfilled') return;
     const reason = s.reason as Error & { expired?: boolean };
     if (isSessionExpiredError(reason) || reason instanceof ErpRateLimited) throw reason;
     failed.push(names[i]);
-    console.warn(`[full-sync] ${names[i]} pull failed:`, reason instanceof Error ? reason.message : reason);
+    if (isAttendanceDown(reason)) issues[names[i]] = reason.message;
+    else console.warn(`[full-sync] ${names[i]} pull failed:`, reason instanceof Error ? reason.message : reason);
   });
 
   const { cgpa, terms } = computeGpa(cgpaRows);
@@ -213,6 +229,7 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
     sgpaTerms: terms,
     syncedAt: new Date().toISOString(),
     failed,
+    issues,
   };
 }
 

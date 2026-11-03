@@ -22,9 +22,11 @@ const knobs = {
   rateLimitLogins: false,
   failDatasets: [], // e.g. ['timetable']
   loginDelayMs: 0,
-  // Like the real ERP (Nov 2026): the course list answers 500 for a term with rows
-  // unless the request comes from the filter page.
+  // The course list answers 500 for a term with rows unless the request comes from the filter page.
   strictReferer: false,
+  // Like the real ERP on 3 Nov 2026: the course list crashes in its database (a
+  // missing view behind a per-course stored procedure) for any term with courses.
+  attendanceDbDown: false,
 };
 
 const students = new Map(
@@ -330,6 +332,14 @@ const server = http.createServer(async (req, res) => {
     const form = new URLSearchParams(await body(req));
     counters.courselists = (counters.courselists ?? 0) + 1;
     const term = st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semesterid]')}`];
+    if (knobs.attendanceDbDown && term) {
+      return send(
+        res,
+        500,
+        String.raw`Exception (Database Exception) 'yii\db\Exception' with message 'SQLSTATE[42S02]: Base table or view not found: 1146 Table 'klerp_v2.student_daily_attendance_view' doesn't exist` +
+          `\nThe SQL being executed was: CALL student_course_attendance_register( 1,2,10)'`,
+      );
+    }
     if (knobs.strictReferer && term && !String(req.headers.referer ?? '').includes('searchgetinput')) {
       return send(res, 500, '<html><head><title>Internal Server Error</title></head><body><h1>Internal Server Error</h1></body></html>');
     }

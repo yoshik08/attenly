@@ -125,7 +125,7 @@ function SemesterSection() {
     <Section
       id="semester"
       title="Semester"
-      note="Attenly shows the newest semester that has attendance on the ERP. Pick one yourself to look back at an earlier semester."
+      note="Attenly shows the newest semester you have courses in on the ERP. Pick one yourself to look back at an earlier semester."
     >
       <Segmented
         label="Semester choice"
@@ -141,7 +141,7 @@ function SemesterSection() {
       />
       {mode === 'auto' ? (
         <p className="mt-4 text-[14px] text-dropout-text" aria-live="polite">
-          {pending ? 'Finding the newest semester with attendance…' : showing ? `Showing ${showing}.` : 'Sync once to find your semester.'}
+          {pending ? 'Finding your newest semester…' : showing ? `Showing ${showing}.` : 'Sync once to find your semester.'}
         </p>
       ) : !options ? (
         <p className="mt-4 text-[14px] text-dropout-text">Sync once to load the ERP’s list of semesters.</p>

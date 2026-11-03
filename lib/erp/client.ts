@@ -14,7 +14,6 @@ import {
   classifyLoginError,
   pickLoginMessage,
   parseTermOptions,
-  parseAttendance,
   decodeEntities,
   type LoginErrorCode,
   type TermList,
@@ -380,6 +379,23 @@ async function postXhr(
   return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
 }
 
+/** The ERP's attendance list failed inside its own database (not something a retry can fix). */
+export const ATTENDANCE_DOWN = 'erp_attendance_down';
+
+/**
+ * True when the ERP's course list crashed in its database. It runs one stored
+ * procedure per registered course (student_course_attendance_register), so a
+ * database error there also means the term has courses.
+ */
+export function isAttendanceDown(e: unknown): boolean {
+  return (e as { code?: string })?.code === ATTENDANCE_DOWN;
+}
+
+function databaseError(e: unknown): boolean {
+  const text = `${(e as { detail?: string })?.detail ?? ''} ${e instanceof Error ? e.message : ''}`;
+  return /SQLSTATE|Database Exception|yii\\db\\Exception|attendance_register/i.test(text);
+}
+
 export async function fetchAttendanceHtml(
   session: AuthedSession,
   term: { academicyear: string; semesterid: string; semester: string },
@@ -391,60 +407,43 @@ export async function fetchAttendanceHtml(
     'DynamicModel[academicyear]': term.academicyear,
     'DynamicModel[semesterid]': term.semesterid,
   };
-  const is500 = (e: unknown) => (e as { status?: number })?.status === 500;
-  const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  const at = `${term.academicyear}:${term.semesterid}`;
+  const down = (e: unknown) => {
+    console.warn(`[erp] attendance ${at}: the ERP's database failed: ${((e as { detail?: string })?.detail ?? '').slice(0, 300)}`);
+    return Object.assign(
+      new Error('The ERP’s own attendance page fails with a database error on the university’s side.'),
+      { code: ATTENDANCE_DOWN, status: 500 },
+    );
+  };
   let first: unknown;
   try {
     return await postXhr(session, ATTENDANCE_PATH, fields);
   } catch (e) {
-    if (!is500(e)) throw e;
+    if ((e as { status?: number })?.status !== 500) throw e;
+    if (databaseError(e)) throw down(e);
     first = e;
   }
 
-  // The ERP answers 500 only for terms that have rows to render, so the data
-  // is there. Retry the way the ERP's own page does it: open the filter page,
-  // then post the filter from it (its token, its URL as referrer).
-  const failures = [`direct: ${why(first)}`];
+  // Any other 500: post again the way the ERP's own page does, from the
+  // filter page (its token, its URL as referrer).
   const pageUrl = new URL(ATTENDANCE_PAGE_PATH, ERP_BASE).toString();
   const page = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, session.jar);
   if (detectLoginForm(page.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
   const csrf = extractCsrf(page.text) ?? session.csrf;
-  console.info(
-    `[erp] attendance ${term.academicyear}:${term.semesterid} error detail: ${(first as { detail?: string })?.detail ?? '(none)'}`,
-  );
-  // A plain form post (no XHR header), the way other working ERP clients send it.
-  const navHeaders = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    Referer: pageUrl,
-  };
-  const variants: [string, string, Record<string, string>, Record<string, string>][] = [
-    ['as a page', ATTENDANCE_PATH, navHeaders, { ...fields, _csrf: csrf }],
-    ['from the filter page', ATTENDANCE_PATH, xhrHeaders({ Referer: pageUrl }), { ...fields, _csrf: csrf }],
-    [
-      'filter page XHR',
-      ATTENDANCE_PAGE_PATH,
-      xhrHeaders({ Referer: pageUrl, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }),
-      { ...fields, _csrf: csrf, 'DynamicModel[semester]': term.semesterid },
-    ],
-  ];
-  for (const [name, path, headers, body] of variants) {
-    try {
-      const res = await erpFetch(path, { method: 'POST', headers, body: formBody(body) }, page.jar);
-      if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
-      // The filter page answers 200 with or without a grid; only a grid counts.
-      if (path === ATTENDANCE_PAGE_PATH && parseAttendance(res.text).length === 0) {
-        failures.push(`${name}: no attendance grid`);
-        continue;
-      }
-      console.info(`[erp] attendance ${term.academicyear}:${term.semesterid} answered ${name}`);
-      return { html: res.text, jar: res.jar, csrf };
-    } catch (e) {
-      if (typeof (e as { status?: unknown })?.status !== 'number') throw e;
-      failures.push(`${name}: ${why(e)}`);
-    }
+  try {
+    const res = await erpFetch(
+      ATTENDANCE_PATH,
+      { method: 'POST', headers: xhrHeaders({ Referer: pageUrl }), body: formBody({ ...fields, _csrf: csrf }) },
+      page.jar,
+    );
+    if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
+    return { html: res.text, jar: res.jar, csrf };
+  } catch (e) {
+    if ((e as { status?: number })?.status !== 500) throw e;
+    if (databaseError(e)) throw down(e);
+    const why = (x: unknown) => (x instanceof Error ? x.message : String(x));
+    throw Object.assign(new Error(`attendance failed (${why(first)}; again from the filter page: ${why(e)})`), { status: 500 });
   }
-  throw Object.assign(new Error(`attendance failed (${failures.join('; ')})`), { status: 500 });
 }
 
 export async function fetchTimetableHtml(

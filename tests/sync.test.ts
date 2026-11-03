@@ -31,11 +31,11 @@ const B = '9900000002';
 
 async function control(body: unknown) {
   const r = await fetch(`${MOCK}/__mock/control`, { method: 'POST', body: JSON.stringify(body) });
-  return (await r.json()) as { counters: { logins: number; captchas: number; solves: number } };
+  return (await r.json()) as { counters: { logins: number; captchas: number; solves: number; courselists?: number } };
 }
 const counters = async () => (await control({})).counters;
 async function resetKnobs() {
-  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false } });
+  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false, attendanceDbDown: false } });
 }
 const userDoc = () => db.collection('users').findOne({ googleId: G });
 const latest = (id: string) => snapshots.getLatestSnapshot(G, id);
@@ -114,6 +114,43 @@ test('an ERP that errors on direct course-list requests is read the way its own 
   assert.equal(r.snapshot?.attendance.length, 6);
   assert.equal(r.snapshot?.term.semester, 'Even Sem');
   await resetKnobs();
+});
+
+test('an attendance register that crashes in the ERP database still picks the newest term and syncs the rest', async () => {
+  // Start from nothing synced for this term, like the real ERP on 3 Nov 2026.
+  await db.collection('snapshots').deleteMany({});
+  await control({ knobs: { attendanceDbDown: true } });
+  const before = (await counters()).courselists ?? 0;
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(r.code, 'synced');
+  // The crash happens per registered course, so the first candidate (Even Sem, newest year) is the term.
+  assert.deepEqual(r.snapshot?.term, { academicyear: '30', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' });
+  assert.equal(((await counters()).courselists ?? 0) - before, 1, 'no retries against a database error');
+  assert.equal(r.snapshot?.attendance.length, 0);
+  assert.match(r.snapshot?.issues.attendance ?? '', /database error/);
+  assert.equal(r.snapshot?.attendanceSyncedAt, null);
+  assert.equal(r.snapshot?.timetable.length, 6, 'the other pages still sync');
+  assert.equal(r.snapshot?.cgpa, 8.5);
+  await resetKnobs();
+});
+
+test('attendance synced before the register went down stays, dated to when it was read', async () => {
+  const good = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(good.snapshot?.attendance.length, 6);
+  assert.deepEqual(good.snapshot?.issues, {});
+  assert.equal(good.snapshot?.attendanceSyncedAt, good.snapshot?.syncedAt);
+  await control({ knobs: { attendanceDbDown: true } });
+  const down = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(down.code, 'synced');
+  assert.equal(down.snapshot?.attendance.length, 6, 'kept');
+  assert.ok(down.snapshot?.issues.attendance);
+  assert.equal(down.snapshot?.attendanceSyncedAt, good.snapshot?.syncedAt);
+  const again = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(again.snapshot?.attendanceSyncedAt, good.snapshot?.syncedAt, 'still the original read');
+  await resetKnobs();
+  const back = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.deepEqual(back.snapshot?.issues, {});
+  assert.equal(back.snapshot?.attendanceSyncedAt, back.snapshot?.syncedAt);
 });
 
 test('a legacy sealed password this server can open is converted to plaintext', async () => {

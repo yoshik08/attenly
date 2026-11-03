@@ -23,6 +23,10 @@ export interface SnapshotDoc {
   cgpa: number | null;
   sgpaTerms: FullSyncData['sgpaTerms'];
   termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
+  /** Why a dataset is missing or old after the latest sync (e.g. the ERP's attendance register is down). */
+  issues?: FullSyncData['issues'];
+  /** When the attendance shown was last read from the ERP; null when it never was for this term. */
+  attendanceSyncedAt?: Date | null;
   creds?: string;
 }
 
@@ -40,6 +44,10 @@ export interface ClientSnapshot {
   sgpaTerms: FullSyncData['sgpaTerms'];
   /** The ERP's academic years and semesters, for choosing another term. */
   termOptions: TermOptions | null;
+  /** Why a dataset is missing or old after the latest sync. */
+  issues: FullSyncData['issues'];
+  /** When the attendance shown was last read from the ERP (null: never, for this term). */
+  attendanceSyncedAt: string | null;
 }
 
 export function termKey(term: { academicyear?: string; semesterid?: string; semester?: string }): string {
@@ -64,6 +72,11 @@ export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapsho
     cgpa: doc.cgpa ?? null,
     sgpaTerms: doc.sgpaTerms ?? [],
     termOptions: options,
+    issues: doc.issues ?? {},
+    attendanceSyncedAt:
+      doc.attendanceSyncedAt !== undefined
+        ? doc.attendanceSyncedAt && new Date(doc.attendanceSyncedAt).toISOString()
+        : new Date(doc.syncedAt).toISOString(),
   };
 }
 
@@ -88,8 +101,17 @@ export async function saveFullSnapshot(input: {
   termOptions?: SnapshotDoc['termOptions'];
 }): Promise<SnapshotDoc> {
   const { data, previous } = input;
+  const sameTerm = !!previous && termKey(previous.term) === termKey(data.term);
   const keep = <K extends keyof SnapshotDoc>(dataset: FullSyncData['failed'][number], key: K, fresh: SnapshotDoc[K]) =>
-    data.failed.includes(dataset) && previous && termKey(previous.term) === termKey(data.term) ? previous[key] : fresh;
+    data.failed.includes(dataset) && sameTerm ? previous![key] : fresh;
+  // Kept attendance is only as new as the sync that last read it.
+  const attendanceSyncedAt = !data.failed.includes('attendance')
+    ? new Date(data.syncedAt)
+    : sameTerm
+      ? previous!.attendanceSyncedAt !== undefined
+        ? previous!.attendanceSyncedAt
+        : new Date(previous!.syncedAt)
+      : null;
 
   const cgpaRows = keep('cgpa', 'cgpaRows', data.cgpaRows);
   const doc: SnapshotDoc = {
@@ -106,6 +128,8 @@ export async function saveFullSnapshot(input: {
     cgpa: cgpaRows === data.cgpaRows ? data.cgpa : (previous?.cgpa ?? null),
     sgpaTerms: cgpaRows === data.cgpaRows ? data.sgpaTerms : (previous?.sgpaTerms ?? []),
     ...(input.termOptions ? { termOptions: input.termOptions } : {}),
+    issues: data.issues ?? {},
+    attendanceSyncedAt,
   };
   // Keyed by the Google user too: the same ERP account under two Google
   // accounts must never overwrite (or, on removal, delete) the other's data.

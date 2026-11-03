@@ -13,7 +13,7 @@ import { BootScreen, LoadError } from '@/components/states';
 import { cn } from '@/components/cn';
 import { bandLabel, courseTcbr, overallPct, policyBand } from '@/lib/math';
 import { deltaOf, nextClassOf, plateFor, summarize } from '@/lib/insights';
-import { useNow } from '@/lib/time';
+import { ago, useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
 
 export default function AttendancePage() {
@@ -150,25 +150,38 @@ function Attendance() {
           </div>
         )}
 
-        <div className="mt-6 hidden lg:block">
-          <Legend />
-        </div>
+        {summaries.length > 0 && (
+          <div className="mt-6 hidden lg:block">
+            <Legend />
+          </div>
+        )}
       </aside>
 
       <section aria-label="Courses" className="mt-6 lg:mt-6">
-        <div className="seam-b pb-4 lg:hidden">
-          <Legend />
-        </div>
-        {summaries.length === 0 ? (
-          <div className="py-10">
-            <p className="text-[15px] font-semibold">The ERP shows no attendance for {termLabel || 'this term'}.</p>
-            <p className="mt-1 text-[13px] text-dropout-text">
-              Courses appear here once classes are marked.{' '}
-              <Link href="/settings#semester" className="underline decoration-seam-strong hover:text-mark">
-                Look at another semester
-              </Link>
-            </p>
+        {summaries.length > 0 && (
+          <div className="seam-b pb-4 lg:hidden">
+            <Legend />
           </div>
+        )}
+        {snapshot.issues?.attendance && (
+          <RegisterDown
+            message={snapshot.issues.attendance}
+            asOf={summaries.length > 0 ? snapshot.attendanceSyncedAt : null}
+            now={now}
+          />
+        )}
+        {summaries.length === 0 ? (
+          !snapshot.issues?.attendance && (
+            <div className="py-10">
+              <p className="text-[15px] font-semibold">The ERP shows no attendance for {termLabel || 'this term'}.</p>
+              <p className="mt-1 text-[13px] text-dropout-text">
+                Courses appear here once classes are marked.{' '}
+                <Link href="/settings#semester" className="underline decoration-seam-strong hover:text-mark">
+                  Look at another semester
+                </Link>
+              </p>
+            </div>
+          )
         ) : (
           <div ref={list}>
             {subjects.map((s, i) => (
@@ -185,11 +198,13 @@ function Attendance() {
             ))}
           </div>
         )}
-        <p className="mt-6 text-[12px] text-dropout-quiet pretty">
-          Figures follow the ERP’s weighted formula (lecture and tutorial 100, practical 50, skilling 25), rounded up.
-          Each bubble row on its own: skipping one class type assumes you attend the rest. Double-check the ERP before
-          making the call.
-        </p>
+        {summaries.length > 0 && (
+          <p className="mt-6 text-[12px] text-dropout-quiet pretty">
+            Figures follow the ERP’s weighted formula (lecture and tutorial 100, practical 50, skilling 25), rounded up.
+            Each bubble row on its own: skipping one class type assumes you attend the rest. Double-check the ERP before
+            making the call.
+          </p>
+        )}
       </section>
       <RepairSheet open={repairing} onClose={() => setRepairing(false)} universityId={activeAccount?.universityId} onLinked={onLinked} />
     </div>
@@ -214,6 +229,26 @@ function Scale({ pct, floor, cruise }: { pct: number | null; floor: number; crui
           {cruise}
         </span>
       </div>
+    </div>
+  );
+}
+
+/** The ERP's attendance register itself is failing (on KL's side); say so instead of showing an empty term. */
+function RegisterDown({ message, asOf, now }: { message: string; asOf: string | null; now: number }) {
+  return (
+    <div role="status" className="my-4 rounded-2xl bg-[#1a1306] p-4 ring-1 ring-[#3d2c0a]">
+      <p className="flex gap-2 text-[#ffd8a0]">
+        <WarningCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
+        <span>
+          <span className="block text-[15px] font-semibold">KL ERP’s attendance register is down</span>
+          <span className="mt-1 block text-[13px] leading-relaxed pretty">
+            {message}{' '}
+            {asOf
+              ? `These numbers are from ${ago(asOf, now)}. Attenly refreshes them once the register works again.`
+              : 'Attenly checks again on every sync and fills this in once the register works again.'}
+          </span>
+        </span>
+      </p>
     </div>
   );
 }
