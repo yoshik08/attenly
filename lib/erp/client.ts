@@ -137,11 +137,14 @@ export async function erpFetch(
     // An error page parses as "no rows"; never let it pass for real data. The
     // page's own heading (e.g. Yii's exception name) goes into the message.
     if (res.status >= 400) {
-      const heading = (text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '')
+      // Yii answers XHR errors in plain text ("Name: message"), pages with an <h1>.
+      const heading = (text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? text)
+        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
         .replace(/<[^>]+>/g, ' ')
+        .replace(/\b\d{8,12}\b/g, '#')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, 140);
+        .slice(0, 160);
       throw Object.assign(new Error(`ERP answered HTTP ${res.status}${heading ? ` (${heading})` : ''}`), { status: res.status });
     }
     return { status: res.status, text, jar: currentJar, finalUrl: url };
@@ -397,76 +400,40 @@ export async function fetchAttendanceHtml(
   const page = await erpFetch(ATTENDANCE_PAGE_PATH, { method: 'GET' }, session.jar);
   if (detectLoginForm(page.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
   const csrf = extractCsrf(page.text) ?? session.csrf;
-  const variants: [string, Record<string, string>][] = [
-    ['from the filter page', { ...fields, _csrf: csrf }],
-    ['with semester', { ...fields, _csrf: csrf, 'DynamicModel[semester]': term.semesterid }],
+  console.info(`[erp] attendance session cookies: ${Object.keys(page.jar).sort().join(', ')}`);
+  // A plain form post (no XHR header), the way other working ERP clients send it.
+  const navHeaders = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    Referer: pageUrl,
+  };
+  const variants: [string, string, Record<string, string>, Record<string, string>][] = [
+    ['as a page', ATTENDANCE_PATH, navHeaders, { ...fields, _csrf: csrf }],
+    ['from the filter page', ATTENDANCE_PATH, xhrHeaders({ Referer: pageUrl }), { ...fields, _csrf: csrf }],
+    [
+      'filter page XHR',
+      ATTENDANCE_PAGE_PATH,
+      xhrHeaders({ Referer: pageUrl, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }),
+      { ...fields, _csrf: csrf, 'DynamicModel[semester]': term.semesterid },
+    ],
   ];
-  for (const [name, body] of variants) {
+  for (const [name, path, headers, body] of variants) {
     try {
-      const res = await erpFetch(
-        ATTENDANCE_PATH,
-        { method: 'POST', headers: xhrHeaders({ Referer: pageUrl }), body: formBody(body) },
-        page.jar,
-      );
+      const res = await erpFetch(path, { method: 'POST', headers, body: formBody(body) }, page.jar);
       if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
+      // The filter page answers 200 with or without a grid; only a grid counts.
+      if (path === ATTENDANCE_PAGE_PATH && parseAttendance(res.text).length === 0) {
+        failures.push(`${name}: no attendance grid`);
+        continue;
+      }
       console.info(`[erp] attendance ${term.academicyear}:${term.semesterid} answered ${name}`);
       return { html: res.text, jar: res.jar, csrf };
     } catch (e) {
-      if (!is500(e)) throw e;
+      if (typeof (e as { status?: unknown })?.status !== 'number') throw e;
       failures.push(`${name}: ${why(e)}`);
     }
   }
-
-  // Last resort: submit the filter form itself and read the grid from the page.
-  try {
-    const res = await erpFetch(
-      ATTENDANCE_PAGE_PATH,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: new URL(ERP_BASE).origin, Referer: pageUrl },
-        body: formBody({ ...fields, _csrf: csrf }),
-      },
-      page.jar,
-    );
-    if (detectLoginForm(res.text)) throw Object.assign(new Error('ERP session expired'), { expired: true });
-    if (parseAttendance(res.text).length > 0) {
-      console.info(`[erp] attendance ${term.academicyear}:${term.semesterid} answered the filter form`);
-      return { html: res.text, jar: res.jar, csrf };
-    }
-    failures.push('filter form: no attendance grid');
-  } catch (e) {
-    if (!is500(e) && !(e instanceof Error && /HTTP \d/.test(e.message))) throw e;
-    failures.push(`filter form: ${why(e)}`);
-  }
-  console.info(`[erp] attendance page hints: ${attendancePageHints(page.text)}`);
   throw Object.assign(new Error(`attendance failed (${failures.join('; ')})`), { status: 500 });
-}
-
-/**
- * The parts of the ERP's attendance filter page that say how it loads the
- * grid (its form and the script around "courselist"), for diagnosing a
- * changed ERP. Tokens and id-like numbers are masked.
- */
-function attendancePageHints(html: string): string {
-  const chunks = [
-    ...[...html.matchAll(/<form\b[\s\S]*?<\/form>/gi)].map((m) => m[0]),
-    ...[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]),
-  ];
-  const hits: string[] = [];
-  for (const chunk of chunks) {
-    for (const m of chunk.matchAll(/courselist|studentdailyattendance|DynamicModel\[|\$\.(ajax|post|get)\s*\(|pjax/gi)) {
-      const i = m.index ?? 0;
-      const piece = chunk.slice(Math.max(0, i - 250), i + 450);
-      if (!hits.some((h) => h.includes(piece.slice(200, 300)))) hits.push(piece);
-      if (hits.length >= 8) break;
-    }
-  }
-  return hits
-    .join(' ⟂ ')
-    .replace(/(value|content)="[A-Za-z0-9_\-=+/]{20,}"/g, '$1="…"')
-    .replace(/\b\d{8,12}\b/g, '#')
-    .replace(/\s+/g, ' ')
-    .slice(0, 6000);
 }
 
 export async function fetchTimetableHtml(
