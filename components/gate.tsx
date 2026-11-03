@@ -31,9 +31,10 @@ function SheetMotif() {
       {states.map((s, i) => (
         <span key={i} className="bub" data-s={s} />
       ))}
-      <span className="sheet-gap" />
-      <span className="bub" data-s="spare" />
-      <span className="bub" data-s="spare" />
+      <span className="sheet-future">
+        <span className="bub" data-s="spare" />
+        <span className="bub" data-s="spare" />
+      </span>
     </div>
   );
 }

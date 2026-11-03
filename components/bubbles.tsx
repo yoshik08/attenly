@@ -70,12 +70,16 @@ export function BubbleSheet({
       {past.map((c, i) => (
         <span key={i} className="bub" data-s={c.s} data-new={c.isNew ? 'true' : undefined} />
       ))}
-      {fut.length > 0 && <span className="sheet-gap" aria-hidden />}
-      {fut.map((s, i) => (
-        <span key={`f${i}`} className="bub" data-s={s} />
-      ))}
-      {futMore > 0 && <span className="more-count">+{futMore}</span>}
-      {futMore < 0 && <span className="more-count">…</span>}
+      {fut.length > 0 && (
+        // The future wraps as one group, so a lone spare ring never ends up on its own line.
+        <span className="sheet-future">
+          {fut.map((s, i) => (
+            <span key={`f${i}`} className="bub" data-s={s} />
+          ))}
+          {futMore > 0 && <span className="more-count">+{futMore}</span>}
+          {futMore < 0 && <span className="more-count">…</span>}
+        </span>
+      )}
     </div>
   );
 }

@@ -398,9 +398,11 @@ a {
 .bub[data-new="true"][data-s="off"] {
   outline-color: rgba(255, 107, 94, 0.6);
 }
-.sheet-gap {
-  width: 6px;
+.sheet-future {
+  display: inline-flex;
   flex: none;
+  gap: inherit;
+  margin-left: 6px;
 }
 .more-count {
   font-size: 11px;
