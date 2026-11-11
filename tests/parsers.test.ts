@@ -15,6 +15,10 @@ import {
   parseCgpa,
   computeGpa,
   parseInternals,
+  parseFeeOrders,
+  parseFeeReceipt,
+  parseRegister,
+  parseRegisterLinks,
   extractCsrf,
   extractCaptchaSrc,
   detectLoginForm,
@@ -184,3 +188,120 @@ test('sealed tokens round-trip, reject tampering and expire', () => {
   assert.equal(unsealSession(bad), null);
   assert.equal(unsealSession(sealSession({ exp: Date.now() - 1 })), null);
 });
+
+
+/* ------------------------------------------------------------------ */
+/* The class register (History)                                        */
+/* ------------------------------------------------------------------ */
+
+const COURSELIST_WITH_REGISTERS = `
+<table><thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Total Conducted</th><th>Total Attended</th><th>Attendance Register</th></tr></thead>
+<tbody>
+  <tr data-key="0"><td>1</td><td>24CS2203</td><td>Operating Systems</td><td>L</td><td>38</td><td>29</td>
+    <td><a href="/index.php?r=studentattendance%2Fstudentdailyattendance%2Fgetindicregister&amp;id=abc123">Register</a></td></tr>
+  <tr data-key="1"><td>2</td><td>24CS2203</td><td>Operating Systems</td><td>T</td><td>11</td><td>9</td>
+    <td><a href="/index.php?r=studentattendance%2Fstudentdailyattendance%2Fgetindicregister&amp;id=def456">Register</a></td></tr>
+</tbody></table>`;
+
+test('register links: one per course and component, with the ERP path kept', () => {
+  const links = parseRegisterLinks(COURSELIST_WITH_REGISTERS);
+  assert.equal(links.length, 2);
+  assert.deepEqual(
+    links.map((l) => [l.code, l.component]),
+    [
+      ['24CS2203', 'L'],
+      ['24CS2203', 'T'],
+    ],
+  );
+  assert.match(links[0].href, /getindicregister&id=abc123$/);
+});
+
+const REGISTER_PAGE = `
+<div class="card-header">Course Code: <strong>OPERATING SYSTEMS</strong> - <strong>L</strong></div>
+<table><thead><tr>
+  <th>Coursecode</th><th>Coursedesc</th><th>Student Uni Id</th><th>Student Name</th><th>Ltps</th>
+  <th>Total Conducted</th><th>Total Attended</th><th>Total Absent</th><th>Tcbr</th><th>Percentage</th>
+  <th>Weighted Percentage</th><th>09/11/26 H 1</th><th>09/11/26 H 2</th><th>10/11/26 H 5</th>
+</tr></thead><tbody><tr data-key="0">
+  <td>24CS2203</td><td>OPERATING SYSTEMS</td><td>9900000001</td><td>TEST STUDENT</td><td>L</td>
+  <td>3</td><td>2</td><td>1</td><td>0</td><td>67%</td><td>50%</td><td>P</td><td>A</td><td>P</td>
+</tr></tbody></table>`;
+
+test('register: each class column becomes a dated, period-marked record', () => {
+  const rows = parseRegister(REGISTER_PAGE, '24CS2203', 'L');
+  assert.deepEqual(rows, [
+    { date: '2026-11-09', code: '24CS2203', period: '1', component: 'L', present: true },
+    { date: '2026-11-09', code: '24CS2203', period: '2', component: 'L', present: false },
+    { date: '2026-11-10', code: '24CS2203', period: '5', component: 'L', present: true },
+  ]);
+  // Unknown markup yields nothing rather than throwing.
+  assert.deepEqual(parseRegister('<table></table>', 'X', 'L'), []);
+});
+
+/* ------------------------------------------------------------------ */
+/* Fee orders and receipts (Payments)                                  */
+/* ------------------------------------------------------------------ */
+
+const FEE_ORDERS_PAGE = `
+<table class="table"><thead><tr><th>#</th><th>Order Number</th><th>Academic Year</th><th>Semester</th>
+<th>Pay-Study Year</th><th>Head</th><th>Sub Head</th><th>Gateway Name</th><th>Currency</th><th>Amount</th>
+<th>Order date</th><th>Pay Status</th><th>Gateway Ref No</th><th></th></tr></thead>
+<tbody>
+  <tr data-key="3075698"><td>1</td><td>SBI:P-96539:T-1793586750</td><td>2026-2027</td><td>Even Sem</td><td>2</td>
+    <td>TUITION FEE</td><td>Semester-2 Tuition Fee</td><td>ePay</td><td>INR</td><td>45000</td><td>2026-11-02</td>
+    <td>success</td><td>0255910414</td>
+    <td><a href="/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Fview&amp;id=tok1">View</a>
+        <a href="/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Ffee_receipt&amp;id=tok1">Receipt</a></td></tr>
+</tbody></table>`;
+
+test('fee orders: every column the ERP prints, and the receipt link', () => {
+  const [order] = parseFeeOrders(FEE_ORDERS_PAGE);
+  assert.deepEqual(order, {
+    orderNo: 'SBI:P-96539:T-1793586750',
+    academicYear: '2026-2027',
+    semester: 'Even Sem',
+    head: 'TUITION FEE',
+    subHead: 'Semester-2 Tuition Fee',
+    gateway: 'ePay',
+    currency: 'INR',
+    amount: 45000,
+    orderDate: '2026-11-02',
+    status: 'success',
+    gatewayRef: '0255910414',
+    receiptHref: '/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Ffee_receipt&id=tok1',
+  });
+  assert.deepEqual(parseFeeOrders('<table><tbody></tbody></table>'), []);
+});
+
+const RECEIPT_PAGE = `
+<table class="table" id="t1"><tr>
+  <td><p>Univ.Reg.Number :  <b> 9900000001 </b></p><p>Name Of Candidate : <b>TEST STUDENT</b></p></td>
+  <td><p>Program : <b>Btech CSE</b></p><p>Mobile No : <b>9000000000</b></p></td>
+</tr></table>
+<table id="t2" class="table"><tr><th class="text-start">Receipt No : SBI:P-96539:T-1793586750</th>
+  <th class="text-end">Date : 02-11-2026</th></tr></table>
+<table id="t3" class="table"><tr><th>S.NO</th><th>Account Head </th><th>Amount (INR)</th></tr>
+  <tr><td>1</td><td>TUITION_FEE-Semester-2_Tuition_Fee</td><td class="text-end pe-3">45000</td></tr>
+  <tr><td>2</td><td>Transport-Bus_Fee</td><td class="text-end pe-3">5000</td></tr>
+  <tr><td colspan="3" class="text-end pe-3"> <b> Total : 50000 </b></td></tr></table>
+<table id="t4" width="100%"><tr><td class="alert">In Words : *** FIFTY THOUSANDS RUPEES ONLY ***.</td></tr>
+  <tr><td>This is a Computer Generated Receipt. No signature is Required . Generated On . 2026-11-12 02:11:42</td></tr></table>`;
+
+test('receipt: candidate block, account heads, total, words and the generated note', () => {
+  const r = parseFeeReceipt(RECEIPT_PAGE);
+  assert.ok(r);
+  assert.equal(r.receiptNo, 'SBI:P-96539:T-1793586750');
+  assert.equal(r.date, '02-11-2026');
+  assert.equal(r.universityId, '9900000001');
+  assert.equal(r.candidate, 'TEST STUDENT');
+  assert.equal(r.program, 'Btech CSE');
+  assert.deepEqual(r.lines, [
+    { head: 'TUITION_FEE-Semester-2_Tuition_Fee', amount: 45000 },
+    { head: 'Transport-Bus_Fee', amount: 5000 },
+  ]);
+  assert.equal(r.total, 50000);
+  assert.equal(r.inWords, '*** FIFTY THOUSANDS RUPEES ONLY ***.');
+  assert.equal(r.generatedAt, '2026-11-12 02:11:42');
+  assert.equal(parseFeeReceipt('<p>nothing</p>'), null);
+});
+

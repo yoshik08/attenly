@@ -309,3 +309,38 @@ test('a manual sync gives up inside five seconds and says the ERP is slow', asyn
   await resetKnobs();
 });
 
+
+test('a background sync also reads the fee orders and every course register', async () => {
+  await resetKnobs();
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(r.code, 'synced');
+
+  // Payments: every order the ERP lists, with the column set it prints.
+  assert.equal(r.snapshot?.feeOrders.length, 3);
+  const first = r.snapshot?.feeOrders[0];
+  assert.equal(first?.orderNo, 'SBI:P-96539:T-1793586750');
+  assert.equal(first?.amount, 45000);
+  assert.equal(first?.semester, 'Even Sem');
+  assert.equal(first?.gateway, 'ePay');
+  assert.equal(first?.status, 'success');
+  assert.equal(first?.gatewayRef, '0255910414');
+  assert.match(first?.receiptHref ?? '', /fee_receipt&id=ord-1$/);
+
+  // History: one record per conducted class in the term (301 across the six courses).
+  assert.equal(r.snapshot?.classes.length, 301);
+  const sample = r.snapshot?.classes.find((c) => c.code === '24CS2203' && !c.present);
+  assert.ok(sample, 'the absences are recorded too');
+  assert.match(sample.date, /^2026-\d{2}-\d{2}$/);
+  assert.equal(sample.component, 'L');
+  assert.ok(sample.period.length > 0);
+});
+
+test('the manual sync leaves the day-by-day records alone: one register per course is too slow', async () => {
+  const before = await latest(A);
+  assert.ok((before?.classes.length ?? 0) > 0, 'there are records from the previous sync');
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  assert.equal(r.code, 'synced');
+  assert.equal(r.snapshot?.classes.length, before?.classes.length, 'kept, not wiped');
+  assert.equal(r.snapshot?.feeOrders.length, 3, 'the fee list is one request, so it is refreshed');
+});
+

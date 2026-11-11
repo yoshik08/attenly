@@ -88,6 +88,9 @@ function withDeadline<T>(p: Promise<T>, at: number): Promise<T> {
   });
 }
 
+/** The datasets whose failure means the ERP answered nothing usable at all. */
+const CORE_DATASETS = ['attendance', 'timetable', 'internals', 'results', 'cgpa'] as const;
+
 /**
  * The term to reuse instead of probing: the previous snapshot's term when it is
  * still the newest one the ERP offers and it had courses. Probing costs one
@@ -153,7 +156,8 @@ export async function syncAccount(opts: {
       // when it is still the newest, so no time goes on probing older terms.
       const pulled = (s: AuthedSession) => {
         const picked = account.term ? termFromIds(account.term, s.termOptions) : undefined;
-        return pullAll(s, picked ?? reusableTerm(previous, s));
+        // Course registers (History) are one request each: never on the button.
+        return pullAll(s, picked ?? reusableTerm(previous, s), { registers: !opts.manual });
       };
 
       let data;
@@ -167,7 +171,7 @@ export async function syncAccount(opts: {
         data = await withDeadline(pulled(session), deadline);
       }
 
-      if (data.failed.length === 5) throw coded(MESSAGES.erp_unreachable, 'erp_unreachable');
+      if (CORE_DATASETS.every((d) => data.failed.includes(d))) throw coded(MESSAGES.erp_unreachable, 'erp_unreachable');
       const saved = await saveFullSnapshot({
         universityId,
         googleId: user.googleId,

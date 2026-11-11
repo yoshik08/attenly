@@ -13,6 +13,8 @@ import {
   fetchInternalsHtml,
   fetchResultsHtml,
   fetchCgpaHtml,
+  fetchFeeOrdersHtml,
+  fetchRegisterHtml,
   isSessionExpiredError,
   isAttendanceDown,
   ErpRateLimited,
@@ -27,11 +29,16 @@ import {
   parseInternals,
   parseResults,
   parseCgpa,
+  parseFeeOrders,
+  parseRegister,
+  parseRegisterLinks,
   computeGpa,
   type InternalRow,
   type ResultRow,
   type CgpaRow,
   type TimetableDay,
+  type FeeOrder,
+  type ClassRecord,
 } from './parsers';
 import { fetchSolvedCaptcha } from './autocaptcha';
 import { coded } from './errors';
@@ -41,7 +48,7 @@ import { termCandidates, type Term } from '../terms';
 /** The ERP's ids for the year and semester, plus their labels. */
 export type SyncTerm = Term;
 
-export type Dataset = 'attendance' | 'timetable' | 'internals' | 'results' | 'cgpa';
+export type Dataset = 'attendance' | 'timetable' | 'internals' | 'results' | 'cgpa' | 'fees' | 'registers';
 
 export interface FullSyncData {
   term: SyncTerm;
@@ -52,6 +59,10 @@ export interface FullSyncData {
   cgpaRows: CgpaRow[];
   cgpa: number | null;
   sgpaTerms: { key: string; academicYear: string; semester: string; sgpa: number | null; credits: number }[];
+  /** Every online fee order, newest first as the ERP prints them. */
+  feeOrders: FeeOrder[];
+  /** One record per conducted class, from the courses' attendance registers. */
+  classes: ClassRecord[];
   syncedAt: string;
   /** Datasets whose ERP fetch failed this run (their arrays are empty, not real). */
   failed: Dataset[];
@@ -126,7 +137,7 @@ function fallbackTerm(now = new Date()): SyncTerm {
  */
 async function detectTerm(
   session: AuthedSession,
-): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error }> {
+): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error; html?: string }> {
   const candidates = session.termOptions ? termCandidates(session.termOptions) : [];
   if (candidates.length === 0) return { term: session.term ?? fallbackTerm(), attendance: null };
   let probeError: unknown = null;
@@ -144,7 +155,8 @@ async function detectTerm(
       tried.push(`${name}=${rows.length} rows`);
       if (rows.length > 0) {
         report(name);
-        return { term, attendance: rows };
+        // The same page carries each course's register link, used for History.
+        return { term, attendance: rows, html };
       }
     } catch (e) {
       if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
@@ -171,10 +183,15 @@ async function detectTerm(
  * published yet, a slow page) doesn't sink the others, and the failures are
  * reported so callers can keep previously synced values.
  */
-export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): Promise<FullSyncData> {
+export async function pullAll(
+  session: AuthedSession,
+  termOverride?: SyncTerm,
+  opts: { registers?: boolean } = {},
+): Promise<FullSyncData> {
   let term: SyncTerm;
   let detected: SubjectAttendance[] | null = null;
   let detectedDown: Error | undefined;
+  let attendanceHtml = '';
   if (termOverride) {
     term = termOverride;
   } else {
@@ -182,6 +199,7 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
     term = d.term;
     detected = d.attendance;
     detectedDown = d.attendanceDown;
+    attendanceHtml = d.html ?? '';
   }
 
   let attendance: SubjectAttendance[] = detected ?? [];
@@ -189,14 +207,16 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
   let internals: InternalRow[] = [];
   let results: ResultRow[] = [];
   let cgpaRows: CgpaRow[] = [];
+  let feeOrders: FeeOrder[] = [];
 
-  const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa'];
+  const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa', 'fees'];
   const settled = await Promise.allSettled([
     detectedDown
       ? Promise.reject(detectedDown)
       : detected
         ? Promise.resolve()
         : fetchAttendanceHtml(session, term).then(({ html }) => {
+            attendanceHtml = html;
             attendance = parseAttendance(html);
           }),
     fetchTimetableHtml(session, term).then(({ html }) => {
@@ -211,6 +231,9 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
     fetchCgpaHtml(session).then(({ html }) => {
       cgpaRows = parseCgpa(html);
     }),
+    fetchFeeOrdersHtml(session).then(({ html }) => {
+      feeOrders = parseFeeOrders(html);
+    }),
   ]);
 
   const failed: Dataset[] = [];
@@ -224,6 +247,28 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
     else console.warn(`[full-sync] ${names[i]} pull failed:`, reason instanceof Error ? reason.message : reason);
   });
 
+  // History: one request per course register, from the links the attendance
+  // page carries. Not on a manual sync — that one has five seconds.
+  let classes: ClassRecord[] = [];
+  const links = attendanceHtml ? parseRegisterLinks(attendanceHtml) : [];
+  if (!opts.registers || failed.includes('attendance') || issues.attendance || links.length === 0) {
+    failed.push('registers');
+  } else {
+    const registers = await Promise.allSettled(links.map((l) => fetchRegisterHtml(session, l.href)));
+    let read = 0;
+    registers.forEach((r, i) => {
+      if (r.status !== 'fulfilled') {
+        const reason = r.reason as Error & { expired?: boolean };
+        if (isSessionExpiredError(reason) || reason instanceof ErpRateLimited) throw reason;
+        return;
+      }
+      read++;
+      classes = classes.concat(parseRegister(r.value.html, links[i].code, links[i].component));
+    });
+    if (read === 0) failed.push('registers');
+    else console.info(`[full-sync] registers: ${read}/${links.length} read, ${classes.length} classes`);
+  }
+
   const { cgpa, terms } = computeGpa(cgpaRows);
   return {
     term,
@@ -234,6 +279,8 @@ export async function pullAll(session: AuthedSession, termOverride?: SyncTerm): 
     cgpaRows,
     cgpa,
     sgpaTerms: terms,
+    feeOrders,
+    classes,
     syncedAt: new Date().toISOString(),
     failed,
     issues,

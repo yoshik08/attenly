@@ -348,6 +348,51 @@ test('forecast: marking days moves the projection, Reset restores it', async () 
   await ctx.close();
 });
 
+test('history: a month of days coloured by attendance, and one day’s periods', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/history`);
+  await page.getByRole('heading', { name: 'History' }).waitFor();
+  await page.getByRole('list', { name: 'Legend' }).waitFor();
+  // Every day that had classes is a button; the first class day had absences only.
+  const days = page.locator('button[aria-label*=" attended"]');
+  assert.ok((await days.count()) > 0, 'the calendar has days with classes');
+  // The page opens on the newest month with records; walk back to the first one.
+  const prev = page.getByRole('button', { name: 'Previous month' });
+  for (let i = 0; i < 6 && (await page.locator('button[aria-label*="0 of"]').count()) === 0; i++) {
+    await prev.click();
+    await page.waitForTimeout(120);
+  }
+  const red = page.locator('button[aria-label*="0 of"]').first();
+  assert.equal(await red.count(), 1, 'a day with no attendance');
+  await red.click();
+  await page.getByText('Absent').first().waitFor();
+  assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /0 attended/);
+  // A day where everything was attended.
+  const green = page.locator('button[aria-label*=" attended"]').last();
+  await green.click();
+  await page.waitForTimeout(150);
+  assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /Attended/);
+  await ctx.close();
+});
+
+test('payments: every fee order, and its receipt read from the ERP', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/payments`);
+  await page.getByRole('heading', { name: 'Payments' }).waitFor();
+  await page.getByText('SBI:P-96539:T-1793586750').waitFor();
+  await page.getByText('Semester-2 Tuition Fee').first().waitFor();
+  await page.getByText('HDF:P-96539:T-1791714022').waitFor();
+  // The pending order says so.
+  await page.getByText('Pending').waitFor();
+  await page.getByRole('button', { name: 'Receipt' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'Online payment receipt' });
+  await sheet.getByText('TEST STUDENT').waitFor();
+  await sheet.getByText('TUITION FEE-Semester-2 Tuition Fee').waitFor();
+  await sheet.getByText('*** TEST AMOUNT RUPEES ONLY ***.').waitFor();
+  await sheet.getByRole('button', { name: 'Print' }).waitFor();
+  await ctx.close();
+});
+
 test('settings: one global target drives the calculator and the forecast', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/settings`);
@@ -424,19 +469,26 @@ test('a password changed on the ERP pauses syncing until it is re-entered', asyn
   await ctx.close();
 });
 
-test('tab bar navigates on phones; desktop shows inline navigation', async () => {
+test('tab bar navigates on phones; the rest live under More; desktop shows every section', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
   const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
   await tabs.getByRole('link', { name: 'Timetable' }).click();
   await page.waitForURL(/\/timetable$/);
-  await tabs.getByRole('link', { name: 'CGPA' }).click();
+  await tabs.getByRole('link', { name: 'History' }).click();
+  await page.waitForURL(/\/history$/);
+  await tabs.getByRole('button', { name: 'More' }).click();
+  const more = page.getByRole('dialog', { name: 'More' });
+  await more.getByRole('link', { name: 'CGPA' }).click();
   await page.waitForURL(/\/cgpa$/);
-  assert.equal(await tabs.getByRole('link', { name: 'CGPA' }).getAttribute('aria-current'), 'page');
+  assert.equal(await tabs.getByRole('button', { name: 'More' }).getAttribute('aria-expanded'), 'false');
   await ctx.close();
   const desk = await ctxFor('main', { viewport: { width: 1440, height: 900 } });
   await desk.page.goto(st.app);
-  await desk.page.getByRole('navigation', { name: 'Sections' }).first().getByRole('link', { name: 'Settings' }).click();
+  const nav = desk.page.getByRole('navigation', { name: 'Sections' }).first();
+  await nav.getByRole('link', { name: 'Payments' }).click();
+  await desk.page.waitForURL(/\/payments$/);
+  await nav.getByRole('link', { name: 'Settings' }).click();
   await desk.page.waitForURL(/\/settings$/);
   await desk.ctx.close();
 });
@@ -509,7 +561,7 @@ test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', a
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
     const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
-    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
       await page.goto(st.app + path, { waitUntil: 'networkidle' });
       await page.waitForTimeout(500);
       const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();

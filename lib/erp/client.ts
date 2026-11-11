@@ -26,6 +26,7 @@ const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance
 const INTERNALS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fgetstudentinternalmarks';
 const RESULTS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsemendresult';
 const CGPA_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsearchgetmycgpa';
+const FEE_ORDERS_PATH = '/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Fmy_fee_orders';
 
 export type CookieJar = Record<string, string>;
 
@@ -529,4 +530,43 @@ export async function fetchCgpaHtml(
 
 export function isSessionExpiredError(e: unknown): boolean {
   return (e as { expired?: boolean })?.expired === true;
+}
+
+/** The ERP path of a page we already hold a link to (registers, receipts). */
+function sameOriginPath(href: string): string {
+  const url = new URL(href, ERP_BASE);
+  if (url.origin !== new URL(ERP_BASE).origin) throw new Error('ERP link points off-origin; refusing to follow');
+  return `${url.pathname}${url.search}`;
+}
+
+/** GET one of the ERP's own linked pages (a course register, a fee receipt). */
+async function fetchLinkedPage(session: AuthedSession, href: string): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  const res = await erpFetch(sameOriginPath(href), { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
+}
+
+/** One course's attendance register: every conducted class with its date and period. */
+export function fetchRegisterHtml(session: AuthedSession, href: string) {
+  return fetchLinkedPage(session, href);
+}
+
+/** One fee order's online payment receipt. */
+export function fetchFeeReceiptHtml(session: AuthedSession, href: string) {
+  return fetchLinkedPage(session, href);
+}
+
+/** Every online fee order of the student (all academic years). */
+export async function fetchFeeOrdersHtml(session: AuthedSession): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  const res = await erpFetch(FEE_ORDERS_PATH, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
 }

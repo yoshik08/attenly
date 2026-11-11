@@ -65,8 +65,8 @@ export async function POST(req: Request) {
     // Re-entering a password keeps the term chosen in Settings.
     const existing = await getUser(me.googleId);
     const chosen = existing ? findAccount(existing, universityId)?.term : null;
-    const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined);
-    if (data.failed.length === 5) {
+    const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined, { registers: true });
+    if (['attendance', 'timetable', 'internals', 'results', 'cgpa'].every((d) => data.failed.includes(d as never))) {
       return fail(502, 'erp_unreachable', 'The ERP accepted the login but returned no data. Try again in a moment.');
     }
     const previous = await getLatestSnapshot(me.googleId, universityId);

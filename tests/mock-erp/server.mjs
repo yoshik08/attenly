@@ -178,21 +178,74 @@ function send(res, status, html, headers = {}) {
   res.end(html);
 }
 
-const COURSELIST_HEAD = '<thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Percentage</th></tr></thead>';
+const COURSELIST_HEAD = '<thead><tr><th>#</th><th>Coursecode</th><th>Coursedesc</th><th>Ltps</th><th>Section</th><th>Total Conducted</th><th>Total Attended</th><th>Percentage</th><th>Attendance Register</th></tr></thead>';
 
 // A term without attendance gets Yii's empty grid, headers and all.
 function attendanceTable(term) {
-  if (!term) return '<table class="table">' + COURSELIST_HEAD + '<tbody><tr><td colspan="8"><div class="empty">No results found.</div></td></tr></tbody></table>';
+  if (!term) return '<table class="table">' + COURSELIST_HEAD + '<tbody><tr><td colspan="9"><div class="empty">No results found.</div></td></tr></tbody></table>';
   let rows = '';
   let n = 1;
   for (const c of term.courses) {
     for (const k of ['L', 'T', 'P', 'S']) {
       if (!c[k]) continue;
       const [att, cond] = c[k];
-      rows += `<tr><td>${n++}</td><td>${c.code}</td><td>${c.title}</td><td>${k}</td><td>S-12</td><td>${cond}</td><td>${att}</td><td>${Math.ceil((att / cond) * 100)}</td></tr>`;
+      // The register link carries what the register page needs: course, component, counts.
+      const id = encodeURIComponent(`${c.code}-${k}-${att}-${cond}`);
+      rows += `<tr data-key="${n}"><td>${n++}</td><td>${c.code}</td><td>${c.title}</td><td>${k}</td><td>S-12</td><td>${cond}</td><td>${att}</td><td>${Math.ceil((att / cond) * 100)}</td><td><a href="/index.php?r=studentattendance%2Fstudentdailyattendance%2Fgetindicregister&amp;id=${id}">Register</a></td></tr>`;
     }
   }
   return `<table class="table">${COURSELIST_HEAD}<tbody>${rows}</tbody></table>`;
+}
+
+/** Class days for a register, weekdays only, oldest first: "03/08/26 H 1". */
+function classDays(n) {
+  const out = [];
+  const d = new Date(Date.UTC(2026, 7, 3)); // Mon 3 Aug 2026
+  while (out.length < n) {
+    const day = d.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const yy = String(d.getUTCFullYear()).slice(2);
+      out.push(`${dd}/${mm}/${yy} H ${(out.length % 8) + 1}`);
+    }
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
+/** A course's attendance register: fixed columns, then one column per class (P / A). */
+function registerTable(id) {
+  const m = /^(.+)-([LTPS])-(\d+)-(\d+)$/.exec(id ?? '');
+  if (!m) return page('<p>No register.</p>');
+  const [, code, k, attRaw, condRaw] = m;
+  const att = Number(attRaw);
+  const cond = Number(condRaw);
+  const cols = classDays(cond);
+  const marks = cols.map((_, i) => (i < cond - att ? 'A' : 'P'));
+  const fixed = [
+    ['Coursecode', code],
+    ['Coursedesc', `${code} (test course)`],
+    ['Student Uni Id', '9900000001'],
+    ['Student Name', 'TEST STUDENT'],
+    ['Ltps', k],
+    ['Section', 'S-12'],
+    ['Year', '2026-2027'],
+    ['Semester', 'Even Sem'],
+    ['Fr Date', 'N'],
+    ['Total Conducted', String(cond)],
+    ['Total Attended', String(att)],
+    ['Total Absent', String(cond - att)],
+    ['Tcbr', '0'],
+    ['Percentage', `${Math.ceil((att / cond) * 100)}%`],
+    ['Weighted Percentage', '50%'],
+  ];
+  const head = fixed.map(([h]) => `<th>${h}</th>`).join('') + cols.map((c) => `<th>${c}</th>`).join('');
+  const cells = fixed.map(([, v]) => `<td>${v}</td>`).join('') + marks.map((v) => `<td>${v}</td>`).join('');
+  return page(
+    `<h4 class="redflag">Course Attendance register</h4><div class="card"><div class="card-header">Course Code: <strong>${code} (test course)</strong> - <strong>${k}</strong></div>` +
+      `<table class="table table-striped table-bordered"><thead><tr>${head}</tr></thead><tbody><tr data-key="0">${cells}</tr></tbody></table></div>`,
+  );
 }
 
 function timetableTable(term) {
@@ -225,6 +278,77 @@ function internalsTable(term) {
     .map((c, i) => `<tr><td>${i + 1}</td><td>2026-2027</td><td>Odd Sem</td><td>${c.code}</td><td>${c.title}</td><td>${18 + (i % 5)}</td><td>${8 + (i % 3)}</td></tr>`)
     .join('');
   return `<table class="table"><thead><tr><th>#</th><th>Academic Year</th><th>Semester</th><th>Course Code</th><th>Course Name</th><th>Mid Term</th><th>Assignment</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** Synthetic online fee orders, in the ERP's column order. */
+const FEE_ORDERS = [
+  {
+    id: 'ord-1',
+    no: 'SBI:P-96539:T-1793586750',
+    year: '2026-2027',
+    sem: 'Even Sem',
+    head: 'TUITION FEE',
+    sub: 'Semester-2 Tuition Fee',
+    gateway: 'ePay',
+    amount: 45000,
+    date: '2026-11-02',
+    status: 'success',
+    ref: '0255910414',
+  },
+  {
+    id: 'ord-2',
+    no: 'HDF:P-96539:T-1793586629',
+    year: '2026-2027',
+    sem: 'Even Sem',
+    head: 'TUITION FEE',
+    sub: 'Semester-2 Tuition Fee',
+    gateway: 'CCAVENUE',
+    amount: 100000,
+    date: '2026-11-02',
+    status: 'success',
+    ref: '114958766236',
+  },
+  {
+    id: 'ord-3',
+    no: 'HDF:P-96539:T-1791714022',
+    year: '2026-2027',
+    sem: 'Odd Sem',
+    head: 'End Sem Exam Fee',
+    sub: 'Regular Exam Fee',
+    gateway: 'CCAVENUE',
+    amount: 1500,
+    date: '2026-10-21',
+    status: 'pending',
+    ref: '',
+  },
+];
+
+function feeOrdersTable() {
+  const head =
+    '<thead><tr><th>#</th><th>Order Number</th><th>Academic Year</th><th>Semester</th><th>Pay-Study Year</th><th>Head</th><th>Sub Head</th><th>Gateway Name</th><th>Currency</th><th>Amount</th><th>Order date</th><th>Pay Status</th><th>Gateway Ref No</th><th></th></tr></thead>';
+  const rows = FEE_ORDERS.map(
+    (o, i) =>
+      `<tr data-key="${3000000 + i}"><td>${i + 1}</td><td>${o.no}</td><td>${o.year}</td><td>${o.sem}</td><td>2</td><td>${o.head}</td><td>${o.sub}</td><td>${o.gateway}</td><td>INR</td><td>${o.amount}</td><td>${o.date}</td><td>${o.status}</td><td>${o.ref}</td><td><a href="/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Fview&amp;id=${o.id}">View</a> <a href="/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Ffee_receipt&amp;id=${o.id}">Receipt</a></td></tr>`,
+  ).join('');
+  return page(`<table class="table table-striped table-bordered">${head}<tbody>${rows}</tbody></table>`);
+}
+
+/** The ERP's "Online Payment Receipt" popup, in its own table layout. */
+function feeReceiptPage(id) {
+  const o = FEE_ORDERS.find((x) => x.id === id);
+  if (!o) return page('<p>No receipt.</p>');
+  return page(
+    `<div class="card"><div id="printTable"><div class="card-header"><h5 class="redflag"> Online Payment Receipt </h5></div><div class="card-body overflow-auto">` +
+      `<table class="table" id="t1"><tr><td><p>Univ.Reg.Number :  <b> 9900000001 </b></p><p>Name Of Candidate : <b>TEST STUDENT</b></p></td>` +
+      `<td><p>Program : <b>Btech CSE</b></p><p>Mobile No : <b>9000000000</b></p></td></tr></table>` +
+      `<table id="t2" class="table"><tr><th class="text-start">Receipt No : ${o.no}</th><th class="text-end">Date : ${o.date.split('-').reverse().join('-')}</th></tr></table>` +
+      `<table id="t3" class="table"><tr><th>S.NO</th><th>Account Head </th><th>Amount (INR)</th></tr>` +
+      `<tr><td>1</td><td>${o.head}-${o.sub}</td><td class="text-end pe-3">${o.amount}</td></tr>` +
+      `<tr><td colspan="3" class="text-end pe-3"> <b> Total : ${o.amount} </b></td></tr></table>` +
+      `<table id="t4" width="100%"><tr><td class="alert alert-primary">In Words : *** TEST AMOUNT RUPEES ONLY ***.</td></tr>` +
+      `<tr><td>This is a Computer Generated Receipt. No signature is Required . Generated On . 2026-11-12 02:11:42</td></tr></table>` +
+      `</div></div><div class="card-footer text-center"><button id="printbtn" class="btn btn-primary">Print</button></div></div>`,
+  );
 }
 
 const server = http.createServer(async (req, res) => {
@@ -362,6 +486,18 @@ const server = http.createServer(async (req, res) => {
   if (r === 'studentinfo/studentendexamresult/searchgetmycgpa') {
     if (failing('cgpa')) return send(res, 500, 'Internal Server Error');
     return send(res, 200, page(cgpaTable(st)));
+  }
+  if (r === 'studentattendance/studentdailyattendance/getindicregister') {
+    if (failing('registers')) return send(res, 500, 'Internal Server Error');
+    return send(res, 200, registerTable(url.searchParams.get('id')));
+  }
+  if (r === 'feepayments/studentfeeorderdetailsinfo/my_fee_orders') {
+    if (failing('fees')) return send(res, 500, 'Internal Server Error');
+    return send(res, 200, feeOrdersTable());
+  }
+  if (r === 'feepayments/studentfeeorderdetailsinfo/fee_receipt') {
+    if (failing('fees')) return send(res, 500, 'Internal Server Error');
+    return send(res, 200, feeReceiptPage(url.searchParams.get('id')));
   }
   return send(res, 404, page('<p>Page not found.</p>'));
 });

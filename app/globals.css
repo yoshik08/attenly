@@ -705,6 +705,28 @@ a {
   }
 }
 
+/* Printing a receipt: only the sheet, in ink on paper. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    background: #fff;
+    color: #000;
+    padding: 16px;
+  }
+  .print-sheet .btn {
+    display: none !important;
+  }
+}
+
 /* Content arrives with one quiet fade; nothing slides on every tab switch. */
 .page-in {
   animation: page-in 160ms ease-out both;
