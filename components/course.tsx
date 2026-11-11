@@ -26,9 +26,9 @@ import type { Settings } from './store';
 export const STATUS_INK: Record<Status, string> = {
   safe: 'text-cruise',
   condonation: 'text-thin',
-  // The medical band shares the red ink with a detention (a dimmed red failed
-  // AA); the badge says which one it is, and only detention is filled solid.
-  medical: 'text-red',
+  // Medical is administrative, not alarm: it borrows the focus blue (already in
+  // the palette) so it reads apart from condonation's amber and detention's red.
+  medical: 'text-focus',
   detained: 'text-red',
 };
 
@@ -36,7 +36,7 @@ export const STATUS_INK: Record<Status, string> = {
 export const STATUS_BADGE: Record<Status, string> = {
   safe: 'text-cruise bg-[#3ddc97]/10 ring-[#3ddc97]/30',
   condonation: 'text-thin bg-[#f5b544]/10 ring-[#f5b544]/30',
-  medical: 'text-red bg-[#ff6b5e]/10 ring-[#ff6b5e]/25',
+  medical: 'text-focus bg-[#7ea6ff]/10 ring-[#7ea6ff]/30',
   detained: 'bg-[#ff6b5e] text-black ring-[#ff6b5e]',
 };
 
