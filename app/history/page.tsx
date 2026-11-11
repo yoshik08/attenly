@@ -1,31 +1,15 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
-import { CaretLeft, CaretRight } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
+import { MonthCalendar, dayCellClass, dayKey, dayToneClass, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey } from '@/lib/math';
 import { sortPeriods, WEEK } from '@/lib/insights';
 import type { ClassRecord } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-const DAY_HEADS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 type DayTone = 'all' | 'some' | 'none' | 'empty';
 
@@ -73,10 +57,8 @@ function History() {
     return new Date(base.getFullYear(), base.getMonth(), 1);
   });
   const [picked, setPicked] = useState<string | null>(null);
-  const pickedDate = picked ?? (byDate.has(keyOf(today)) ? keyOf(today) : latest);
+  const pickedDate = picked ?? (byDate.has(dayKey(today)) ? dayKey(today) : latest);
 
-  const lead = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
-  const monthDays = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const firstClassDate = dates[0] ?? '';
 
   /** The period rows of one day: what the register says, plus timetable slots it never saw. */
@@ -139,12 +121,6 @@ function History() {
   }
 
 
-  const tone: Record<DayTone, string> = {
-    all: 'bg-[#0d1a14] text-cruise',
-    some: 'bg-[#1a1508] text-thin',
-    none: 'bg-[#2a1210] text-red',
-    empty: 'text-dropout-quiet ring-seam',
-  };
   const chip: Record<'present' | 'absent' | 'not-taken', string> = {
     present: 'bg-[#0d1a14] text-cruise',
     absent: 'bg-[#2a1210] text-red',
@@ -161,72 +137,40 @@ function History() {
 
       <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
         <section aria-label="Attendance calendar">
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam text-dropout-text hover:text-mark"
-              onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-              aria-label="Previous month"
-            >
-              <CaretLeft size={17} aria-hidden />
-            </button>
-            <p className="title-s text-[17px]" aria-live="polite">
-              {MONTHS[month.getMonth()]} {month.getFullYear()}
-            </p>
-            <button
-              type="button"
-              className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam text-dropout-text hover:text-mark"
-              onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-              aria-label="Next month"
-            >
-              <CaretRight size={17} aria-hidden />
-            </button>
-          </div>
-
-          <div className="mt-4">
-            <div className="grid grid-cols-7 gap-1.5">
-              {DAY_HEADS.map((d, i) => (
-                <div key={`${d}-${i}`} className="pb-1 text-center text-[11px] font-medium text-dropout-quiet" aria-hidden>
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="mt-1 grid grid-cols-7 gap-1.5">
-              {Array.from({ length: lead }, (_, i) => (
-                <span key={`lead-${i}`} aria-hidden />
-              ))}
-              {Array.from({ length: monthDays }, (_, i) => {
-                const date = new Date(month.getFullYear(), month.getMonth(), i + 1);
-                const key = keyOf(date);
-                const records = byDate.get(key);
-                const t = toneOf(records);
-                const isToday = key === keyOf(today);
-                const selected = key === pickedDate;
-                const summary = records
-                  ? `${records.filter((r) => r.present).length} of ${records.length} attended`
-                  : 'no classes recorded';
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={selected}
-                    aria-label={`${i + 1} ${MONTHS[month.getMonth()]}: ${summary}`}
-                    disabled={t === 'empty'}
-                    onClick={() => setPicked(key)}
-                    className={cn(
-                      'press flex aspect-square flex-col items-center justify-center rounded-xl text-[13px] tnum',
-                      tone[t],
-                      t === 'empty' && 'opacity-60',
-                      isToday && 'ring-2 ring-inset ring-mark',
-                      selected && 'ring-2 ring-inset ring-focus',
-                    )}
-                  >
-                    {i + 1}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <MonthCalendar
+            month={month}
+            onMonthChange={setMonth}
+            label={`Days of the attendance calendar`}
+            renderDay={(date) => {
+              const key = dayKey(date);
+              const records = byDate.get(key);
+              const t = toneOf(records);
+              const isToday = key === dayKey(today);
+              const selected = key === pickedDate;
+              const summary = records
+                ? `${records.filter((r) => r.present).length} of ${records.length} attended`
+                : 'no classes recorded';
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`${date.getDate()} ${MONTHS[date.getMonth()]}: ${summary}`}
+                  disabled={t === 'empty'}
+                  onClick={() => setPicked(key)}
+                  className={cn(
+                    dayCellClass,
+                    dayToneClass(t === 'all' ? 'green' : t === 'some' ? 'amber' : t === 'none' ? 'red' : 'plain'),
+                    t === 'empty' && 'opacity-50 ring-seam',
+                    isToday && 'ring-2 ring-inset ring-mark',
+                    selected && 'ring-2 ring-inset ring-focus',
+                  )}
+                >
+                  {date.getDate()}
+                </button>
+              );
+            }}
+          />
 
           <ul className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-dropout-text" aria-label="Legend">
             <li className="inline-flex items-center gap-1.5">

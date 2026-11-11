@@ -27,12 +27,12 @@ export function Ring({
   countUp?: boolean;
   className?: string;
 }) {
-  const pad = 5;
+  const pad = 4;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const v = value == null || !Number.isFinite(value) ? 0 : Math.min(100, Math.max(0, value));
   const inner = size - 2 * (stroke + pad);
-  const fontSize = Math.max(11, Math.round(inner * 0.4));
+  const fontSize = Math.max(11, Math.round(inner * 0.36));
   return (
     <span
       className={cn('relative inline-flex shrink-0 items-center justify-center', className)}

@@ -435,6 +435,46 @@ test('payments: every fee order, and its receipt read from the ERP', async () =>
   await ctx.close();
 });
 
+test('forecast: the last instruction day is picked on the calendar and saved to the account', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  const trigger = page.getByRole('button', { name: /Last instruction day/ });
+  assert.match(await trigger.innerText(), /Month end/, 'unset by default');
+  const before = await page.locator('section[aria-label="Projected impact"]').innerText();
+
+  await trigger.click();
+  const sheet = page.getByRole('dialog', { name: 'Last instruction day' });
+  await sheet.waitFor();
+  // Two months out ends the window later, so more classes are projected.
+  await sheet.getByRole('button', { name: 'Next month' }).click();
+  await sheet.getByRole('button', { name: 'Next month' }).click();
+  await sheet.locator('button[aria-pressed]').last().click();
+  await page.waitForTimeout(400);
+
+  const label = await trigger.innerText();
+  assert.ok(!label.includes('Month end'), 'a date replaced the month end');
+  const after = await page.locator('section[aria-label="Projected impact"]').innerText();
+  assert.match(after, /through \d{1,2} \w{3} \d{4}/, 'the copy names the window end');
+  assert.notEqual(after.replace(/\s+/g, ''), before.replace(/\s+/g, ''), 'the projection window grew');
+
+  // Stored on the user, so a fresh page load (new client, same session) has it.
+  await page.reload();
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  assert.equal(await trigger.innerText(), label, 'kept across a reload');
+  const doc = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.match(String(doc.lastInstructionDay), /^\d{4}-\d{2}-\d{2}$/, 'saved in the database');
+
+  // And it can be cleared again.
+  await trigger.click();
+  await page.getByRole('dialog', { name: 'Last instruction day' }).getByRole('button', { name: 'Use month end' }).click();
+  await page.waitForTimeout(400);
+  assert.match(await trigger.innerText(), /Month end/);
+  const cleared = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.equal(cleared.lastInstructionDay, null);
+  await ctx.close();
+});
+
 test('settings: one global target drives the calculator and the forecast', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/settings`);

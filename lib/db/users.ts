@@ -43,6 +43,8 @@ export interface UserDoc {
   universityId?: string;
   creds?: string;
   accounts?: ErpAccount[];
+  /** Last day attendance is taken, YYYY-MM-DD. Per user, shown on Forecast. */
+  lastInstructionDay?: string | null;
   createdAt?: Date;
   updatedAt: Date;
 }
@@ -280,6 +282,15 @@ export async function recordSync(
 }
 
 /** Every user with at least one linked account (for the backend sync). */
+/** The last day attendance is taken (YYYY-MM-DD), or null to forecast to month end. */
+export async function setLastInstructionDay(googleId: string, day: string | null): Promise<boolean> {
+  const res = await (await usersCol()).updateOne(
+    { googleId },
+    { $set: { lastInstructionDay: day, updatedAt: new Date() } },
+  );
+  return res.matchedCount > 0;
+}
+
 export async function usersWithAccounts(): Promise<WithId<UserDoc>[]> {
   return (await usersCol())
     .find({ $or: [{ 'accounts.0': { $exists: true } }, { erpUid: { $exists: true } }, { universityId: { $exists: true } }] })

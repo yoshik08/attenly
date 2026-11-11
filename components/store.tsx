@@ -45,6 +45,8 @@ interface StoreState {
   skew: number;
   loadError: string | null;
   sync: SyncState;
+  /** The last day attendance is taken (YYYY-MM-DD), or null for month end. */
+  lastInstructionDay: string | null;
 }
 
 interface StoreValue extends StoreState {
@@ -62,6 +64,8 @@ interface StoreValue extends StoreState {
   /** Sync a specific year and semester (ERP ids) for the shown account, or null for automatic. */
   setTerm: (term: { academicyear: string; semesterid: string } | null) => Promise<{ ok: boolean; error?: string }>;
   updateSettings: (patch: Partial<Settings>) => void;
+  /** Save the Forecast window's end date (null = forecast to month end). */
+  setLastInstructionDay: (day: string | null) => Promise<{ ok: boolean; error?: string }>;
   markSeen: (code?: string) => void;
   clearDevice: () => void;
   signOut: () => Promise<void>;
@@ -130,6 +134,7 @@ interface CacheShape {
   user: StoreState['user'];
   accounts: AccountView[];
   snapshots: Record<string, ClientSnapshot>;
+  lastInstructionDay?: string | null;
 }
 
 const IDLE_SYNC: SyncState = { running: false, mode: null, code: null, message: null, at: null };
@@ -148,6 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     skew: 0,
     loadError: null,
     sync: IDLE_SYNC,
+    lastInstructionDay: null,
   });
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [seenAll, setSeenAll] = useState<Record<string, SeenCounts>>({});
@@ -208,6 +214,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const cache = read<CacheShape>(CACHE_KEY) ?? { user: null, accounts: [], snapshots: {} };
         cache.user = d.user;
         cache.accounts = d.accounts;
+        cache.lastInstructionDay = d.lastInstructionDay ?? null;
         if (active && d.snapshot) cache.snapshots[active] = d.snapshot;
         write(CACHE_KEY, cache);
         ensureSeen(active, d.snapshot ?? (active ? (cache.snapshots[active] ?? null) : null));
@@ -218,6 +225,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           accounts: d.accounts ?? [],
           active,
           snapshot: d.snapshot ?? (active ? (cache.snapshots[active] ?? null) : null),
+          lastInstructionDay: d.lastInstructionDay ?? null,
           freshMs: typeof d.freshMs === 'number' ? d.freshMs : s.freshMs,
           skew: typeof d.serverNow === 'number' ? d.serverNow - Date.now() : 0,
           loadError: null,
@@ -249,6 +257,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         accounts: cache.accounts,
         active: cachedId,
         snapshot: cache.snapshots[cachedId] ?? null,
+        lastInstructionDay: cache.lastInstructionDay ?? null,
       }));
     }
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -421,6 +430,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /**
+   * The Forecast window's end date. Written through to the user's document so it
+   * survives reloads, sign-outs and other devices; the local copy is only the
+   * cached value for the first paint.
+   */
+  const setLastInstructionDay = useCallback(async (day: string | null) => {
+    const prev = stateRef.current.lastInstructionDay;
+    setState((s) => ({ ...s, lastInstructionDay: day }));
+    try {
+      const res = await fetch(api('/api/prefs'), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lastInstructionDay: day }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setState((s) => ({ ...s, lastInstructionDay: prev }));
+        return { ok: false, error: d.error ?? 'Could not save that date.' };
+      }
+      const cache = read<CacheShape>(CACHE_KEY);
+      if (cache) {
+        cache.lastInstructionDay = day;
+        write(CACHE_KEY, cache);
+      }
+      return { ok: true };
+    } catch {
+      setState((s) => ({ ...s, lastInstructionDay: prev }));
+      return { ok: false, error: 'You look offline. Try again.' };
+    }
+  }, []);
+
   const seen = state.active ? (seenAll[state.active] ?? null) : null;
 
   const markSeen = useCallback(
@@ -465,6 +505,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     makePrimary,
     setTerm,
     updateSettings,
+    setLastInstructionDay,
     markSeen,
     clearDevice,
     signOut,

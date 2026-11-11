@@ -29,6 +29,7 @@ export async function GET(req: Request) {
       accounts,
       active: active?.universityId ?? null,
       snapshot: snap ? toClientSnapshot(snap) : null,
+      lastInstructionDay: user?.lastInstructionDay ?? null,
       freshMs: FRESH_MS,
       serverNow: Date.now(),
     });
