@@ -344,7 +344,7 @@ function Settings() {
         <p className="mt-3 text-[13px] text-dropout-text pretty">
           {target === 85
             ? 'Budgets aim at 85%: a course under it can still be condoned down to 75%.'
-            : 'Budgets aim at 75%: the detention line, with condonation above it.'}
+            : 'Budgets aim at 75%: the condonation floor, with detention below it at 65%.'}
         </p>
         {target !== DEFAULT_TARGET && (
           <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>

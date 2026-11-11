@@ -481,6 +481,8 @@ test('settings: one global target drives the calculator and the forecast', async
   assert.equal(await page.getByLabel('Floor (%)').count(), 0, 'no separate floor');
   assert.equal(await page.getByLabel('Cruise line (%)').count(), 0, 'no separate cruise line');
   await page.getByRole('tab', { name: '75%' }).click();
+  // At 75 the copy must name the condonation floor, not detention.
+  await page.getByText(/the condonation floor, with detention below it/).waitFor();
   await page.goto(`${st.app}/calculator`);
   await page.getByText('Aim for 75%').waitFor();
   await page.goto(`${st.app}/forecast`);
@@ -494,6 +496,7 @@ test('settings: one global target drives the calculator and the forecast', async
   await page.goto(`${st.app}/settings`);
   await page.getByRole('button', { name: 'Back to 85%' }).click();
   assert.equal(await page.getByRole('tab', { name: '85%' }).getAttribute('aria-selected'), 'true');
+  await page.getByText(/can still be condoned down to 75%/).waitFor();
   await ctx.close();
 });
 
