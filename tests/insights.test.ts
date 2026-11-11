@@ -1,12 +1,12 @@
 /** Per-course summaries, the plate, next class, and change badges. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countsOf, deltaOf, minutesOf, nextClassOf, plateFor, summarize, whenLabel } from '../lib/insights';
-import { DEFAULT_TCBR, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
+import { countsOf, deltaOf, minutesOf, nextClassOf, summarize, whenLabel } from '../lib/insights';
+import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
 
-const settings = { thresholds: DEFAULT_THRESHOLDS, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
+const settings = { target: DEFAULT_TARGET, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
 const course = (code: string, title: string, c: Partial<Record<ComponentKey, [number, number]>>): SubjectAttendance => ({
   code,
   title,
@@ -18,43 +18,37 @@ const course = (code: string, title: string, c: Partial<Record<ComponentKey, [nu
   },
 });
 
-test('verdicts name the class type and count', () => {
+test('verdicts name the class type and count against the one target', () => {
   const ok = summarize(course('A', 'Databases', { L: [36, 38], P: [20, 22] }), settings);
-  assert.equal(ok.band, 'cruising');
-  assert.match(ok.verdict, /^11 practicals to spare, or 5 lectures\.$/);
+  assert.equal(ok.status, 'safe');
+  assert.match(ok.verdict, /^\d+ (lectures|practicals) to spare\.$/);
 
   const thin = summarize(course('B', 'Operating Systems', { L: [29, 38], T: [9, 11] }), settings);
-  assert.equal(thin.band, 'thin-ice');
-  assert.equal(thin.verdict, 'Attend the next 20 lectures to reach 85%.');
+  assert.equal(thin.status, 'condonation');
+  assert.match(thin.verdict, /^Attend the next \d+ (lectures|tutorials) to reach 85%\.$/);
 
   const red = summarize(course('C', 'Networks', { L: [25, 36], P: [12, 18] }), settings);
-  assert.equal(red.band, 'in-the-red');
-  assert.equal(red.verdict, 'Attend the next 9 lectures to climb back above 75%.');
+  assert.equal(red.status, 'medical');
+  assert.match(red.verdict, /^Attend the next \d+ (lectures|practicals) to climb back above 75%\.$/);
 
   const line = summarize(course('D', 'Algorithms', { L: [34, 40], T: [10, 12], P: [18, 22] }), settings);
   assert.equal(line.pct, 85);
   assert.equal(line.verdict, 'Right on the 85% line. Skipping any class drops you below it.');
 });
 
+test('switching the one target changes the verdict, never the band', () => {
+  const subject = course('B', 'Operating Systems', { L: [29, 38], T: [9, 11] });
+  const at85 = summarize(subject, { ...settings, target: 85 });
+  const at75 = summarize(subject, { ...settings, target: 75 });
+  assert.equal(at85.status, 'condonation');
+  assert.equal(at75.status, 'condonation', '78% sits in the same college band either way');
+  assert.match(at85.verdict, /to reach 85%\.$/);
+  assert.match(at75.verdict, /to spare\.$/);
+});
+
 test('titles: pipe-separated ERP titles are trimmed, empty ones fall back to the code', () => {
   assert.equal(summarize(course('E', 'Compilers | Theory', { L: [1, 1] }), settings).title, 'Compilers');
   assert.equal(summarize(course('F', '', { L: [1, 1] }), settings).title, 'F');
-});
-
-test('the plate leads with the most urgent course', () => {
-  const list = [
-    course('A', 'Databases', { L: [36, 38] }),
-    course('B', 'Operating Systems', { L: [29, 38] }),
-    course('C', 'Networks', { L: [25, 36] }),
-  ].map((c) => summarize(c, settings));
-  const plate = plateFor(list, settings.thresholds)!;
-  assert.equal(plate.code, 'C');
-  assert.equal(plate.tone, 'in-the-red');
-  assert.match(plate.sentence, /^Networks is at 70%, below the 75% floor\./);
-
-  const allGood = [course('A', 'Databases', { L: [36, 38] }), course('B', 'Maths', { L: [40, 40] })].map((c) => summarize(c, settings));
-  assert.match(plateFor(allGood, settings.thresholds)!.sentence, /^Every course is at or above 85%\. Tightest is Databases: \d+ lectures? to spare\.$/);
-  assert.equal(plateFor([], settings.thresholds), null);
 });
 
 test('afternoon periods printed on a 12-hour clock sort after the morning', () => {

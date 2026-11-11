@@ -8,6 +8,7 @@ import {
   Calculator,
   CalendarBlank,
   CalendarCheck,
+  ChartLineUp,
   Check,
   GearSix,
   GraduationCap,
@@ -26,6 +27,7 @@ const TABS = [
   { href: '/', label: 'Attendance', Icon: RadioButton },
   { href: '/timetable', label: 'Timetable', Icon: CalendarBlank },
   { href: '/plan', label: 'Plan the day', Icon: CalendarCheck },
+  { href: '/forecast', label: 'Forecast', Icon: ChartLineUp },
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap },
   { href: '/calculator', label: 'Calculator', Icon: Calculator },
   { href: '/settings', label: 'Settings', Icon: GearSix },
@@ -100,20 +102,20 @@ function TabBar() {
   const pathname = usePathname();
   return (
     <nav className="tabbar material fixed inset-x-0 bottom-0 z-40 lg:hidden" aria-label="Sections">
-      <ul className="mx-auto grid h-[var(--tab-h)] max-w-[600px] grid-cols-6">
+      <ul className="mx-auto grid h-[var(--tab-h)] max-w-[640px] grid-cols-7">
         {TABS.map(({ href, label, Icon }) => {
           const active = isActive(pathname, href);
           return (
-            <li key={href}>
+            <li key={href} className="min-w-0">
               <Link
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'press flex h-full flex-col items-center justify-center gap-1 whitespace-nowrap text-[10px] font-medium leading-tight',
+                  'press flex h-full flex-col items-center justify-center gap-1 px-0.5 text-center text-[9px] font-medium leading-[1.15]',
                   active ? 'text-mark' : 'text-dropout-quiet',
                 )}
               >
-                <Icon size={22} weight={active ? 'fill' : 'regular'} aria-hidden />
+                <Icon size={21} weight={active ? 'fill' : 'regular'} aria-hidden />
                 {label}
               </Link>
             </li>

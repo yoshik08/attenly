@@ -1,12 +1,14 @@
-/**
+﻿/**
  * Attendance engine — weighted LTPS (Lecture / Tutorial / Practical /
  * Skilling), the way the KL University ERP computes it:
  *
  *   course % = ceil( Σ(attended_k × w_k) / Σ(conducted_k × w_k) × 100 )
  *
- * Weights L 100, T 100, P 50, S 25. 85% is the cruise line, 75% the
- * detention floor. Every budget below is derived by stepping the same rounded
- * figure the app displays, so "2 to spare" always agrees with the percentage.
+ * Weights L 100, T 100, P 50, S 25. The college's bands (85 safe, 75
+ * condonation, 65 medical, below that detained) are fixed; one global target
+ * (75 or 85) picks the line every budget is measured against. Every budget
+ * below is derived by stepping the same rounded figure the app displays, so
+ * "2 to spare" always agrees with the percentage.
  */
 
 export type ComponentKey = 'L' | 'T' | 'P' | 'S';
@@ -28,13 +30,6 @@ export type Weights = Record<ComponentKey, number>;
 
 /** Classes held before registration, per component (the ERP's TCBR). */
 export type TcbrMap = Partial<Record<ComponentKey, number>>;
-
-export interface Thresholds {
-  /** At or above: cruising (85). */
-  safeAt: number;
-  /** At or above but below safeAt: thin ice (75). Below: in the red. */
-  condonationFrom: number;
-}
 
 export interface TcbrSettings {
   enabled: boolean;
@@ -66,10 +61,16 @@ export const COMPONENT_SINGULAR: Record<ComponentKey, string> = {
 };
 
 export const DEFAULT_WEIGHTS: Weights = { L: 100, T: 100, P: 50, S: 25 };
-export const DEFAULT_THRESHOLDS: Thresholds = { safeAt: 85, condonationFrom: 75 };
+/**
+ * The one global target attendance. Everything that says how many classes you
+ * can miss, must attend, or would land on aims at this figure: badges, rings,
+ * verdicts, the calculator, Plan the day and Forecast. The bands themselves are
+ * the college's (STATUS_AT) and do not move.
+ */
+export type Target = 75 | 85;
+export const TARGETS: Target[] = [75, 85];
+export const DEFAULT_TARGET: Target = 85;
 export const DEFAULT_TCBR: TcbrSettings = { enabled: false, perCourse: {} };
-/** The university's hard detention floor. */
-export const DETENTION_FLOOR = 75;
 
 /** Budgets stop counting here; anything beyond reads as "plenty". */
 export const BUDGET_CAP = 999;
@@ -242,15 +243,13 @@ export function simpleAttendance(attended: number, total: number, target: number
 /* Bands and formatting                                                */
 /* ------------------------------------------------------------------ */
 
-export type Band = 'cruising' | 'thin-ice' | 'in-the-red';
+export type Status = 'safe' | 'condonation' | 'medical' | 'detained';
 
 /**
  * The college's examination-eligibility bands. They are policy, not
  * preference, so they are fixed: the single global target in Settings only
  * decides which line the budgets, plans and forecasts aim at.
  */
-export type Status = 'safe' | 'condonation' | 'medical' | 'detained';
-
 export const STATUS_AT = { safe: 85, condonation: 75, medical: 65 } as const;
 
 export function statusOf(pct: number | null): Status | null {
@@ -267,23 +266,6 @@ export const STATUS_LABEL: Record<Status, string> = {
   medical: 'MEDICAL CERT + CONDONATION',
   detained: 'DETAINED',
 };
-
-export function policyBand(pct: number | null, t: Thresholds): Band {
-  if (pct == null || pct >= t.safeAt) return 'cruising';
-  if (pct >= t.condonationFrom) return 'thin-ice';
-  return 'in-the-red';
-}
-
-export function bandLabel(band: Band): string {
-  switch (band) {
-    case 'cruising':
-      return 'Cruising';
-    case 'thin-ice':
-      return 'Thin ice';
-    case 'in-the-red':
-      return 'Below floor';
-  }
-}
 
 /** Format a percentage; null renders as an em dash. */
 export function fmtPct(pct: number | null): string {

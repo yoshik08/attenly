@@ -5,11 +5,10 @@ import {
   ceilPct,
   componentBudget,
   courseTcbr,
-  DEFAULT_THRESHOLDS,
+  DEFAULT_TARGET,
   DEFAULT_WEIGHTS,
   emptyPlan,
   overallPct,
-  policyBand,
   sandboxPct,
   simpleAttendance,
   statusOf,
@@ -114,13 +113,17 @@ test('overall percentage pools weighted counts across courses', () => {
   assert.equal(overallPct([], W, () => undefined), null);
 });
 
-test('bands: 85 cruise line, 75 floor', () => {
-  const t = DEFAULT_THRESHOLDS;
-  assert.equal(policyBand(85, t), 'cruising');
-  assert.equal(policyBand(84, t), 'thin-ice');
-  assert.equal(policyBand(75, t), 'thin-ice');
-  assert.equal(policyBand(74, t), 'in-the-red');
-  assert.equal(policyBand(null, t), 'cruising');
+test('the one target is 85% unless it is switched, and every budget follows it', () => {
+  assert.equal(DEFAULT_TARGET, 85);
+  const s = subj({ L: [29, 38] });
+  // 77%: one skip from the 85% line needs 3 more lectures...
+  const at85 = componentBudget(s, W, 85, 'L')!;
+  assert.ok(at85.needed > 0);
+  assert.equal(sandboxPct(s, W, { ...emptyPlan(), L: { attend: at85.needed, skip: 0 } })! >= 85, true);
+  // ...and against 75% the course already holds, with a skip to spare.
+  const at75 = componentBudget(s, W, 75, 'L')!;
+  assert.equal(at75.needed, 0);
+  assert.ok(at75.spare >= 1);
 });
 
 test('college status bands: 85 safe, 75 condonation, 65 medical, under 65 detained', () => {

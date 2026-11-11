@@ -305,7 +305,13 @@ test('calculator: rounding, both lines, validation, saved results', async () => 
   await page.getByLabel('Classes attended').fill('33');
   await page.getByText('84.62% before rounding up').waitFor();
   await page.getByText('You’re on the 85% line. Missing the next class drops you below it.').waitFor();
+  // The calculator follows the one global target; it has no 75/85 switch of its own.
+  await page.getByRole('link', { name: 'Change the target' }).click();
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
   await page.getByRole('tab', { name: '75%' }).click();
+  await page.goto(`${st.app}/calculator`);
+  await page.getByLabel('Classes held').fill('39');
+  await page.getByLabel('Classes attended').fill('33');
   await page.getByText(/You can miss \d+ more and still show 75%\./).waitFor();
   await page.getByLabel('Classes attended').fill('40');
   await page.getByText('You can’t attend more classes than were held.').waitFor();
@@ -323,14 +329,44 @@ test('calculator: rounding, both lines, validation, saved results', async () => 
   await ctx.close();
 });
 
-test('settings: the policy lines stay ordered; invalid input is rejected', async () => {
+test('forecast: marking days moves the projection, Reset restores it', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  const daa = page.getByRole('listitem').filter({ hasText: 'Design and Analysis of Algorithms' });
+  const flat = async () => (await daa.innerText()).replace(/\s+/g, '');
+  const before = await flat();
+  await page.getByRole('button', { name: 'Mark absent' }).click();
+  await page.waitForTimeout(300);
+  assert.notEqual(await flat(), before, 'absent days drop the projection');
+  await page.getByRole('button', { name: 'Reset' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await flat(), before, 'Reset brings the projection back');
+  // Sundays are holidays and cannot be marked.
+  const sunday = page.locator('button[aria-label*=": holiday"]').first();
+  assert.equal(await sunday.isDisabled(), true, 'Sundays count as holidays');
+  await ctx.close();
+});
+
+test('settings: one global target drives the calculator and the forecast', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/settings`);
-  await page.getByLabel('Floor (%)').fill('95');
-  await page.getByRole('alert').filter({ hasText: 'The cruise line has to sit above the floor.' }).waitFor();
-  await page.getByRole('button', { name: 'Reset to 85 / 75' }).click();
-  assert.equal(await page.getByLabel('Cruise line (%)').inputValue(), '85');
-  assert.equal(await page.getByLabel('Floor (%)').inputValue(), '75');
+  assert.equal(await page.getByLabel('Floor (%)').count(), 0, 'no separate floor');
+  assert.equal(await page.getByLabel('Cruise line (%)').count(), 0, 'no separate cruise line');
+  await page.getByRole('tab', { name: '75%' }).click();
+  await page.goto(`${st.app}/calculator`);
+  await page.getByText('Aim for 75%').waitFor();
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  assert.equal(await page.getByRole('tab', { name: '75%' }).getAttribute('aria-selected'), 'true');
+  // The college's band on a card does not move with the target.
+  await page.goto(st.app);
+  const os = page.getByRole('article', { name: 'Operating Systems' });
+  await os.waitFor();
+  await os.getByText('CONDONATION', { exact: true }).waitFor();
+  await page.goto(`${st.app}/settings`);
+  await page.getByRole('button', { name: 'Back to 85%' }).click();
+  assert.equal(await page.getByRole('tab', { name: '85%' }).getAttribute('aria-selected'), 'true');
   await ctx.close();
 });
 
@@ -473,7 +509,7 @@ test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', a
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
     const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
-    for (const path of who ? ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
       await page.goto(st.app + path, { waitUntil: 'networkidle' });
       await page.waitForTimeout(500);
       const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();

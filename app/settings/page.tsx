@@ -9,7 +9,7 @@ import { LinkForm } from '@/components/link-form';
 import { BootScreen } from '@/components/states';
 import { SignIn } from '@/components/gate';
 import { cn } from '@/components/cn';
-import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_THRESHOLDS, DEFAULT_WEIGHTS, DETENTION_FLOOR, type ComponentKey } from '@/lib/math';
+import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_TARGET, DEFAULT_WEIGHTS, TARGETS, type ComponentKey } from '@/lib/math';
 import { ago, useNow } from '@/lib/time';
 import { Segmented } from '@/components/segmented';
 import { termText, yearsNewestFirst } from '@/lib/terms';
@@ -224,14 +224,13 @@ function NumberField({
 function Settings() {
   const store = useStore();
   const { settings, updateSettings, accounts, active, user, snapshot } = store;
-  const { thresholds, weights, tcbr } = settings;
+  const { target, weights, tcbr } = settings;
   const now = useNow(30_000);
   const [repair, setRepair] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [accError, setAccError] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
-  const thresholdError = thresholds.condonationFrom >= thresholds.safeAt ? 'The cruise line has to sit above the floor.' : null;
   // Re-mount the semester picker when the shown account or its synced term changes.
   const activeAccountKey = `${active ?? ''}|${store.activeAccount?.term ? `${store.activeAccount.term.academicyear}:${store.activeAccount.term.semesterid}` : 'auto'}|${snapshot?.termOptions ? 'o' : ''}`;
 
@@ -328,19 +327,30 @@ function Settings() {
 
       <SemesterSection key={activeAccountKey} />
 
-      <Section title="Red lines" note={`The bands come from these two lines. The university’s detention floor is ${DETENTION_FLOOR}%.`}>
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField id="safe" label="Cruise line (%)" value={thresholds.safeAt} min={1} max={100} onCommit={(v) => updateSettings({ thresholds: { ...thresholds, safeAt: v } })} hint="At or above this a course is cruising." />
-          <NumberField id="floor" label="Floor (%)" value={thresholds.condonationFrom} min={0} max={99} onCommit={(v) => updateSettings({ thresholds: { ...thresholds, condonationFrom: v } })} hint="Under this a course is below the floor." />
-        </div>
-        {thresholdError && (
-          <p role="alert" className="mt-3 text-[14px] text-red">
-            {thresholdError}
-          </p>
+      <Section
+        title="Target attendance"
+        note="One figure for the whole app: the bands on every course, the rings, the verdicts, the calculator, Plan the day and Forecast. The college's bands themselves (85 safe, 75 condonation, 65 medical, below that detained) do not move."
+      >
+        <Segmented
+          label="Target attendance"
+          value={String(target)}
+          onChange={(v) => updateSettings({ target: v === '75' ? 75 : 85 })}
+          options={TARGETS.map((t) => ({
+            value: String(t),
+            label: `${t}%`,
+            hint: t === 75 ? 'Hold the condonation line' : 'Hold the safe line',
+          }))}
+        />
+        <p className="mt-3 text-[13px] text-dropout-text pretty">
+          {target === 85
+            ? 'Budgets aim at 85%: a course under it can still be condoned down to 75%.'
+            : 'Budgets aim at 75%: the detention line, with condonation above it.'}
+        </p>
+        {target !== DEFAULT_TARGET && (
+          <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>
+            Back to {DEFAULT_TARGET}%
+          </button>
         )}
-        <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ thresholds: DEFAULT_THRESHOLDS })}>
-          Reset to {DEFAULT_THRESHOLDS.safeAt} / {DEFAULT_THRESHOLDS.condonationFrom}
-        </button>
       </Section>
 
       <Section title="Class weights" note="How much each class type counts. The ERP uses lecture 100, tutorial 100, practical 50, skilling 25.">

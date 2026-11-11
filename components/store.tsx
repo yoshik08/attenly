@@ -5,10 +5,10 @@ import { signOut as nextAuthSignOut } from 'next-auth/react';
 import { api, BASE_PATH } from '@/lib/api';
 import {
   DEFAULT_TCBR,
-  DEFAULT_THRESHOLDS,
+  DEFAULT_TARGET,
   DEFAULT_WEIGHTS,
+  type Target,
   type TcbrSettings,
-  type Thresholds,
   type Weights,
 } from '@/lib/math';
 import type { ClientSnapshot } from '@/lib/db/snapshots';
@@ -16,7 +16,8 @@ import type { AccountView } from '@/lib/db/users';
 import { countsOf, type SeenCounts } from '@/lib/insights';
 
 export interface Settings {
-  thresholds: Thresholds;
+  /** The one global target attendance (75 or 85). */
+  target: Target;
   weights: Weights;
   tcbr: TcbrSettings;
 }
@@ -73,7 +74,7 @@ const CACHE_KEY = 'attenly:cache:v2';
 const SEEN_KEY = 'attenly:seen:v1';
 const AUTO_RETRY_MS = 3 * 60 * 1000;
 
-const DEFAULT_SETTINGS: Settings = { thresholds: DEFAULT_THRESHOLDS, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
+const DEFAULT_SETTINGS: Settings = { target: DEFAULT_TARGET, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
 
 function read<T>(key: string): T | null {
   try {
@@ -102,14 +103,16 @@ function write(key: string, value: unknown) {
 }
 
 function loadSettings(): Settings {
-  const s = read<Partial<Settings>>(SETTINGS_KEY) ?? read<{ settings?: Partial<Settings> }>(LEGACY_KEY)?.settings ?? null;
+  // v2 stored a safeAt / condonationFrom pair; carry it over as the one target.
+  const s =
+    read<Partial<Settings> & { thresholds?: { safeAt?: number } }>(SETTINGS_KEY) ??
+    read<{ settings?: Partial<Settings> & { thresholds?: { safeAt?: number } } }>(LEGACY_KEY)?.settings ??
+    null;
   if (!s) return DEFAULT_SETTINGS;
   const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const stored = s.target ?? (typeof s.thresholds?.safeAt === 'number' && s.thresholds.safeAt < 80 ? 75 : undefined);
   return {
-    thresholds: {
-      safeAt: num(s.thresholds?.safeAt, DEFAULT_THRESHOLDS.safeAt),
-      condonationFrom: num(s.thresholds?.condonationFrom, DEFAULT_THRESHOLDS.condonationFrom),
-    },
+    target: stored === 75 ? 75 : stored === 85 ? 85 : DEFAULT_TARGET,
     weights: {
       L: num(s.weights?.L, DEFAULT_WEIGHTS.L),
       T: num(s.weights?.T, DEFAULT_WEIGHTS.T),

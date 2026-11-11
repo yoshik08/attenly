@@ -23,28 +23,21 @@ import {
 import { whenLabel, type CourseDelta, type CourseSummary, type NextClass } from '@/lib/insights';
 import type { Settings } from './store';
 
-export const BAND_INK = {
-  cruising: 'text-cruise',
-  'thin-ice': 'text-thin',
-  'in-the-red': 'text-red',
-} as const;
-
-/** The arc of a course's ring, in the state ink for its band. */
 export const STATUS_INK: Record<Status, string> = {
   safe: 'text-cruise',
   condonation: 'text-thin',
-  // No new colour tokens: the medical band is the red ink held back a step so
-  // it still reads apart from an outright detention.
-  medical: 'text-red/70',
+  // The medical band shares the red ink with a detention (a dimmed red failed
+  // AA); the badge says which one it is, and only detention is filled solid.
+  medical: 'text-red',
   detained: 'text-red',
 };
 
-/** Badge for a course's band: tinted with its ink, never a solid block. */
+/** Badge for a course's band: tinted with its ink, filled solid only when detained. */
 export const STATUS_BADGE: Record<Status, string> = {
   safe: 'text-cruise bg-[#3ddc97]/10 ring-[#3ddc97]/30',
   condonation: 'text-thin bg-[#f5b544]/10 ring-[#f5b544]/30',
-  medical: 'text-red/85 bg-[#ff6b5e]/10 ring-[#ff6b5e]/20',
-  detained: 'text-red bg-[#ff6b5e]/15 ring-[#ff6b5e]/40',
+  medical: 'text-red bg-[#ff6b5e]/10 ring-[#ff6b5e]/25',
+  detained: 'bg-[#ff6b5e] text-black ring-[#ff6b5e]',
 };
 
 export function StatusBadge({ status, className }: { status: Status | null; className?: string }) {
@@ -115,8 +108,8 @@ export function CourseRow({
   const planning = Object.values(plan).some((p) => p.attend > 0 || p.skip > 0);
   const projected = planning ? sandboxPct(subject, settings.weights, plan, tcbr) : summary.pct;
   const projectedStatus = statusOf(projected);
-  const status = statusOf(summary.pct);
-  const { thresholds } = settings;
+  const status = summary.status;
+  const { target } = settings;
   const hasDelta = delta.length > 0;
   const detailId = `detail-${subject.code}`;
 
@@ -154,10 +147,9 @@ export function CourseRow({
   const futureFor = (k: ComponentKey): Future => {
     if (planning) return { kind: 'plan', attend: plan[k].attend, skip: plan[k].skip };
     const c = summary.components.find((x) => x.k === k);
-    if (!c || summary.pct == null) return null;
-    if (summary.band === 'cruising') return c.cruise ? { kind: 'spare', count: c.cruise.spare } : null;
-    if (summary.band === 'thin-ice') return c.cruise ? { kind: 'need', count: c.cruise.needed, tone: 'thin' } : null;
-    return c.floor ? { kind: 'need', count: c.floor.needed, tone: 'red' } : null;
+    if (!c || summary.pct == null || !c.budget) return null;
+    if (summary.pct >= target) return { kind: 'spare', count: c.budget.spare };
+    return { kind: 'need', count: c.budget.needed, tone: status === 'condonation' ? 'thin' : 'red' };
   };
 
   const deltaText = delta
@@ -290,9 +282,7 @@ export function CourseRow({
                   {planning && projectedStatus && (
                     <p className={cn('mt-1 text-[13px] font-semibold', STATUS_INK[projectedStatus])}>
                       {STATUS_LABEL[projectedStatus]}
-                      {projected != null && projected < thresholds.safeAt && projected >= thresholds.condonationFrom
-                        ? `, under ${thresholds.safeAt}%`
-                        : ''}
+                      {projected != null && projected < target && projected >= 75 ? `, under ${target}%` : ''}
                     </p>
                   )}
                 </div>

@@ -6,7 +6,7 @@ import { MapPin } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Segmented } from '@/components/segmented';
-import { BAND_INK } from '@/components/course';
+import { STATUS_INK } from '@/components/course';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, fmtPct } from '@/lib/math';
 import { minutesOf, periodOrder, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
@@ -41,24 +41,22 @@ function timeOf(p: TimetablePeriod) {
   return p.start ? `${p.start}${p.end ? `–${p.end}` : ''}` : p.period.replace(/^P/, 'Period ');
 }
 
-function budgetShort(s: CourseSummary | undefined): string | null {
+function budgetShort(s: CourseSummary | undefined, target: number): string | null {
   if (!s || s.pct == null) return null;
-  const pick = (f: (c: CourseSummary['components'][number]) => number | undefined) => {
-    let best: number | null = null;
+  if (s.pct >= target) {
+    let spare: number | null = null;
     for (const c of s.components) {
-      const v = f(c);
-      if (v != null && Number.isFinite(v) && (best == null || v > best)) best = v;
+      const v = c.budget?.spare;
+      if (v != null && Number.isFinite(v) && (spare == null || v > spare)) spare = v;
     }
-    return best;
-  };
-  if (s.band === 'cruising') {
-    const spare = pick((c) => c.cruise?.spare);
     return spare ? `${spare} to spare` : 'none to spare';
   }
-  const need = s.components
-    .map((c) => (s.band === 'thin-ice' ? c.cruise?.needed : c.floor?.needed))
-    .filter((n): n is number => n != null && Number.isFinite(n) && n > 0);
-  return need.length ? `attend ${Math.min(...need)}` : null;
+  let need: number | null = null;
+  for (const c of s.components) {
+    const v = c.budget?.needed;
+    if (v != null && Number.isFinite(v) && v > 0 && (need == null || v < need)) need = v;
+  }
+  return need != null ? `attend ${need}` : null;
 }
 
 function Timetable() {
@@ -195,8 +193,8 @@ function Timetable() {
                   </span>
                   {s && s.pct != null && (
                     <span className="text-right">
-                      <span className={cn('figure block text-[18px]', BAND_INK[s.band])}>{fmtPct(s.pct)}</span>
-                      <span className="text-[11px] text-dropout-quiet">{budgetShort(s)}</span>
+                      <span className={cn('figure block text-[18px]', s.status ? STATUS_INK[s.status] : 'text-dropout-text')}>{fmtPct(s.pct)}</span>
+                      <span className="text-[11px] text-dropout-quiet">{budgetShort(s, settings.target)}</span>
                     </span>
                   )}
                 </Link>
@@ -277,7 +275,11 @@ function Week({
                     {typeLabel(p)}
                     {p.room ? ` in ${p.room}` : ''}
                   </span>
-                  {s && s.pct != null && <span className={cn('mt-1 block text-[12px] font-semibold tnum', BAND_INK[s.band])}>{fmtPct(s.pct)}</span>}
+                  {s && s.pct != null && (
+                    <span className={cn('mt-1 block text-[12px] font-semibold tnum', s.status ? STATUS_INK[s.status] : 'text-dropout-text')}>
+                      {fmtPct(s.pct)}
+                    </span>
+                  )}
                 </Link>
               );
             })}
