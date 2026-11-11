@@ -203,7 +203,7 @@ export function CourseRow({
             <Figure value={summary.pct} countUp={countUp} className="figure text-[17px]" />
           </Ring>
           <span className="inline-flex items-center gap-1 text-[12px] text-dropout-text">
-            {open ? 'Hide plan' : 'Project'}
+            {open ? 'Hide plan' : 'Plan'}
             <span className="t-acc-chevron" aria-hidden>
               <CaretDown size={13} />
             </span>
