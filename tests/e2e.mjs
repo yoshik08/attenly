@@ -171,7 +171,7 @@ test('a typo in the captcha loads a fresh one and says so', async () => {
   await ctx.close();
 });
 
-test('attendance: plate, bubbles, planner and keyboard', async () => {
+test('attendance: course cards, band badges, rings, planner and keyboard', async () => {
   // Make sure the main user has an account (the smoke run may not have happened).
   const u = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
   const { ctx, page } = await ctxFor('main');
@@ -182,13 +182,18 @@ test('attendance: plate, bubbles, planner and keyboard', async () => {
   }
   const os = page.getByRole('article', { name: 'Operating Systems' });
   await os.waitFor();
-  await page.locator('.plate').filter({ hasText: 'Computer Networks is at 69%, below the 75% floor.' }).waitFor();
-  assert.equal(await os.locator('.bub[data-s="need-thin"]').count() > 0, true, 'needed classes drawn');
-  // Planner via keyboard
-  const plan = os.getByRole('button', { name: 'Plan the week' });
+  // Attendance is per course: no cross-course suggestion and no overall total.
+  assert.equal(await page.locator('.plate').count(), 0, 'no insight plate');
+  assert.equal(await page.getByText('Overall, weighted').count(), 0, 'no overall figure');
+  // Each card carries the college band badge and a ring with the course's figure.
+  await os.getByText('CONDONATION', { exact: true }).waitFor();
+  assert.equal(await os.locator('svg circle').count(), 2, 'ring track and arc');
+  // Planner via keyboard, from the card itself.
+  const plan = os.locator('button[aria-expanded]');
   await plan.focus();
   await page.keyboard.press('Enter');
   assert.equal(await plan.getAttribute('aria-expanded'), 'true');
+  assert.equal(await os.locator('.bub[data-s="need-thin"]').count() > 0, true, 'needed classes drawn');
   const more = os.getByRole('button', { name: 'Attend upcoming lectures: one more' });
   for (let i = 0; i < 20; i++) await more.click();
   await os.getByText('After that plan').waitFor();
@@ -280,18 +285,14 @@ test('calculator: rounding, both lines, validation, saved results', async () => 
   await ctx.close();
 });
 
-test('settings: thresholds change the bands; invalid input is rejected', async () => {
+test('settings: the policy lines stay ordered; invalid input is rejected', async () => {
   const { ctx, page } = await ctxFor('main');
-  await page.goto(`${st.app}/settings`);
-  await page.getByLabel('Cruise line (%)').fill('90');
-  await page.goto(st.app);
-  const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
-  await daa.getByText('Thin ice').waitFor();
   await page.goto(`${st.app}/settings`);
   await page.getByLabel('Floor (%)').fill('95');
   await page.getByRole('alert').filter({ hasText: 'The cruise line has to sit above the floor.' }).waitFor();
   await page.getByRole('button', { name: 'Reset to 85 / 75' }).click();
   assert.equal(await page.getByLabel('Cruise line (%)').inputValue(), '85');
+  assert.equal(await page.getByLabel('Floor (%)').inputValue(), '75');
   await ctx.close();
 });
 

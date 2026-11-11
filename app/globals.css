@@ -682,6 +682,15 @@ a {
   border-radius: 50%;
   flex: none;
 }
+/* A ring's arc eases to its new length; reduced motion snaps. */
+.ring-arc {
+  transition: stroke-dashoffset var(--duration-fast) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring-arc {
+    transition: none !important;
+  }
+}
 .spin {
   animation: spin 0.8s linear infinite;
 }

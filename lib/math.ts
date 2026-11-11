@@ -244,6 +244,30 @@ export function simpleAttendance(attended: number, total: number, target: number
 
 export type Band = 'cruising' | 'thin-ice' | 'in-the-red';
 
+/**
+ * The college's examination-eligibility bands. They are policy, not
+ * preference, so they are fixed: the single global target in Settings only
+ * decides which line the budgets, plans and forecasts aim at.
+ */
+export type Status = 'safe' | 'condonation' | 'medical' | 'detained';
+
+export const STATUS_AT = { safe: 85, condonation: 75, medical: 65 } as const;
+
+export function statusOf(pct: number | null): Status | null {
+  if (pct == null || !Number.isFinite(pct)) return null;
+  if (pct >= STATUS_AT.safe) return 'safe';
+  if (pct >= STATUS_AT.condonation) return 'condonation';
+  if (pct >= STATUS_AT.medical) return 'medical';
+  return 'detained';
+}
+
+export const STATUS_LABEL: Record<Status, string> = {
+  safe: 'SAFE',
+  condonation: 'CONDONATION',
+  medical: 'MEDICAL CERT + CONDONATION',
+  detained: 'DETAINED',
+};
+
 export function policyBand(pct: number | null, t: Thresholds): Band {
   if (pct == null || pct >= t.safeAt) return 'cruising';
   if (pct >= t.condonationFrom) return 'thin-ice';

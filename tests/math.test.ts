@@ -12,6 +12,9 @@ import {
   policyBand,
   sandboxPct,
   simpleAttendance,
+  statusOf,
+  STATUS_AT,
+  STATUS_LABEL,
   weightedPct,
   type ComponentKey,
   type SubjectAttendance,
@@ -118,6 +121,20 @@ test('bands: 85 cruise line, 75 floor', () => {
   assert.equal(policyBand(75, t), 'thin-ice');
   assert.equal(policyBand(74, t), 'in-the-red');
   assert.equal(policyBand(null, t), 'cruising');
+});
+
+test('college status bands: 85 safe, 75 condonation, 65 medical, under 65 detained', () => {
+  assert.equal(statusOf(100), 'safe');
+  assert.equal(statusOf(85), 'safe');
+  assert.equal(statusOf(84), 'condonation');
+  assert.equal(statusOf(75), 'condonation');
+  assert.equal(statusOf(74), 'medical');
+  assert.equal(statusOf(65), 'medical');
+  assert.equal(statusOf(64), 'detained');
+  assert.equal(statusOf(0), 'detained');
+  assert.equal(statusOf(null), null);
+  assert.deepEqual(STATUS_AT, { safe: 85, condonation: 75, medical: 65 });
+  assert.equal(STATUS_LABEL.medical, 'MEDICAL CERT + CONDONATION');
 });
 
 test('calculator: attended / total against 85%', () => {
