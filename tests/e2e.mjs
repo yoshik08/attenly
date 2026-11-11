@@ -250,6 +250,35 @@ test('timetable: a course’s next class opens its day; slots link back', async 
   await ctx.close();
 });
 
+test('plan the day: the strip answers each period as it is planned', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
+  await tabs.getByRole('link', { name: 'Plan the day' }).click();
+  await page.waitForURL(/\/plan$/);
+  await page.getByRole('heading', { name: 'Plan the day' }).waitFor();
+  const strip = page.getByRole('list', { name: 'Courses and the percentage each would have' });
+  // The animate-in figures split their digits across spans, so compare without whitespace.
+  const stripText = async () => (await strip.innerText()).replace(/\s+/g, '');
+  const before = await stripText();
+  const cards = page.locator('ol > li');
+  const count = await cards.count();
+  assert.ok(count > 0, 'the day has periods');
+  // Bunk every period: some course in the strip must drop and say what it was.
+  for (let i = 0; i < count; i++) await cards.nth(i).getByRole('group').getByRole('button', { name: 'Bunk' }).click();
+  await page.getByText(/^was \d+%$/).first().waitFor();
+  assert.notEqual(await stripText(), before, 'the plan changes the strip');
+  // Not conducted counts for neither side: the strip returns to the recorded figures.
+  for (let i = 0; i < count; i++) await cards.nth(i).getByRole('group').getByRole('button', { name: 'Not conducted' }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByText(/^was \d+%$/).count(), 0, 'not conducted changes nothing');
+  assert.equal(await stripText(), before, 'strip back to the recorded figures');
+  // Attending counts on both sides.
+  await cards.first().getByRole('group').getByRole('button', { name: 'Attended' }).click();
+  assert.equal(await cards.first().getByRole('button', { name: 'Attended' }).getAttribute('aria-pressed'), 'true');
+  await ctx.close();
+});
+
 test('CGPA: latest semester first with its grades', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/cgpa`);

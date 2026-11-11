@@ -7,6 +7,7 @@ import {
   ArrowsClockwise,
   Calculator,
   CalendarBlank,
+  CalendarCheck,
   Check,
   GearSix,
   GraduationCap,
@@ -24,6 +25,7 @@ import { ago, clock, useNow } from '@/lib/time';
 const TABS = [
   { href: '/', label: 'Attendance', Icon: RadioButton },
   { href: '/timetable', label: 'Timetable', Icon: CalendarBlank },
+  { href: '/plan', label: 'Plan the day', Icon: CalendarCheck },
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap },
   { href: '/calculator', label: 'Calculator', Icon: Calculator },
   { href: '/settings', label: 'Settings', Icon: GearSix },
@@ -98,7 +100,7 @@ function TabBar() {
   const pathname = usePathname();
   return (
     <nav className="tabbar material fixed inset-x-0 bottom-0 z-40 lg:hidden" aria-label="Sections">
-      <ul className="mx-auto grid h-[var(--tab-h)] max-w-[560px] grid-cols-5">
+      <ul className="mx-auto grid h-[var(--tab-h)] max-w-[600px] grid-cols-6">
         {TABS.map(({ href, label, Icon }) => {
           const active = isActive(pathname, href);
           return (
@@ -107,11 +109,11 @@ function TabBar() {
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'press flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium',
+                  'press flex h-full flex-col items-center justify-center gap-1 whitespace-nowrap text-[10px] font-medium leading-tight',
                   active ? 'text-mark' : 'text-dropout-quiet',
                 )}
               >
-                <Icon size={24} weight={active ? 'fill' : 'regular'} aria-hidden />
+                <Icon size={22} weight={active ? 'fill' : 'regular'} aria-hidden />
                 {label}
               </Link>
             </li>
