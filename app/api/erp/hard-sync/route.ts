@@ -13,6 +13,7 @@ const STATUS: Partial<Record<SyncCode, number>> = {
   rate_limited: 429,
   bad_captcha: 502,
   solver_unavailable: 502,
+  erp_slow: 504,
   erp_unreachable: 502,
   failed: 502,
 };
@@ -21,9 +22,12 @@ const STATUS: Partial<Record<SyncCode, number>> = {
  * POST /api/erp/hard-sync
  * Body: { universityId?: string, mode?: 'force' | 'auto' }
  *
- * 'force' (the sync button) always logs into the ERP and pulls fresh data.
- * 'auto' (the app's background refresh) only does so when the latest cloud
- * snapshot is older than ~5.5 minutes, otherwise it returns that snapshot.
+ * 'force' (the sync button) always logs into the ERP and pulls fresh data. It
+ * answers within five seconds: the saved ERP session is reused when there is
+ * one, the term probe is skipped when the term has not changed, and whatever
+ * the ERP has not answered by then is reported as 'erp_slow' instead of left
+ * spinning. 'auto' (the app's background refresh) only does so when the latest
+ * cloud snapshot is older than ~5.5 minutes, otherwise it returns that snapshot.
  */
 export async function POST(req: Request) {
   const me = await getGoogleUser();
@@ -36,7 +40,7 @@ export async function POST(req: Request) {
   try {
     const user = await getUser(me.googleId);
     if (!user) return Response.json({ ok: false, code: 'no_account', error: 'No ERP account is linked yet.' }, { status: 404 });
-    const result = await syncAccount({ user, universityId, force });
+    const result = await syncAccount({ user, universityId, force, manual: force });
     return Response.json(
       { ok: result.ok, code: result.code, error: result.ok ? undefined : result.message, snapshot: result.snapshot },
       { status: result.ok ? 200 : (STATUS[result.code] ?? 502) },

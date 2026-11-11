@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Trash } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { Segmented } from '@/components/segmented';
 import { BubbleSheet } from '@/components/bubbles';
 import { Figure } from '@/components/motion';
-import { BAND_INK } from '@/components/course';
+import { STATUS_INK } from '@/components/course';
 import { cn } from '@/components/cn';
-import { bandLabel, ceilPct, COMPONENT_LABELS, COMPONENT_ORDER, policyBand, simpleAttendance, type ComponentKey } from '@/lib/math';
+import { ceilPct, COMPONENT_LABELS, COMPONENT_ORDER, simpleAttendance, statusOf, type ComponentKey } from '@/lib/math';
 
 interface Saved {
   name: string;
@@ -77,7 +78,7 @@ export default function CalculatorPage() {
       />
       <div className="mt-6">
         {mode === 'simple' ? (
-          <Simple safeAt={settings.thresholds.safeAt} floor={settings.thresholds.condonationFrom} onSave={save} />
+          <Simple target={settings.target} onSave={save} />
         ) : (
           <Components settings={settings} onSave={save} />
         )}
@@ -135,13 +136,12 @@ function SaveRow({ disabled, onSave }: { disabled: boolean; onSave: (name: strin
   );
 }
 
-function Simple({ safeAt, floor, onSave }: { safeAt: number; floor: number; onSave: (s: Omit<Saved, 'at'>) => void }) {
+function Simple({ target, onSave }: { target: number; onSave: (s: Omit<Saved, 'at'>) => void }) {
   const [total, setTotal] = useState('');
   const [attended, setAttended] = useState('');
-  const [target, setTarget] = useState<string>(String(safeAt));
   const t = whole(total);
   const a = whole(attended);
-  const tgt = Number(target);
+  const tgt = target;
   const err =
     total && t === null
       ? 'Total classes is a whole number.'
@@ -153,7 +153,7 @@ function Simple({ safeAt, floor, onSave }: { safeAt: number; floor: number; onSa
             ? 'Total classes has to be at least 1.'
             : null;
   const r = t != null && a != null && !err ? simpleAttendance(a, t, tgt) : null;
-  const band = policyBand(r?.shown ?? null, { safeAt, condonationFrom: floor });
+  const status = statusOf(r?.shown ?? null);
 
   let verdict: string | null = null;
   if (r) {
@@ -177,18 +177,11 @@ function Simple({ safeAt, floor, onSave }: { safeAt: number; floor: number; onSa
           <input id="calc-att" className="field tnum" inputMode="numeric" value={attended} onChange={(e) => setAttended(e.target.value)} aria-invalid={err && attended ? true : undefined} />
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-3">
-        <span className="text-[13px] text-dropout-text">Aim for</span>
-        <Segmented
-          label="Target"
-          size="sm"
-          value={target}
-          onChange={setTarget}
-          options={[
-            { value: String(safeAt), label: `${safeAt}%` },
-            { value: String(floor), label: `${floor}%` },
-          ]}
-        />
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-dropout-text">
+        <span>Aim for {tgt}%</span>
+        <Link href="/forecast" className="rounded font-medium underline decoration-seam-strong hover:text-mark">
+          Change the target
+        </Link>
       </div>
 
       {err && (
@@ -201,7 +194,7 @@ function Simple({ safeAt, floor, onSave }: { safeAt: number; floor: number; onSa
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-[13px] text-dropout-text">The ERP would show</p>
-            {r && <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[band])}>{bandLabel(band)}</p>}
+            {r && <p className={cn('mt-0.5 text-[13px] font-semibold', status ? STATUS_INK[status] : 'text-dropout-text')}>{r.shown >= tgt ? 'At or above target' : 'Below target'}</p>}
           </div>
           {r && <Figure value={r.shown} className="figure text-[56px]" />}
         </div>
@@ -214,7 +207,7 @@ function Simple({ safeAt, floor, onSave }: { safeAt: number; floor: number; onSa
                 <BubbleSheet
                   attended={a}
                   conducted={t}
-                  future={r.shown >= tgt ? { kind: 'spare', count: r.spare } : { kind: 'need', count: r.needed, tone: r.shown >= floor ? 'thin' : 'red' }}
+                  future={r.shown >= tgt ? { kind: 'spare', count: r.spare } : { kind: 'need', count: r.needed, tone: r.shown >= 75 ? 'thin' : 'red' }}
                   label={`${a} of ${t} attended`}
                 />
               </div>
@@ -236,7 +229,7 @@ function Components({
   onSave: (s: Omit<Saved, 'at'>) => void;
 }) {
   const [vals, setVals] = useState<Record<ComponentKey, string>>({ L: '', T: '', P: '', S: '' });
-  const { weights, thresholds } = settings;
+  const { weights, target } = settings;
 
   const { result, err } = (() => {
     let num = 0;
@@ -253,7 +246,7 @@ function Components({
     if (den === 0) return { result: null, err: null };
     return { result: { exact: Math.round((num / den) * 10000) / 100, shown: ceilPct(num, den) }, err: null };
   })();
-  const band = policyBand(result?.shown ?? null, thresholds);
+  const status = statusOf(result?.shown ?? null);
 
   return (
     <div>
@@ -285,7 +278,7 @@ function Components({
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-[13px] text-dropout-text">Weighted attendance</p>
-            {result && <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[band])}>{bandLabel(band)}</p>}
+            {result && <p className={cn('mt-0.5 text-[13px] font-semibold', status ? STATUS_INK[status] : 'text-dropout-text')}>{result.shown >= target ? 'At or above target' : 'Below target'}</p>}
           </div>
           {result && <Figure value={result.shown} className="figure text-[56px]" />}
         </div>

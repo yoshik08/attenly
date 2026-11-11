@@ -2,6 +2,7 @@ import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { interactiveLogin, pullAll, ErpRateLimited, isSessionExpiredError } from '@/lib/erp/full-sync';
 import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot } from '@/lib/db/snapshots';
 import { findAccount, getUser, linkAccount } from '@/lib/db/users';
+import { saveErpSession } from '@/lib/db/erp-session';
 import { termFromIds } from '@/lib/terms';
 
 export const dynamic = 'force-dynamic';
@@ -64,8 +65,8 @@ export async function POST(req: Request) {
     // Re-entering a password keeps the term chosen in Settings.
     const existing = await getUser(me.googleId);
     const chosen = existing ? findAccount(existing, universityId)?.term : null;
-    const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined);
-    if (data.failed.length === 5) {
+    const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined, { registers: true });
+    if (['attendance', 'timetable', 'internals', 'results', 'cgpa'].every((d) => data.failed.includes(d as never))) {
       return fail(502, 'erp_unreachable', 'The ERP accepted the login but returned no data. Try again in a moment.');
     }
     const previous = await getLatestSnapshot(me.googleId, universityId);
@@ -84,6 +85,8 @@ export async function POST(req: Request) {
       password,
       label: label || undefined,
     });
+    // Keep the session so the next sync does not pay for a captcha again.
+    await saveErpSession(universityId, session).catch(() => undefined);
     return Response.json({ ok: true, universityId, snapshot: toClientSnapshot(saved) });
   } catch (e) {
     if (e instanceof ErpRateLimited) return fail(429, 'rate_limited', e.message);

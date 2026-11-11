@@ -817,3 +817,276 @@ export function computeGpa(rows: CgpaRow[]): {
   terms.sort(compareTerms);
   return { cgpa: totC > 0 ? Math.round((totP / totC) * 100) / 100 : null, terms };
 }
+
+/* --------------------------------------------------------------------------- */
+/* The class register: one column per class, headed "DD/MM/YY H <period>"       */
+/* --------------------------------------------------------------------------- */
+
+/** One conducted class, from a course's Attendance Register page. */
+export interface ClassRecord {
+  /** YYYY-MM-DD */
+  date: string;
+  /** Course code the register belongs to. */
+  code: string;
+  /** The period number the ERP printed ("5"); '' when it printed none. */
+  period: string;
+  /** The register's component: L, T, P or S. */
+  component: string;
+  /** true = P (attended), false = A (absent). */
+  present: boolean;
+}
+
+/** A course register link, taken from the attendance courselist. */
+export interface RegisterLink {
+  code: string;
+  component: string;
+  /** ERP path, e.g. /index.php?r=studentattendance%2F…%2Fgetindicregister&id=… */
+  href: string;
+}
+
+/**
+ * The rows of the attendance courselist that link to a course register:
+ * `# | Coursecode | Coursedesc | Ltps | … | Register`.
+ */
+export function parseRegisterLinks(html: string): RegisterLink[] {
+  try {
+    const $ = cheerio.load(html);
+    const out: RegisterLink[] = [];
+    $('table tbody tr').each((_, tr) => {
+      const href = $(tr).find('a[href*="getindicregister"]').attr('href') ?? '';
+      if (!href) return;
+      const cells = $(tr)
+        .find('td')
+        .toArray()
+        .map((td) => $(td).text().replace(/\s+/g, ' ').trim());
+      const code = (cells[1] ?? '').split(' ')[0];
+      const component = (cells[3] ?? '').toUpperCase();
+      if (!code || !/^[LTPS]$/.test(component)) return;
+      out.push({ code, component, href: href.replace(/&amp;/g, '&') });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** "10/11/26 H 5" → 2026-11-10, period 5. */
+function classColumn(header: string): { date: string; period: string } | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b(.*)$/.exec(header.trim());
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+  const nums = m[4].match(/\d+/g);
+  return {
+    date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    period: nums ? nums[nums.length - 1] : '',
+  };
+}
+
+/**
+ * A course register: fixed columns, then one column per class whose cell is P
+ * (attended) or A (absent). `component` comes from the listing row that linked
+ * here, which is more reliable than the page's own header.
+ */
+export function parseRegister(html: string, code = '', component = ''): ClassRecord[] {
+  try {
+    const $ = cheerio.load(html);
+    const table = $('table').first();
+    const heads = table
+      .find('thead th')
+      .toArray()
+      .map((th) => $(th).text().replace(/\s+/g, ' ').trim());
+    if (heads.length === 0) return [];
+    const first = heads.findIndex((h) => classColumn(h) != null);
+    if (first < 0) return [];
+    let comp = component;
+    if (!comp) {
+      const own = /-\s*([LTPS])\s*$/.exec($('.card-header').first().text().replace(/\s+/g, ' ').trim());
+      comp = own ? own[1] : '';
+    }
+    const cells = table
+      .find('tbody tr')
+      .first()
+      .find('td')
+      .toArray()
+      .map((td) => $(td).text().trim().toUpperCase());
+    const out: ClassRecord[] = [];
+    for (let i = first; i < heads.length; i++) {
+      const col = classColumn(heads[i]);
+      if (!col) continue;
+      const mark = cells[i] ?? '';
+      if (mark !== 'P' && mark !== 'A') continue;
+      out.push({ date: col.date, code, period: col.period, component: comp, present: mark === 'P' });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+
+/* --------------------------------------------------------------------------- */
+/* Fee orders and their receipts                                               */
+/* --------------------------------------------------------------------------- */
+
+export interface FeeOrder {
+  orderNo: string;
+  academicYear: string;
+  semester: string;
+  head: string;
+  subHead: string;
+  gateway: string;
+  currency: string;
+  amount: number;
+  orderDate: string;
+  status: string;
+  gatewayRef: string;
+  /** ERP path of this order's receipt, carried through to the receipt view. */
+  receiptHref: string;
+}
+
+/**
+ * The online fee orders grid: Order Number | Academic Year | Semester |
+ * Pay-Study Year | Head | Sub Head | Gateway Name | Currency | Amount |
+ * Order date | Pay Status | Gateway Ref No | … actions (view / live status /
+ * fee receipt).
+ */
+export function parseFeeOrders(html: string): FeeOrder[] {
+  try {
+    const $ = cheerio.load(html);
+    let headers: string[] = [];
+    let found: Element | null = null;
+    $('table').each((_, t) => {
+      if (found) return;
+      const hs = $(t)
+        .find('thead th')
+        .toArray()
+        .map((th) => norm($(th).text()));
+      if (hs.some((h) => h.includes('order number'))) {
+        headers = hs;
+        found = t;
+      }
+    });
+    if (!found) return [];
+    const at = (...pats: RegExp[]): number => {
+      for (const p of pats) {
+        const i = headers.findIndex((h) => p.test(h));
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    const col = {
+      orderNo: at(/order\s*number/),
+      academicYear: at(/academic\s*year/),
+      semester: at(/^semester$/),
+      head: at(/^head$/),
+      subHead: at(/sub\s*head/),
+      gateway: at(/gateway\s*name/, /gateway/),
+      currency: at(/currency/),
+      amount: at(/amount/),
+      orderDate: at(/order\s*date/),
+      status: at(/pay\s*status/),
+      gatewayRef: at(/gateway\s*ref/),
+    };
+    const out: FeeOrder[] = [];
+    $(found)
+      .find('tbody tr')
+      .each((_, tr) => {
+        const cells = $(tr)
+          .find('td')
+          .toArray()
+          .map((td) => $(td).text().replace(/\s+/g, ' ').trim());
+        const get = (i: number): string => (i >= 0 && i < cells.length ? cells[i] : '');
+        const orderNo = get(col.orderNo);
+        if (!orderNo) return;
+        out.push({
+          orderNo,
+          academicYear: get(col.academicYear),
+          semester: get(col.semester),
+          head: get(col.head),
+          subHead: get(col.subHead),
+          gateway: get(col.gateway),
+          currency: get(col.currency) || 'INR',
+          amount: Number(get(col.amount).replace(/[^0-9.]/g, '')) || 0,
+          orderDate: get(col.orderDate),
+          status: get(col.status),
+          gatewayRef: get(col.gatewayRef),
+          receiptHref: ($(tr).find('a[href*="fee_receipt"]').attr('href') ?? '').replace(/&amp;/g, '&'),
+        });
+      });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+
+export interface FeeReceipt {
+  receiptNo: string;
+  date: string;
+  universityId: string;
+  candidate: string;
+  program: string;
+  mobile: string;
+  lines: { head: string; amount: number }[];
+  total: number;
+  inWords: string;
+  generatedAt: string;
+}
+
+/**
+ * The ERP's "Online Payment Receipt" popup, read into fields: the candidate
+ * block (reg. number, name, program, mobile), receipt no and date, the
+ * account-head lines with amounts, the total, the amount in words and the
+ * computer-generated note.
+ */
+export function parseFeeReceipt(html: string): FeeReceipt | null {
+  try {
+    const $ = cheerio.load(html);
+    const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
+    const pairs = new Map<string, string>();
+    $('p').each((_, p) => {
+      const t = flat($(p).text());
+      const i = t.indexOf(':');
+      if (i > 0) pairs.set(norm(t.slice(0, i)), flat(t.slice(i + 1)));
+    });
+    const inline = flat($('#t2').text());
+    const receiptNo =
+      pairs.get('receipt no') ?? (/Receipt No\s*:\s*([^|]+)/i.exec($('#t2 th').first().text())?.[1] ?? '').trim();
+    const date = /Date\s*:\s*([\d/-]+)/i.exec(inline)?.[1] ?? '';
+    const lines: { head: string; amount: number }[] = [];
+    let total = 0;
+    $('#t3 tr').each((_, tr) => {
+      const cells = $(tr)
+        .find('td')
+        .toArray()
+        .map((td) => flat($(td).text()));
+      if (cells.length >= 3 && /^\d+$/.test(cells[0])) {
+        lines.push({ head: cells[1], amount: Number(cells[2].replace(/[^0-9.]/g, '')) || 0 });
+      }
+      const m = /Total\s*:\s*([\d,.]+)/i.exec(cells.join(' '));
+      if (m) total = Number(m[1].replace(/[^0-9.]/g, '')) || 0;
+    });
+    const words = flat($('#t4').text());
+    const inWords = /In Words\s*:\s*(.+?)(?:\*Terms|This is a Computer Generated|$)/i.exec(words)?.[1]?.trim() ?? '';
+    const generatedAt = /Generated On\s*\.?\s*(\d{4}-\d{2}-\d{2}\s+[\d:]+)/i.exec(words)?.[1]?.trim() ?? '';
+    if (!receiptNo && lines.length === 0) return null;
+    return {
+      receiptNo,
+      date,
+      universityId: pairs.get('univ.reg.number') ?? '',
+      candidate: pairs.get('name of candidate') ?? '',
+      program: pairs.get('program') ?? '',
+      mobile: pairs.get('mobile no') ?? '',
+      lines,
+      total: total || lines.reduce((n, l) => n + l.amount, 0),
+      inWords,
+      generatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+

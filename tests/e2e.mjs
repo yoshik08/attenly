@@ -171,7 +171,7 @@ test('a typo in the captcha loads a fresh one and says so', async () => {
   await ctx.close();
 });
 
-test('attendance: plate, bubbles, planner and keyboard', async () => {
+test('attendance: course cards, band badges, rings, planner and keyboard', async () => {
   // Make sure the main user has an account (the smoke run may not have happened).
   const u = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
   const { ctx, page } = await ctxFor('main');
@@ -182,13 +182,18 @@ test('attendance: plate, bubbles, planner and keyboard', async () => {
   }
   const os = page.getByRole('article', { name: 'Operating Systems' });
   await os.waitFor();
-  await page.locator('.plate').filter({ hasText: 'Computer Networks is at 69%, below the 75% floor.' }).waitFor();
-  assert.equal(await os.locator('.bub[data-s="need-thin"]').count() > 0, true, 'needed classes drawn');
-  // Planner via keyboard
-  const plan = os.getByRole('button', { name: 'Plan the week' });
+  // Attendance is per course: no cross-course suggestion and no overall total.
+  assert.equal(await page.locator('.plate').count(), 0, 'no insight plate');
+  assert.equal(await page.getByText('Overall, weighted').count(), 0, 'no overall figure');
+  // Each card carries the college band badge and a ring with the course's figure.
+  await os.getByText('CONDONATION', { exact: true }).waitFor();
+  assert.equal(await os.locator('svg circle').count(), 2, 'ring track and arc');
+  // Planner via keyboard, from the card itself.
+  const plan = os.locator('button[aria-expanded]');
   await plan.focus();
   await page.keyboard.press('Enter');
   assert.equal(await plan.getAttribute('aria-expanded'), 'true');
+  assert.equal(await os.locator('.bub[data-s="need-thin"]').count() > 0, true, 'needed classes drawn');
   const more = os.getByRole('button', { name: 'Attend upcoming lectures: one more' });
   for (let i = 0; i < 20; i++) await more.click();
   await os.getByText('After that plan').waitFor();
@@ -198,16 +203,25 @@ test('attendance: plate, bubbles, planner and keyboard', async () => {
   await ctx.close();
 });
 
-test('force sync from the status pill, then a change badge until seen', async () => {
+test('force sync from the status pill finishes fast, reusing the ERP session', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
   await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
   await control({ bump: { id: '9900000001', code: '24CS2202', k: 'L', attended: 1, conducted: 1 } });
+  const before = await control({});
   await page.getByRole('button', { name: /Synced|Not synced|Sync failed/ }).click();
   const status = page.getByRole('dialog', { name: 'Sync status' });
   const done = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  const started = Date.now();
   await status.getByRole('button', { name: 'Sync now' }).click();
-  assert.equal((await (await done).json()).code, 'synced');
+  const res = await done;
+  const took = Date.now() - started;
+  assert.equal((await res.json()).code, 'synced');
+  assert.ok(took < 5_000, `the manual sync answered in ${took}ms`);
+  // The saved ERP session is reused: no second captcha solve or login.
+  const after = await control({});
+  assert.equal(after.counters.logins, before.counters.logins, 'no new ERP login');
+  assert.equal(after.counters.solves, before.counters.solves, 'no new captcha solve');
   await page.keyboard.press('Escape');
   const db = page.getByRole('article', { name: 'Database Management Systems' });
   await db.getByText('+1 lecture attended since you last looked').waitFor();
@@ -245,6 +259,35 @@ test('timetable: a course’s next class opens its day; slots link back', async 
   await ctx.close();
 });
 
+test('plan the day: the strip answers each period as it is planned', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(st.app);
+  const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
+  await tabs.getByRole('link', { name: 'Plan the day' }).click();
+  await page.waitForURL(/\/plan$/);
+  await page.getByRole('heading', { name: 'Plan the day' }).waitFor();
+  const strip = page.getByRole('list', { name: 'Courses and the percentage each would have' });
+  // The animate-in figures split their digits across spans, so compare without whitespace.
+  const stripText = async () => (await strip.innerText()).replace(/\s+/g, '');
+  const before = await stripText();
+  const cards = page.locator('ol > li');
+  const count = await cards.count();
+  assert.ok(count > 0, 'the day has periods');
+  // Bunk every period: some course in the strip must drop and say what it was.
+  for (let i = 0; i < count; i++) await cards.nth(i).getByRole('group').getByRole('button', { name: 'Bunk' }).click();
+  await page.getByText(/^was \d+%$/).first().waitFor();
+  assert.notEqual(await stripText(), before, 'the plan changes the strip');
+  // Not conducted counts for neither side: the strip returns to the recorded figures.
+  for (let i = 0; i < count; i++) await cards.nth(i).getByRole('group').getByRole('button', { name: 'Not conducted' }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByText(/^was \d+%$/).count(), 0, 'not conducted changes nothing');
+  assert.equal(await stripText(), before, 'strip back to the recorded figures');
+  // Attending counts on both sides.
+  await cards.first().getByRole('group').getByRole('button', { name: 'Attended' }).click();
+  assert.equal(await cards.first().getByRole('button', { name: 'Attended' }).getAttribute('aria-pressed'), 'true');
+  await ctx.close();
+});
+
 test('CGPA: latest semester first with its grades', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/cgpa`);
@@ -262,7 +305,13 @@ test('calculator: rounding, both lines, validation, saved results', async () => 
   await page.getByLabel('Classes attended').fill('33');
   await page.getByText('84.62% before rounding up').waitFor();
   await page.getByText('You’re on the 85% line. Missing the next class drops you below it.').waitFor();
+  // The calculator follows the one global target; it has no 75/85 switch of its own.
+  await page.getByRole('link', { name: 'Change the target' }).click();
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
   await page.getByRole('tab', { name: '75%' }).click();
+  await page.goto(`${st.app}/calculator`);
+  await page.getByLabel('Classes held').fill('39');
+  await page.getByLabel('Classes attended').fill('33');
   await page.getByText(/You can miss \d+ more and still show 75%\./).waitFor();
   await page.getByLabel('Classes attended').fill('40');
   await page.getByText('You can’t attend more classes than were held.').waitFor();
@@ -280,18 +329,89 @@ test('calculator: rounding, both lines, validation, saved results', async () => 
   await ctx.close();
 });
 
-test('settings: thresholds change the bands; invalid input is rejected', async () => {
+test('forecast: marking days moves the projection, Reset restores it', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  const daa = page.getByRole('listitem').filter({ hasText: 'Design and Analysis of Algorithms' });
+  const flat = async () => (await daa.innerText()).replace(/\s+/g, '');
+  const before = await flat();
+  await page.getByRole('button', { name: 'Mark absent' }).click();
+  await page.waitForTimeout(300);
+  assert.notEqual(await flat(), before, 'absent days drop the projection');
+  await page.getByRole('button', { name: 'Reset' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await flat(), before, 'Reset brings the projection back');
+  // Sundays are holidays and cannot be marked.
+  const sunday = page.locator('button[aria-label*=": holiday"]').first();
+  assert.equal(await sunday.isDisabled(), true, 'Sundays count as holidays');
+  await ctx.close();
+});
+
+test('history: a month of days coloured by attendance, and one day’s periods', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/history`);
+  await page.getByRole('heading', { name: 'History' }).waitFor();
+  await page.getByRole('list', { name: 'Legend' }).waitFor();
+  // Every day that had classes is a button; the first class day had absences only.
+  const days = page.locator('button[aria-label*=" attended"]');
+  assert.ok((await days.count()) > 0, 'the calendar has days with classes');
+  // The page opens on the newest month with records; walk back to the first one.
+  const prev = page.getByRole('button', { name: 'Previous month' });
+  for (let i = 0; i < 6 && (await page.locator('button[aria-label*="0 of"]').count()) === 0; i++) {
+    await prev.click();
+    await page.waitForTimeout(120);
+  }
+  const red = page.locator('button[aria-label*="0 of"]').first();
+  assert.equal(await red.count(), 1, 'a day with no attendance');
+  await red.click();
+  await page.getByText('Absent').first().waitFor();
+  assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /0 attended/);
+  // A day where everything was attended.
+  const green = page.locator('button[aria-label*=" attended"]').last();
+  await green.click();
+  await page.waitForTimeout(150);
+  assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /Attended/);
+  await ctx.close();
+});
+
+test('payments: every fee order, and its receipt read from the ERP', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/payments`);
+  await page.getByRole('heading', { name: 'Payments' }).waitFor();
+  await page.getByText('SBI:P-96539:T-1793586750').waitFor();
+  await page.getByText('Semester-2 Tuition Fee').first().waitFor();
+  await page.getByText('HDF:P-96539:T-1791714022').waitFor();
+  // The pending order says so.
+  await page.getByText('Pending').waitFor();
+  await page.getByRole('button', { name: 'Receipt' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'Online payment receipt' });
+  await sheet.getByText('TEST STUDENT').waitFor();
+  await sheet.getByText('TUITION FEE-Semester-2 Tuition Fee').waitFor();
+  await sheet.getByText('*** TEST AMOUNT RUPEES ONLY ***.').waitFor();
+  await sheet.getByRole('button', { name: 'Print' }).waitFor();
+  await ctx.close();
+});
+
+test('settings: one global target drives the calculator and the forecast', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/settings`);
-  await page.getByLabel('Cruise line (%)').fill('90');
+  assert.equal(await page.getByLabel('Floor (%)').count(), 0, 'no separate floor');
+  assert.equal(await page.getByLabel('Cruise line (%)').count(), 0, 'no separate cruise line');
+  await page.getByRole('tab', { name: '75%' }).click();
+  await page.goto(`${st.app}/calculator`);
+  await page.getByText('Aim for 75%').waitFor();
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  assert.equal(await page.getByRole('tab', { name: '75%' }).getAttribute('aria-selected'), 'true');
+  // The college's band on a card does not move with the target.
   await page.goto(st.app);
-  const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
-  await daa.getByText('Thin ice').waitFor();
+  const os = page.getByRole('article', { name: 'Operating Systems' });
+  await os.waitFor();
+  await os.getByText('CONDONATION', { exact: true }).waitFor();
   await page.goto(`${st.app}/settings`);
-  await page.getByLabel('Floor (%)').fill('95');
-  await page.getByRole('alert').filter({ hasText: 'The cruise line has to sit above the floor.' }).waitFor();
-  await page.getByRole('button', { name: 'Reset to 85 / 75' }).click();
-  assert.equal(await page.getByLabel('Cruise line (%)').inputValue(), '85');
+  await page.getByRole('button', { name: 'Back to 85%' }).click();
+  assert.equal(await page.getByRole('tab', { name: '85%' }).getAttribute('aria-selected'), 'true');
   await ctx.close();
 });
 
@@ -328,12 +448,13 @@ test('accounts: add, switch, make primary, remove', async () => {
 
 test('a password changed on the ERP pauses syncing until it is re-entered', async () => {
   await control({ password: { id: '9900000001', value: 'new-erp-pass' } });
+  // A background sync is the one that logs in and notices; the button reuses
+  // the saved ERP session, so make the cloud data stale exactly as it is after
+  // five and a half minutes.
+  await mongo.db('skipwise').collection('snapshots').updateMany({ googleId: st.users.main.sub }, { $set: { syncedAt: new Date(Date.now() - 10 * 60_000) } });
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
-  await page.getByRole('button', { name: /Synced|Sync failed/ }).click();
-  await page.getByRole('dialog', { name: 'Sync status' }).getByRole('button', { name: 'Sync now' }).click();
   await page.getByRole('button', { name: 'Password needed' }).waitFor({ timeout: 30_000 });
-  await page.keyboard.press('Escape');
   await page.getByText('The ERP rejected the saved password. Enter your current ERP password.').first().waitFor();
   await page.getByRole('button', { name: 'Enter password' }).first().click();
   const sheet = page.getByRole('dialog', { name: 'Enter your ERP password' });
@@ -348,19 +469,26 @@ test('a password changed on the ERP pauses syncing until it is re-entered', asyn
   await ctx.close();
 });
 
-test('tab bar navigates on phones; desktop shows inline navigation', async () => {
+test('tab bar navigates on phones; the rest live under More; desktop shows every section', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
   const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
   await tabs.getByRole('link', { name: 'Timetable' }).click();
   await page.waitForURL(/\/timetable$/);
-  await tabs.getByRole('link', { name: 'CGPA' }).click();
+  await tabs.getByRole('link', { name: 'History' }).click();
+  await page.waitForURL(/\/history$/);
+  await tabs.getByRole('button', { name: 'More' }).click();
+  const more = page.getByRole('dialog', { name: 'More' });
+  await more.getByRole('link', { name: 'CGPA' }).click();
   await page.waitForURL(/\/cgpa$/);
-  assert.equal(await tabs.getByRole('link', { name: 'CGPA' }).getAttribute('aria-current'), 'page');
+  assert.equal(await tabs.getByRole('button', { name: 'More' }).getAttribute('aria-expanded'), 'false');
   await ctx.close();
   const desk = await ctxFor('main', { viewport: { width: 1440, height: 900 } });
   await desk.page.goto(st.app);
-  await desk.page.getByRole('navigation', { name: 'Sections' }).first().getByRole('link', { name: 'Settings' }).click();
+  const nav = desk.page.getByRole('navigation', { name: 'Sections' }).first();
+  await nav.getByRole('link', { name: 'Payments' }).click();
+  await desk.page.waitForURL(/\/payments$/);
+  await nav.getByRole('link', { name: 'Settings' }).click();
   await desk.page.waitForURL(/\/settings$/);
   await desk.ctx.close();
 });
@@ -433,7 +561,7 @@ test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', a
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
     const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
-    for (const path of who ? ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
       await page.goto(st.app + path, { waitUntil: 'networkidle' });
       await page.waitForTimeout(500);
       const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();

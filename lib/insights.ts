@@ -1,6 +1,6 @@
 /**
- * Pure derivations for the UI: per-course summaries, the single most urgent
- * verdict, a course's next class, and what changed since the last look.
+ * Pure derivations for the UI: per-course summaries, a course's next class,
+ * and what changed since the last look.
  */
 import {
   COMPONENT_LABELS,
@@ -9,14 +9,14 @@ import {
   countOf,
   courseTcbr,
   effectiveConducted,
-  policyBand,
+  statusOf,
   weightedPct,
-  type Band,
   type Budget,
   type ComponentKey,
+  type Status,
   type SubjectAttendance,
+  type Target,
   type TcbrSettings,
-  type Thresholds,
   type Weights,
 } from './math';
 import type { TimetableDay, TimetablePeriod } from './erp/parsers';
@@ -28,17 +28,16 @@ export interface ComponentSummary {
   attended: number;
   /** Conducted minus pre-registration classes (what the % uses). */
   effective: number;
-  /** Against the cruise line (85). */
-  cruise: Budget | null;
-  /** Against the floor (75). */
-  floor: Budget | null;
+  /** Against the global target. */
+  budget: Budget | null;
 }
 
 export interface CourseSummary {
   code: string;
   title: string;
   pct: number | null;
-  band: Band;
+  /** The college's band for this figure (fixed cut-offs). */
+  status: Status | null;
   components: ComponentSummary[];
   /** One plain sentence: what to do next for this course. */
   verdict: string;
@@ -46,18 +45,24 @@ export interface CourseSummary {
   urgency: number;
 }
 
+export interface SummarySettings {
+  target: Target;
+  weights: Weights;
+  tcbr: TcbrSettings;
+}
+
 function cleanTitle(title: string, code: string): string {
   const t = (title || '').split('|')[0].replace(/\s+/g, ' ').trim();
   return t && t !== code ? t : code;
 }
 
-/** The single best move toward `target`: fewest classes of one type. */
-function bestCatchUp(comps: ComponentSummary[], pick: (c: ComponentSummary) => Budget | null) {
+/** The single best move toward the target: fewest classes of one type. */
+function bestCatchUp(comps: ComponentSummary[], key: 'needed' | 'spare') {
   let best: { k: ComponentKey; n: number } | null = null;
   for (const c of comps) {
-    const b = pick(c);
-    if (!b || !Number.isFinite(b.needed) || b.needed <= 0) continue;
-    if (!best || b.needed < best.n) best = { k: c.k, n: b.needed };
+    const n = c.budget?.[key] ?? 0;
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (!best || n < best.n) best = { k: c.k, n };
   }
   return best;
 }
@@ -66,110 +71,86 @@ function bestCatchUp(comps: ComponentSummary[], pick: (c: ComponentSummary) => B
 function bestSpare(comps: ComponentSummary[]) {
   let best: { k: ComponentKey; n: number } | null = null;
   for (const c of comps) {
-    const n = c.cruise?.spare ?? 0;
+    const n = c.budget?.spare ?? 0;
     if (!best || n > best.n) best = { k: c.k, n };
   }
   return best;
 }
 
-export function summarize(
-  subj: SubjectAttendance,
-  settings: { thresholds: Thresholds; weights: Weights; tcbr: TcbrSettings },
-): CourseSummary {
-  const { thresholds, weights } = settings;
+export function summarize(subj: SubjectAttendance, settings: SummarySettings): CourseSummary {
+  const { target, weights } = settings;
   const tcbr = courseTcbr(subj.code, settings.tcbr);
   const pct = weightedPct(subj, weights, tcbr);
-  const band = policyBand(pct, thresholds);
+  const status = statusOf(pct);
   const components: ComponentSummary[] = [];
   for (const k of COMPONENT_ORDER) {
     const c = subj.components[k];
     if (!c || c.conducted <= 0) continue;
-    const effective = effectiveConducted(subj, k, tcbr);
     components.push({
       k,
       label: COMPONENT_LABELS[k],
       conducted: c.conducted,
       attended: c.attended,
-      effective,
-      cruise: componentBudget(subj, weights, thresholds.safeAt, k, tcbr),
-      floor: componentBudget(subj, weights, thresholds.condonationFrom, k, tcbr),
+      effective: effectiveConducted(subj, k, tcbr),
+      budget: componentBudget(subj, weights, target, k, tcbr),
     });
   }
 
   let verdict: string;
   let urgency: number;
-  const title = cleanTitle(subj.title, subj.code);
-  if (pct == null) {
+  if (pct == null || status == null) {
     verdict = 'No classes counted yet.';
     urgency = 1000;
-  } else if (band === 'cruising') {
-    const s = bestSpare(components);
-    if (!s || s.n <= 0) {
-      verdict = `Right on the ${thresholds.safeAt}% line. Skipping any class drops you below it.`;
+  } else if (pct >= target) {
+    const spare = bestSpare(components);
+    if (pct === target) {
+      verdict = `Right on the ${target}% line. Skipping any class drops you below it.`;
       urgency = 300;
+    } else if (!spare || spare.n <= 0) {
+      verdict = `Holding ${target}%: there is no room to skip a class yet.`;
+      urgency = 320;
     } else {
-      const others = components
-        .filter((c) => c.k !== s.k && (c.cruise?.spare ?? 0) > 0)
-        .map((c) => countOf(c.cruise!.spare, c.k));
-      verdict = `${countOf(s.n, s.k)} to spare${others.length ? `, or ${others.join(', or ')}` : ''}.`;
-      urgency = 300 + Math.min(s.n, 99);
+      verdict = `${countOf(spare.n, spare.k)} to spare.`;
+      urgency = 400 + (100 - pct) * 2;
     }
   } else {
-    const up = bestCatchUp(components, (c) => c.cruise);
-    const floorUp = bestCatchUp(components, (c) => c.floor);
-    if (band === 'thin-ice') {
-      verdict = up
-        ? `Attend the next ${countOf(up.n, up.k)} to reach ${thresholds.safeAt}%.`
-        : `${thresholds.safeAt}% is out of reach this term; stay above ${thresholds.condonationFrom}%.`;
-      urgency = 200 - (thresholds.safeAt - pct);
+    const up = bestCatchUp(components, 'needed');
+    // Below the condonation line the message names the band, not the target.
+    const line = pct < 75 ? 75 : target;
+    if (up) {
+      verdict =
+        line === target
+          ? `Attend the next ${countOf(up.n, up.k)} to reach ${target}%.`
+          : `Attend the next ${countOf(up.n, up.k)} to climb back above ${line}%.`;
     } else {
-      verdict = floorUp
-        ? `Attend the next ${countOf(floorUp.n, floorUp.k)} to climb back above ${thresholds.condonationFrom}%.`
-        : `Below ${thresholds.condonationFrom}% with no way back on one class type. Talk to your faculty advisor.`;
-      urgency = 100 - (thresholds.condonationFrom - pct);
+      verdict = `${target}% is out of reach this term; stay above ${line}%.`;
     }
+    urgency = pct < 75 ? 100 - (75 - pct) : 200 - (target - pct);
   }
-  return { code: subj.code, title, pct, band, components, verdict, urgency };
-}
 
-export interface Plate {
-  code: string | null;
-  sentence: string;
-  tone: Band;
-}
-
-/** The one sentence the attendance screen leads with. */
-export function plateFor(courses: CourseSummary[], thresholds: Thresholds): Plate | null {
-  const counted = courses.filter((c) => c.pct != null);
-  if (counted.length === 0) return null;
-  const worst = [...counted].sort((a, b) => a.urgency - b.urgency)[0];
-  if (worst.band === 'in-the-red') {
-    return { code: worst.code, tone: worst.band, sentence: `${worst.title} is at ${worst.pct}%, below the ${thresholds.condonationFrom}% floor. ${worst.verdict}` };
-  }
-  if (worst.band === 'thin-ice') {
-    return { code: worst.code, tone: worst.band, sentence: `${worst.title} is on thin ice at ${worst.pct}%. ${worst.verdict}` };
-  }
-  const allAbove = `Every course is at or above ${thresholds.safeAt}%.`;
-  const s = bestSpare(worst.components);
-  if (!s || s.n <= 0) {
-    return { code: worst.code, tone: worst.band, sentence: `${allAbove} ${worst.title} has no class to spare.` };
-  }
-  return { code: worst.code, tone: worst.band, sentence: `${allAbove} Tightest is ${worst.title}: ${countOf(s.n, s.k)} to spare.` };
+  return {
+    code: subj.code,
+    title: cleanTitle(subj.title, subj.code),
+    pct,
+    status,
+    components,
+    verdict,
+    urgency,
+  };
 }
 
 /* ------------------------------------------------------------------ */
-/* Timetable                                                           */
+/* The timetable: days, periods and the next class                     */
 /* ------------------------------------------------------------------ */
 
 export const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
-/** Minutes since midnight for "9:00" / "09:00" / "14:30"; null when unknown. */
+/** "9:50" → 590. KLU prints afternoon periods on a 12-hour clock (1:00 = 13:00). */
 export function minutesOf(hhmm: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
   if (!m) return null;
   let h = Number(m[1]);
   const min = Number(m[2]);
-  // KLU timetables often print afternoon periods on a 12-hour clock (1:00 = 13:00).
   if (h >= 1 && h <= 6) h += 12;
   return h * 60 + min;
 }
@@ -257,3 +238,4 @@ export function deltaOf(subj: SubjectAttendance, seen: SeenCounts | null): Cours
   }
   return out;
 }
+

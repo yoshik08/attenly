@@ -7,11 +7,16 @@ import {
   ArrowsClockwise,
   Calculator,
   CalendarBlank,
+  CalendarCheck,
+  ChartLineUp,
   Check,
+  ClockCounterClockwise,
+  DotsThree,
   GearSix,
   GraduationCap,
   Plus,
   RadioButton,
+  Receipt,
   SignOut,
   WarningCircle,
 } from '@phosphor-icons/react';
@@ -24,10 +29,18 @@ import { ago, clock, useNow } from '@/lib/time';
 const TABS = [
   { href: '/', label: 'Attendance', Icon: RadioButton },
   { href: '/timetable', label: 'Timetable', Icon: CalendarBlank },
+  { href: '/plan', label: 'Plan the day', Icon: CalendarCheck },
+  { href: '/forecast', label: 'Forecast', Icon: ChartLineUp },
+  { href: '/history', label: 'History', Icon: ClockCounterClockwise },
+  { href: '/payments', label: 'Payments', Icon: Receipt },
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap },
   { href: '/calculator', label: 'Calculator', Icon: Calculator },
   { href: '/settings', label: 'Settings', Icon: GearSix },
 ] as const;
+
+/** The five sections that keep a slot in the phone bar; the rest live under More. */
+const PHONE_PRIMARY = ['/', '/timetable', '/plan', '/forecast', '/history'] as const;
+const inPhoneBar = (href: string) => (PHONE_PRIMARY as readonly string[]).includes(href);
 
 function isActive(pathname: string, href: string) {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -72,7 +85,7 @@ function TopBar({ signedIn }: { signedIn: boolean }) {
                     href={t.href}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'press rounded-full px-3.5 py-2 text-[14px] font-medium',
+                      'press whitespace-nowrap rounded-full px-3 py-2 text-[14px] font-medium',
                       active ? 'bg-[#121826] text-mark' : 'text-dropout-text hover:text-mark',
                     )}
                   >
@@ -96,29 +109,70 @@ function TopBar({ signedIn }: { signedIn: boolean }) {
 
 function TabBar() {
   const pathname = usePathname();
+  const [more, setMore] = useState(false);
+  const primary = TABS.filter((t) => inPhoneBar(t.href));
+  const rest = TABS.filter((t) => !inPhoneBar(t.href));
+  const moreActive = rest.some((t) => isActive(pathname, t.href));
   return (
-    <nav className="tabbar material fixed inset-x-0 bottom-0 z-40 lg:hidden" aria-label="Sections">
-      <ul className="mx-auto grid h-[var(--tab-h)] max-w-[560px] grid-cols-5">
-        {TABS.map(({ href, label, Icon }) => {
-          const active = isActive(pathname, href);
-          return (
-            <li key={href}>
-              <Link
-                href={href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'press flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium',
-                  active ? 'text-mark' : 'text-dropout-quiet',
-                )}
-              >
-                <Icon size={24} weight={active ? 'fill' : 'regular'} aria-hidden />
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <>
+      <nav className="tabbar material fixed inset-x-0 bottom-0 z-40 lg:hidden" aria-label="Sections">
+        <ul className="mx-auto grid h-[var(--tab-h)] max-w-[560px] grid-cols-6">
+          {primary.map(({ href, label, Icon }) => {
+            const active = isActive(pathname, href);
+            return (
+              <li key={href} className="min-w-0">
+                <Link
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'press flex h-full flex-col items-center justify-center gap-1 px-0.5 text-center text-[9px] font-medium leading-[1.15]',
+                    active ? 'text-mark' : 'text-dropout-quiet',
+                  )}
+                >
+                  <Icon size={21} weight={active ? 'fill' : 'regular'} aria-hidden />
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
+          <li className="min-w-0">
+            <button
+              type="button"
+              onClick={() => setMore(true)}
+              aria-expanded={more}
+              aria-haspopup="dialog"
+              className={cn(
+                'press flex h-full w-full flex-col items-center justify-center gap-1 px-0.5 text-center text-[9px] font-medium leading-[1.15]',
+                moreActive ? 'text-mark' : 'text-dropout-quiet',
+              )}
+            >
+              <DotsThree size={21} weight={moreActive ? 'bold' : 'regular'} aria-hidden />
+              More
+            </button>
+          </li>
+        </ul>
+      </nav>
+      <Sheet open={more} onClose={() => setMore(false)} title="More">
+        <ul className="py-1">
+          {rest.map(({ href, label, Icon }) => {
+            const active = isActive(pathname, href);
+            return (
+              <li key={href}>
+                <Link
+                  href={href}
+                  onClick={() => setMore(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className="press flex items-center gap-3 px-1 py-3 text-[15px] hover:text-mark"
+                >
+                  <Icon size={20} weight={active ? 'fill' : 'regular'} className={active ? 'text-mark' : 'text-dropout-text'} aria-hidden />
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </Sheet>
+    </>
   );
 }
 

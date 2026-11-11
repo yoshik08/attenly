@@ -26,6 +26,7 @@ const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance
 const INTERNALS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fgetstudentinternalmarks';
 const RESULTS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsemendresult';
 const CGPA_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsearchgetmycgpa';
+const FEE_ORDERS_PATH = '/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Fmy_fee_orders';
 
 export type CookieJar = Record<string, string>;
 
@@ -63,6 +64,31 @@ export class ErpRateLimited extends Error {
   constructor() {
     super('ERP is rate-limiting requests. Please try again in a minute.');
     this.name = 'ErpRateLimited';
+  }
+}
+
+/**
+ * The ERP did not answer inside the per-request cap. Its pages are slow and
+ * occasionally never finish; a sync must never wait on one forever.
+ */
+export class ErpTimeout extends Error {
+  constructor(ms: number) {
+    super(`The ERP did not answer within ${Math.round(ms / 1000)}s.`);
+    this.name = 'ErpTimeout';
+  }
+}
+
+/** Per-request cap (ms); ERP_TIMEOUT_MS overrides it. */
+export const ERP_TIMEOUT_MS = Number(process.env.ERP_TIMEOUT_MS ?? 8000);
+
+/** fetch() with a hard cap, reported as a coded timeout rather than a bare abort. */
+async function fetchWithin(url: string, init: RequestInit, ms = ERP_TIMEOUT_MS): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(ms) });
+  } catch (e) {
+    const name = (e as { name?: string })?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') throw new ErpTimeout(ms);
+    throw e;
   }
 }
 
@@ -106,7 +132,7 @@ export async function erpFetch(
 
   for (let i = 0; i <= maxRedirects; i++) {
     if (Object.keys(currentJar).length > 0) headers['Cookie'] = jarHeader(currentJar);
-    const res = await fetch(url, {
+    const res = await fetchWithin(url, {
       ...init,
       method,
       body,
@@ -245,7 +271,7 @@ export async function startLoginSession(): Promise<{
   const captchaUrl = new URL(captchaSrc, loginUrl).toString();
   // Fetch the image bytes directly with the same session cookies (the captcha
   // is bound to the PHP session, so it must be fetched in-session).
-  const bin = await fetch(captchaUrl, {
+  const bin = await fetchWithin(captchaUrl, {
     headers: {
       Referer: loginUrl,
       Cookie: jarHeader(page.jar),
@@ -504,4 +530,43 @@ export async function fetchCgpaHtml(
 
 export function isSessionExpiredError(e: unknown): boolean {
   return (e as { expired?: boolean })?.expired === true;
+}
+
+/** The ERP path of a page we already hold a link to (registers, receipts). */
+function sameOriginPath(href: string): string {
+  const url = new URL(href, ERP_BASE);
+  if (url.origin !== new URL(ERP_BASE).origin) throw new Error('ERP link points off-origin; refusing to follow');
+  return `${url.pathname}${url.search}`;
+}
+
+/** GET one of the ERP's own linked pages (a course register, a fee receipt). */
+async function fetchLinkedPage(session: AuthedSession, href: string): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  const res = await erpFetch(sameOriginPath(href), { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
+}
+
+/** One course's attendance register: every conducted class with its date and period. */
+export function fetchRegisterHtml(session: AuthedSession, href: string) {
+  return fetchLinkedPage(session, href);
+}
+
+/** One fee order's online payment receipt. */
+export function fetchFeeReceiptHtml(session: AuthedSession, href: string) {
+  return fetchLinkedPage(session, href);
+}
+
+/** Every online fee order of the student (all academic years). */
+export async function fetchFeeOrdersHtml(session: AuthedSession): Promise<{ html: string; jar: CookieJar; csrf: string }> {
+  const res = await erpFetch(FEE_ORDERS_PATH, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) {
+    const e = new Error('ERP session expired') as Error & { expired?: boolean };
+    e.expired = true;
+    throw e;
+  }
+  return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
 }

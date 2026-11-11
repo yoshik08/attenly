@@ -1,18 +1,16 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowsClockwise, WarningCircle } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { SignIn, FirstLink } from '@/components/gate';
-import { CourseRow, BAND_INK } from '@/components/course';
-import { Figure, claimIntro, pencilSweep } from '@/components/motion';
+import { CourseRow } from '@/components/course';
+import { claimIntro, pencilSweep } from '@/components/motion';
 import { Sheet } from '@/components/overlay';
 import { LinkForm } from '@/components/link-form';
 import { BootScreen, LoadError } from '@/components/states';
-import { cn } from '@/components/cn';
-import { bandLabel, courseTcbr, overallPct, policyBand } from '@/lib/math';
-import { deltaOf, nextClassOf, plateFor, summarize } from '@/lib/insights';
+import { deltaOf, nextClassOf, summarize } from '@/lib/insights';
 import { ago, useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
 
@@ -53,19 +51,13 @@ function Attendance() {
 
   const subjects = useMemo(() => snapshot?.attendance ?? [], [snapshot]);
   const summaries = useMemo(() => subjects.map((s) => summarize(s, settings)), [subjects, settings]);
-  const plate = useMemo(() => plateFor(summaries, settings.thresholds), [summaries, settings.thresholds]);
-  const overall = useMemo(
-    () => overallPct(subjects, settings.weights, (code) => courseTcbr(code, settings.tcbr)),
-    [subjects, settings.weights, settings.tcbr],
-  );
-  const overallBand = policyBand(overall, settings.thresholds);
   const onSeen = useCallback((code: string) => markSeen(code), [markSeen]);
 
   useEffect(() => {
     if (intro) pencilSweep(list.current);
   }, [intro]);
 
-  // Arriving from the plate or the timetable: bring the course into view and mark it.
+  // Arriving from the timetable: bring the course into view and mark it.
   useEffect(() => {
     const go = () => {
       const id = decodeURIComponent(window.location.hash.slice(1));
@@ -131,25 +123,6 @@ function Attendance() {
 
         {activeAccount?.needsPassword && <RepairNotice message={activeAccount.lastError?.message} onRepair={() => setRepairing(true)} />}
 
-        {plate && (
-          <a href={plate.code ? `#course-${plate.code}` : undefined} className="plate press mt-5 block p-4 lg:p-5">
-            <p className="text-[17px] font-semibold leading-snug balance">{plate.sentence}</p>
-          </a>
-        )}
-
-        {overall != null && (
-          <div className="mt-6">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[13px] text-dropout-text">Overall, weighted</p>
-                <p className={cn('mt-0.5 text-[13px] font-semibold', BAND_INK[overallBand])}>{bandLabel(overallBand)}</p>
-              </div>
-              <Figure value={overall} countUp={intro} className="figure text-[48px]" />
-            </div>
-            <Scale pct={overall} floor={settings.thresholds.condonationFrom} cruise={settings.thresholds.safeAt} />
-          </div>
-        )}
-
         {summaries.length > 0 && (
           <div className="mt-6 hidden lg:block">
             <Legend />
@@ -183,7 +156,7 @@ function Attendance() {
             </div>
           )
         ) : (
-          <div ref={list}>
+          <div ref={list} className="grid gap-3 sm:grid-cols-2">
             {subjects.map((s, i) => (
               <CourseRow
                 key={s.code}
@@ -207,28 +180,6 @@ function Attendance() {
         )}
       </section>
       <RepairSheet open={repairing} onClose={() => setRepairing(false)} universityId={activeAccount?.universityId} onLinked={onLinked} />
-    </div>
-  );
-}
-
-function Scale({ pct, floor, cruise }: { pct: number | null; floor: number; cruise: number }) {
-  const v = pct == null ? 0 : Math.min(100, Math.max(0, pct));
-  const ink = pct == null ? 'bg-dropout' : pct >= cruise ? 'bg-cruise' : pct >= floor ? 'bg-thin' : 'bg-red';
-  return (
-    <div className="mt-3" aria-hidden>
-      <div className="relative h-1.5 rounded-full bg-seam">
-        <div className={cn('absolute inset-y-0 left-0 rounded-full', ink)} style={{ width: `${v}%` }} />
-        <span className="absolute -top-1 h-3.5 w-px bg-dropout-text" style={{ left: `${floor}%` }} />
-        <span className="absolute -top-1 h-3.5 w-px bg-mark" style={{ left: `${cruise}%` }} />
-      </div>
-      <div className="relative mt-1.5 h-4 text-[11px] text-dropout-quiet tnum">
-        <span className="absolute -translate-x-1/2" style={{ left: `${floor}%` }}>
-          {floor}
-        </span>
-        <span className="absolute -translate-x-1/2 text-dropout-text" style={{ left: `${cruise}%` }}>
-          {cruise}
-        </span>
-      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { getDb } from './mongo';
 import type { FullSyncData, SyncTerm } from '../erp/full-sync';
 import type { SubjectAttendance } from '../math';
-import type { CgpaRow, InternalRow, ResultRow, TimetableDay } from '../erp/parsers';
+import type { CgpaRow, ClassRecord, FeeOrder, InternalRow, ResultRow, TimetableDay } from '../erp/parsers';
 import { termFromIds, type TermOptions } from '../terms';
 
 /**
@@ -22,6 +22,10 @@ export interface SnapshotDoc {
   cgpaRows: CgpaRow[];
   cgpa: number | null;
   sgpaTerms: FullSyncData['sgpaTerms'];
+  /** Every online fee order (Payments). */
+  feeOrders: FeeOrder[];
+  /** One record per conducted class (History). */
+  classes: ClassRecord[];
   termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
   /** Why a dataset is missing or old after the latest sync (e.g. the ERP's attendance register is down). */
   issues?: FullSyncData['issues'];
@@ -42,6 +46,10 @@ export interface ClientSnapshot {
   cgpaRows: CgpaRow[];
   cgpa: number | null;
   sgpaTerms: FullSyncData['sgpaTerms'];
+  /** Every online fee order (Payments). */
+  feeOrders: FeeOrder[];
+  /** One record per conducted class (History). */
+  classes: ClassRecord[];
   /** The ERP's academic years and semesters, for choosing another term. */
   termOptions: TermOptions | null;
   /** Why a dataset is missing or old after the latest sync. */
@@ -71,6 +79,8 @@ export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapsho
     cgpaRows: doc.cgpaRows ?? [],
     cgpa: doc.cgpa ?? null,
     sgpaTerms: doc.sgpaTerms ?? [],
+    feeOrders: doc.feeOrders ?? [],
+    classes: doc.classes ?? [],
     termOptions: options,
     issues: doc.issues ?? {},
     attendanceSyncedAt:
@@ -127,6 +137,8 @@ export async function saveFullSnapshot(input: {
     cgpaRows,
     cgpa: cgpaRows === data.cgpaRows ? data.cgpa : (previous?.cgpa ?? null),
     sgpaTerms: cgpaRows === data.cgpaRows ? data.sgpaTerms : (previous?.sgpaTerms ?? []),
+    feeOrders: keep('fees', 'feeOrders', data.feeOrders),
+    classes: keep('registers', 'classes', data.classes),
     ...(input.termOptions ? { termOptions: input.termOptions } : {}),
     issues: data.issues ?? {},
     attendanceSyncedAt,
