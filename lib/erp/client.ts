@@ -66,6 +66,31 @@ export class ErpRateLimited extends Error {
   }
 }
 
+/**
+ * The ERP did not answer inside the per-request cap. Its pages are slow and
+ * occasionally never finish; a sync must never wait on one forever.
+ */
+export class ErpTimeout extends Error {
+  constructor(ms: number) {
+    super(`The ERP did not answer within ${Math.round(ms / 1000)}s.`);
+    this.name = 'ErpTimeout';
+  }
+}
+
+/** Per-request cap (ms); ERP_TIMEOUT_MS overrides it. */
+export const ERP_TIMEOUT_MS = Number(process.env.ERP_TIMEOUT_MS ?? 8000);
+
+/** fetch() with a hard cap, reported as a coded timeout rather than a bare abort. */
+async function fetchWithin(url: string, init: RequestInit, ms = ERP_TIMEOUT_MS): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(ms) });
+  } catch (e) {
+    const name = (e as { name?: string })?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') throw new ErpTimeout(ms);
+    throw e;
+  }
+}
+
 export function looksRateLimited(status: number, text: string): boolean {
   if (status === 429) return true;
   // Ignore matches inside scripts/styles — the ERP's own login page embeds
@@ -106,7 +131,7 @@ export async function erpFetch(
 
   for (let i = 0; i <= maxRedirects; i++) {
     if (Object.keys(currentJar).length > 0) headers['Cookie'] = jarHeader(currentJar);
-    const res = await fetch(url, {
+    const res = await fetchWithin(url, {
       ...init,
       method,
       body,
@@ -245,7 +270,7 @@ export async function startLoginSession(): Promise<{
   const captchaUrl = new URL(captchaSrc, loginUrl).toString();
   // Fetch the image bytes directly with the same session cookies (the captcha
   // is bound to the PHP session, so it must be fetched in-session).
-  const bin = await fetch(captchaUrl, {
+  const bin = await fetchWithin(captchaUrl, {
     headers: {
       Referer: loginUrl,
       Cookie: jarHeader(page.jar),

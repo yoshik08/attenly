@@ -2,6 +2,7 @@ import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { interactiveLogin, pullAll, ErpRateLimited, isSessionExpiredError } from '@/lib/erp/full-sync';
 import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot } from '@/lib/db/snapshots';
 import { findAccount, getUser, linkAccount } from '@/lib/db/users';
+import { saveErpSession } from '@/lib/db/erp-session';
 import { termFromIds } from '@/lib/terms';
 
 export const dynamic = 'force-dynamic';
@@ -84,6 +85,8 @@ export async function POST(req: Request) {
       password,
       label: label || undefined,
     });
+    // Keep the session so the next sync does not pay for a captcha again.
+    await saveErpSession(universityId, session).catch(() => undefined);
     return Response.json({ ok: true, universityId, snapshot: toClientSnapshot(saved) });
   } catch (e) {
     if (e instanceof ErpRateLimited) return fail(429, 'rate_limited', e.message);

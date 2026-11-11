@@ -203,16 +203,25 @@ test('attendance: course cards, band badges, rings, planner and keyboard', async
   await ctx.close();
 });
 
-test('force sync from the status pill, then a change badge until seen', async () => {
+test('force sync from the status pill finishes fast, reusing the ERP session', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
   await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
   await control({ bump: { id: '9900000001', code: '24CS2202', k: 'L', attended: 1, conducted: 1 } });
+  const before = await control({});
   await page.getByRole('button', { name: /Synced|Not synced|Sync failed/ }).click();
   const status = page.getByRole('dialog', { name: 'Sync status' });
   const done = page.waitForResponse((r) => r.url().endsWith('/api/erp/hard-sync'));
+  const started = Date.now();
   await status.getByRole('button', { name: 'Sync now' }).click();
-  assert.equal((await (await done).json()).code, 'synced');
+  const res = await done;
+  const took = Date.now() - started;
+  assert.equal((await res.json()).code, 'synced');
+  assert.ok(took < 5_000, `the manual sync answered in ${took}ms`);
+  // The saved ERP session is reused: no second captcha solve or login.
+  const after = await control({});
+  assert.equal(after.counters.logins, before.counters.logins, 'no new ERP login');
+  assert.equal(after.counters.solves, before.counters.solves, 'no new captcha solve');
   await page.keyboard.press('Escape');
   const db = page.getByRole('article', { name: 'Database Management Systems' });
   await db.getByText('+1 lecture attended since you last looked').waitFor();
@@ -358,12 +367,13 @@ test('accounts: add, switch, make primary, remove', async () => {
 
 test('a password changed on the ERP pauses syncing until it is re-entered', async () => {
   await control({ password: { id: '9900000001', value: 'new-erp-pass' } });
+  // A background sync is the one that logs in and notices; the button reuses
+  // the saved ERP session, so make the cloud data stale exactly as it is after
+  // five and a half minutes.
+  await mongo.db('skipwise').collection('snapshots').updateMany({ googleId: st.users.main.sub }, { $set: { syncedAt: new Date(Date.now() - 10 * 60_000) } });
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
-  await page.getByRole('button', { name: /Synced|Sync failed/ }).click();
-  await page.getByRole('dialog', { name: 'Sync status' }).getByRole('button', { name: 'Sync now' }).click();
   await page.getByRole('button', { name: 'Password needed' }).waitFor({ timeout: 30_000 });
-  await page.keyboard.press('Escape');
   await page.getByText('The ERP rejected the saved password. Enter your current ERP password.').first().waitFor();
   await page.getByRole('button', { name: 'Enter password' }).first().click();
   const sheet = page.getByRole('dialog', { name: 'Enter your ERP password' });

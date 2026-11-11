@@ -275,3 +275,37 @@ test('backend sync: unauthorized callers are refused; results mask account ids',
   assert.deepEqual(body.results, [{ account: '…001', code: 'synced' }]);
   assert.ok(!JSON.stringify(body).includes(A));
 });
+
+test('a manual sync reuses the saved ERP session: the second click logs in again only if it must', async () => {
+  await resetKnobs();
+  const user = (await users.getUser(G))!;
+  const first = await sync.syncAccount({ user, universityId: A, force: true, manual: true });
+  assert.equal(first.code, 'synced');
+  const before = await counters();
+  const again = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  assert.equal(again.code, 'synced');
+  assert.equal(again.snapshot?.attendance.length, 6);
+  const after = await counters();
+  assert.equal(after.logins, before.logins, 'no second ERP login');
+  assert.equal(after.solves, before.solves, 'no second captcha solve');
+  // The session is sealed at rest: no raw cookie ever lands in the database.
+  const doc = await db.collection('erpSessions').findOne({ universityId: A });
+  assert.equal(typeof doc?.sealed, 'string');
+  assert.ok(!String(doc?.sealed).includes('PHPSESSID'), 'the jar is not stored in the clear');
+});
+
+test('a manual sync gives up inside five seconds and says the ERP is slow', async () => {
+  // A login that never returns is the worst case: the button still answers.
+  await control({ knobs: { loginDelayMs: 20_000 } });
+  await db.collection('erpSessions').deleteMany({});
+  const started = Date.now();
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  const took = Date.now() - started;
+  assert.equal(r.code, 'erp_slow');
+  assert.match(r.message ?? '', /slow/i);
+  assert.ok(took < 6_000, `answered in ${took}ms`);
+  // The numbers from the last good sync are still served.
+  assert.equal(r.snapshot?.attendance.length, 6);
+  await resetKnobs();
+});
+
