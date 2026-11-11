@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
 import { CaretLeft, CaretRight, ArrowCounterClockwise } from '@phosphor-icons/react';
@@ -11,7 +11,6 @@ import { STATUS_INK, STATUS_BADGE } from '@/components/course';
 import {
   courseTcbr,
   emptyPlan,
-  fmtPct,
   sandboxPct,
   statusOf,
   STATUS_LABEL,
@@ -269,15 +268,11 @@ function Forecast() {
                   <p className="mt-0.5 text-[15px] font-semibold leading-snug pretty">{summary?.title ?? s.code}</p>
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <div className="text-center">
-                      <Ring value={before} tone="text-dropout-text" size={56} stroke={5}>
-                        <span className="figure text-[15px]">{fmtPct(before)}</span>
-                      </Ring>
+                      <Ring value={before} tone="text-dropout-text" size={60} stroke={6} />
                       <p className="mt-1 text-[11px] text-dropout-quiet">NOW</p>
                     </div>
                     <div className="text-center">
-                      <Ring value={after} tone={status ? STATUS_INK[status] : 'text-dropout'} size={56} stroke={5}>
-                        <span className="figure text-[15px]">{fmtPct(after)}</span>
-                      </Ring>
+                      <Ring value={after} tone={status ? STATUS_INK[status] : 'text-dropout'} size={60} stroke={6} />
                       <p className="mt-1 text-[11px] text-dropout-quiet">PROJECTED</p>
                     </div>
                     <p

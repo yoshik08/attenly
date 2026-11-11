@@ -165,23 +165,29 @@ export function CourseRow({
 
 
   return (
-    <article ref={ref} id={`course-${subject.code}`} className="scroll-mt-24 rounded-2xl p-4 ring-seam" aria-label={summary.title}>
+    <article
+      ref={ref}
+      id={`course-${subject.code}`}
+      className="scroll-mt-24 rounded-2xl p-4 ring-seam"
+      aria-label={summary.title}
+    >
+      {/* Fixed grid: details in the left column, the ring anchored in an 84px cell. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={detailId}
-        className="press flex w-full items-start justify-between gap-4 text-left"
+        className="press grid w-full grid-cols-[minmax(0,1fr)_84px] items-start gap-x-4 text-left"
       >
         <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] font-medium text-dropout-quiet tnum">{subject.code}</span>
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[11px] font-medium text-dropout-quiet tnum">{subject.code}</span>
             <StatusBadge status={status} />
           </span>
-          <span className="mt-1.5 block text-[16px] font-semibold leading-snug pretty">{summary.title}</span>
-          <span className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
+          <span className="mt-1 line-clamp-2 block text-[15px] font-semibold leading-tight pretty">{summary.title}</span>
+          <span className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
             {summary.components.map((c) => (
-              <span key={c.k} className="text-[12px] text-dropout-text">
+              <span key={c.k} className="whitespace-nowrap text-[12px] leading-tight text-dropout-text">
                 {c.label}{' '}
                 <span className="font-semibold text-mark tnum">
                   {c.attended}/{Math.max(0, c.effective)}
@@ -193,34 +199,44 @@ export function CourseRow({
             )}
           </span>
           {hasDelta && (
-            <span className="mt-2.5 inline-flex rounded-full bg-[#0d1a14] px-2.5 py-1 text-[12px] font-medium text-cruise">
+            <span className="mt-2 inline-flex rounded-full bg-[#0d1a14] px-2 py-0.5 text-[11px] font-medium text-cruise">
               {deltaText} since you last looked
             </span>
           )}
         </span>
-        <span className="flex shrink-0 flex-col items-end gap-2.5">
-          <Ring value={summary.pct} tone={status ? STATUS_INK[status] : 'text-dropout'} size={64} stroke={6}>
-            <Figure value={summary.pct} countUp={countUp} className="figure text-[17px]" />
-          </Ring>
-          <span className="inline-flex items-center gap-1 text-[12px] text-dropout-text">
-            {open ? 'Hide plan' : 'Plan'}
-            <span className="t-acc-chevron" aria-hidden>
-              <CaretDown size={13} />
-            </span>
-          </span>
+        <span className="justify-self-end">
+          <Ring value={summary.pct} tone={status ? STATUS_INK[status] : 'text-dropout-text'} countUp={countUp} />
         </span>
       </button>
 
-      {next && (
-        <Link
-          href={`/timetable?day=${next.day}#slot-${next.day}-${next.period.period}`}
-          className="press mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-full text-[13px] text-dropout-text hover:text-mark"
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-seam pt-2.5">
+        {next ? (
+          <Link
+            href={`/timetable?day=${next.day}#slot-${next.day}-${next.period.period}`}
+            className="press inline-flex min-w-0 items-center gap-1.5 rounded-full text-[12px] text-dropout-text hover:text-mark"
+          >
+            <MapPin size={13} aria-hidden />
+            <span className="truncate">
+              Next class {whenLabel(next)}
+              {next.period.room ? ` · ${next.period.room}` : ''}
+            </span>
+          </Link>
+        ) : (
+          <span className="text-[12px] text-dropout-quiet">No class scheduled</span>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={detailId}
+          className="press inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] font-medium text-dropout-text hover:text-mark"
         >
-          <MapPin size={15} aria-hidden />
-          Next class {whenLabel(next)}
-          {next.period.room ? ` in ${next.period.room}` : ''}
-        </Link>
-      )}
+          {open ? 'Hide plan' : 'Plan'}
+          <span className="t-acc-chevron" aria-hidden>
+            <CaretDown size={13} />
+          </span>
+        </button>
+      </div>
 
 
       <div className="t-acc" data-open={open}>

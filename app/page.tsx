@@ -156,7 +156,7 @@ function Attendance() {
             </div>
           )
         ) : (
-          <div ref={list} className="grid gap-3 sm:grid-cols-2">
+          <div ref={list} className="grid items-start gap-3 sm:grid-cols-2">
             {subjects.map((s, i) => (
               <CourseRow
                 key={s.code}

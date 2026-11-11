@@ -189,8 +189,8 @@ test('attendance: course cards, band badges, rings, planner and keyboard', async
   // Each card carries the college band badge and a ring with the course's figure.
   await os.getByText('CONDONATION', { exact: true }).waitFor();
   assert.equal(await os.locator('svg circle').count(), 2, 'ring track and arc');
-  // Planner via keyboard, from the card itself.
-  const plan = os.locator('button[aria-expanded]');
+  // Planner via keyboard, from the card's own Plan control.
+  const plan = os.getByRole('button', { name: /^(Plan|Hide plan)$/ });
   await plan.focus();
   await page.keyboard.press('Enter');
   assert.equal(await plan.getAttribute('aria-expanded'), 'true');
