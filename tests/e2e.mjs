@@ -37,9 +37,10 @@ async function ctxFor(user, opts = {}) {
   page.on('pageerror', (e) => consoleErrors.push(`${user}: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    // Expected answers (wrong password 401, wrong captcha 422, paused 409) surface as
-    // "Failed to load resource" in Chrome; they are part of the flows under test.
-    const expected = /Failed to load resource: the server responded with a status of (401|409|422)/.test(m.text()) && /\/api\/erp\//.test(m.location().url ?? '');
+    // Expected answers (wrong password 401, wrong captcha 422, paused 409, a
+    // rate-limited ERP 429) surface as "Failed to load resource" in Chrome; they
+    // are part of the flows under test.
+    const expected = /Failed to load resource: the server responded with a status of (401|409|422|429)/.test(m.text()) && /\/api\/erp\//.test(m.location().url ?? '');
     if (!expected) consoleErrors.push(`${user}: ${m.text()} @ ${m.location().url ?? ''}`);
   });
   return { ctx, page };
@@ -188,8 +189,8 @@ test('attendance: course cards, band badges, rings, planner and keyboard', async
   // Each card carries the college band badge and a ring with the course's figure.
   await os.getByText('CONDONATION', { exact: true }).waitFor();
   assert.equal(await os.locator('svg circle').count(), 2, 'ring track and arc');
-  // Planner via keyboard, from the card itself.
-  const plan = os.locator('button[aria-expanded]');
+  // Planner via keyboard, from the card's own Plan control.
+  const plan = os.getByRole('button', { name: /^(Plan|Hide plan)$/ });
   await plan.focus();
   await page.keyboard.press('Enter');
   assert.equal(await plan.getAttribute('aria-expanded'), 'true');
@@ -375,6 +376,47 @@ test('history: a month of days coloured by attendance, and one day’s periods',
   await ctx.close();
 });
 
+test('nav: the sync pill never overlaps a nav item at any width', async () => {
+  for (const width of [1024, 1152, 1280, 1440, 1920]) {
+    const { ctx, page } = await ctxFor('main', { viewport: { width, height: 900 } });
+    await page.goto(st.app);
+    await page.getByRole('article').first().waitFor();
+    const pill = await page.getByRole('button', { name: /^Sync status/ }).boundingBox();
+    const links = page.getByRole('navigation', { name: 'Sections' }).first().getByRole('link');
+    const count = await links.count();
+    assert.ok(pill, `${width}px: the pill is on screen`);
+    for (let i = 0; i < count; i++) {
+      const b = await links.nth(i).boundingBox();
+      if (!b) continue; // hidden below lg
+      const overlaps = !(pill.x >= b.x + b.width || b.x >= pill.x + pill.width || pill.y >= b.y + b.height || b.y >= pill.y + pill.height);
+      assert.equal(overlaps, false, `${width}px: the pill overlaps nav item ${i}`);
+    }
+    await ctx.close();
+  }
+});
+
+test('sync pill: a fast stop says what happened and offers a retry', async () => {
+  const { ctx, page } = await ctxFor('main');
+  try {
+    await page.goto(st.app);
+    await page.getByRole('article').first().waitFor();
+    // A warm session skips the login, so drop it: this is a session the ERP ended.
+    await mongo.db('skipwise').collection('erpSessions').deleteMany({});
+    await control({ knobs: { rateLimitLogins: true } });
+    await page.getByRole('button', { name: /^Sync status/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Sync status' });
+    await dialog.getByRole('button', { name: /Sync now|Try again/ }).click();
+    // Not a bare "failed": the pill names the cause, and the last data is still shown.
+    await page.getByRole('button', { name: /ERP busy — showing last sync/ }).waitFor({ timeout: 25_000 });
+    await dialog.getByRole('button', { name: 'Try again' }).waitFor();
+    await dialog.getByText(/rate-limiting logins/).waitFor();
+    await page.keyboard.press('Escape');
+  } finally {
+    await control({ knobs: { rateLimitLogins: false } });
+    await ctx.close();
+  }
+});
+
 test('payments: every fee order, and its receipt read from the ERP', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/payments`);
@@ -393,12 +435,54 @@ test('payments: every fee order, and its receipt read from the ERP', async () =>
   await ctx.close();
 });
 
+test('forecast: the last instruction day is picked on the calendar and saved to the account', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/forecast`);
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  const trigger = page.getByRole('button', { name: /Last instruction day/ });
+  assert.match(await trigger.innerText(), /Month end/, 'unset by default');
+  const before = await page.locator('section[aria-label="Projected impact"]').innerText();
+
+  await trigger.click();
+  const sheet = page.getByRole('dialog', { name: 'Last instruction day' });
+  await sheet.waitFor();
+  // Two months out ends the window later, so more classes are projected.
+  await sheet.getByRole('button', { name: 'Next month' }).click();
+  await sheet.getByRole('button', { name: 'Next month' }).click();
+  await sheet.locator('button[aria-pressed]').last().click();
+  await page.waitForTimeout(400);
+
+  const label = await trigger.innerText();
+  assert.ok(!label.includes('Month end'), 'a date replaced the month end');
+  const after = await page.locator('section[aria-label="Projected impact"]').innerText();
+  assert.match(after, /through \d{1,2} \w{3} \d{4}/, 'the copy names the window end');
+  assert.notEqual(after.replace(/\s+/g, ''), before.replace(/\s+/g, ''), 'the projection window grew');
+
+  // Stored on the user, so a fresh page load (new client, same session) has it.
+  await page.reload();
+  await page.getByRole('heading', { name: 'Forecast' }).waitFor();
+  assert.equal(await trigger.innerText(), label, 'kept across a reload');
+  const doc = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.match(String(doc.lastInstructionDay), /^\d{4}-\d{2}-\d{2}$/, 'saved in the database');
+
+  // And it can be cleared again.
+  await trigger.click();
+  await page.getByRole('dialog', { name: 'Last instruction day' }).getByRole('button', { name: 'Use month end' }).click();
+  await page.waitForTimeout(400);
+  assert.match(await trigger.innerText(), /Month end/);
+  const cleared = await mongo.db('skipwise').collection('users').findOne({ googleId: st.users.main.sub });
+  assert.equal(cleared.lastInstructionDay, null);
+  await ctx.close();
+});
+
 test('settings: one global target drives the calculator and the forecast', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/settings`);
   assert.equal(await page.getByLabel('Floor (%)').count(), 0, 'no separate floor');
   assert.equal(await page.getByLabel('Cruise line (%)').count(), 0, 'no separate cruise line');
   await page.getByRole('tab', { name: '75%' }).click();
+  // At 75 the copy must name the condonation floor, not detention.
+  await page.getByText(/the condonation floor, with detention below it/).waitFor();
   await page.goto(`${st.app}/calculator`);
   await page.getByText('Aim for 75%').waitFor();
   await page.goto(`${st.app}/forecast`);
@@ -412,6 +496,7 @@ test('settings: one global target drives the calculator and the forecast', async
   await page.goto(`${st.app}/settings`);
   await page.getByRole('button', { name: 'Back to 85%' }).click();
   assert.equal(await page.getByRole('tab', { name: '85%' }).getAttribute('aria-selected'), 'true');
+  await page.getByText(/can still be condoned down to 75%/).waitFor();
   await ctx.close();
 });
 

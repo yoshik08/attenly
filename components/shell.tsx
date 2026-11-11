@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -70,34 +70,35 @@ function TopBar({ signedIn }: { signedIn: boolean }) {
 
   return (
     <header className="topbar material sticky top-0 z-40" data-scrolled={scrolled}>
-      <div className="mx-auto flex h-[var(--bar-h)] max-w-[1160px] items-center justify-between gap-3 px-4 lg:px-8">
-        <div className="flex min-w-0 items-center gap-8">
-          <Link href="/" className="wordmark press shrink-0 rounded-md" aria-label="Attenly home">
-            Attenly
-          </Link>
-          {signedIn && (
-            <nav className="hidden items-center gap-1 lg:flex" aria-label="Sections">
-              {TABS.map((t) => {
-                const active = isActive(pathname, t.href);
-                return (
-                  <Link
-                    key={t.href}
-                    href={t.href}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      'press whitespace-nowrap rounded-full px-3 py-2 text-[14px] font-medium',
-                      active ? 'bg-[#121826] text-mark' : 'text-dropout-text hover:text-mark',
-                    )}
-                  >
-                    {t.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
-        </div>
+      <div className="mx-auto grid h-[var(--bar-h)] max-w-[1160px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 lg:gap-4 lg:px-8">
+        <Link href="/" className="wordmark press shrink-0 rounded-md" aria-label="Attenly home">
+          Attenly
+        </Link>
         {signedIn && (
-          <div className="flex items-center gap-2">
+          <nav
+            className="hidden min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] lg:flex [&::-webkit-scrollbar]:hidden"
+            aria-label="Sections"
+          >
+            {TABS.map((t) => {
+              const active = isActive(pathname, t.href);
+              return (
+                <Link
+                  key={t.href}
+                  href={t.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'press whitespace-nowrap rounded-full px-2.5 py-2 text-[13.5px] font-medium xl:px-3',
+                    active ? 'bg-[#121826] text-mark' : 'text-dropout-text hover:text-mark',
+                  )}
+                >
+                  {t.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
+        {signedIn && (
+          <div className="flex shrink-0 items-center gap-2 justify-self-end">
             {hasAccount && <SyncPill />}
             <AccountMenu />
           </div>
@@ -180,6 +181,32 @@ function TabBar() {
 /* Sync state                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What the last sync attempt means, in plain words. A fast stop (the ERP was
+ * slow or rate-limiting) is not a failure of the data: the last snapshot is
+ * still on screen, so the pill says so.
+ */
+function syncMeaning(code: string | null): { text: string; tone: 'amber' | 'red' } {
+  switch (code) {
+    case 'erp_slow':
+      return { text: 'ERP slow — showing last sync', tone: 'amber' };
+    case 'rate_limited':
+      return { text: 'ERP busy — showing last sync', tone: 'amber' };
+    case 'offline':
+      return { text: 'You’re offline', tone: 'amber' };
+    case 'solver_unavailable':
+      return { text: 'Captcha reader down', tone: 'red' };
+    case 'bad_captcha':
+      return { text: 'ERP captcha unreadable', tone: 'red' };
+    case 'erp_unreachable':
+      return { text: 'ERP unreachable', tone: 'red' };
+    case 'db_unavailable':
+      return { text: 'Attenly’s database is down', tone: 'red' };
+    default:
+      return { text: 'Sync failed', tone: 'red' };
+  }
+}
+
 function SyncPill() {
   const { snapshot, sync, stale, activeAccount, forceSync, freshMs } = useStore();
   const now = useNow(20_000);
@@ -188,6 +215,7 @@ function SyncPill() {
 
   const failed = !sync.running && sync.message && sync.code !== 'synced' && sync.code !== 'fresh';
   const needsPassword = Boolean(activeAccount?.needsPassword);
+  const meaning = syncMeaning(sync.code);
   let dot = 'bg-dropout';
   let text: ReactNode = snapshot ? `Synced ${ago(snapshot.syncedAt, now)}` : 'Not synced yet';
   if (sync.running) {
@@ -201,25 +229,26 @@ function SyncPill() {
     dot = 'bg-thin';
     text = 'Password needed';
   } else if (failed) {
-    dot = 'bg-red';
-    text = 'Sync failed';
+    dot = meaning.tone === 'amber' ? 'bg-thin' : 'bg-red';
+    text = meaning.text;
   } else if (snapshot && !stale) {
     dot = 'bg-cruise';
   }
 
-  const minutes = Math.round(freshMs / 60000 * 2) / 2;
+  const minutes = Math.round((freshMs / 60000) * 2) / 2;
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         ref={btn}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="press inline-flex h-9 max-w-[52vw] items-center gap-2 rounded-full px-3 text-[13px] font-medium text-dropout-text ring-seam hover:text-mark"
+        aria-label={`Sync status: ${typeof text === 'string' ? text : 'syncing'}`}
+        className="press inline-flex h-9 items-center gap-2 rounded-full px-2.5 text-[13px] font-medium text-dropout-text ring-seam hover:text-mark xl:px-3"
       >
         <span className={cn('dot', dot)} aria-hidden />
-        <span className="truncate">{text}</span>
+        <span className="hidden max-w-[180px] truncate xl:inline">{text}</span>
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label="Sync status">
         <div className="p-4">
@@ -235,10 +264,24 @@ function SyncPill() {
             Attenly signs into the ERP for you whenever your data is older than {minutes} minutes and this app is open,
             and on its own in the background.
           </p>
-          {(failed || needsPassword) && (
+          {failed && !needsPassword && (
+            <div className="mt-3 rounded-xl bg-[#1a0d0c] p-3">
+              <p className="flex gap-2 text-[13px] font-medium text-[#ffb4ab]">
+                <WarningCircle size={17} className="mt-px shrink-0" aria-hidden />
+                <span>{meaning.text}</span>
+              </p>
+              <p className="mt-1 pl-[25px] text-[13px] leading-relaxed text-[#ffb4ab]/80 pretty">
+                {sync.message}
+                {meaning.text.includes('showing last sync') && snapshot
+                  ? ` The numbers above are from ${ago(snapshot.syncedAt, now)}.`
+                  : ''}
+              </p>
+            </div>
+          )}
+          {needsPassword && (
             <p className="mt-3 flex gap-2 rounded-xl bg-[#1a0d0c] p-3 text-[13px] text-[#ffb4ab]">
               <WarningCircle size={18} className="mt-px shrink-0" aria-hidden />
-              <span>{needsPassword ? (activeAccount?.lastError?.message ?? 'Enter your ERP password once to resume syncing.') : sync.message}</span>
+              <span>{activeAccount?.lastError?.message ?? 'Enter your ERP password once to resume syncing.'}</span>
             </p>
           )}
           <button
@@ -249,7 +292,7 @@ function SyncPill() {
             className="btn btn-mark press mt-4 w-full"
           >
             <ArrowsClockwise size={18} className={sync.running ? 'spin' : ''} aria-hidden />
-            {sync.running ? 'Syncing…' : 'Sync now'}
+            {sync.running ? 'Syncing…' : failed ? 'Try again' : 'Sync now'}
           </button>
           {needsPassword && (
             <Link href="/settings#accounts" onClick={() => setOpen(false)} className="btn btn-line press mt-2 w-full">

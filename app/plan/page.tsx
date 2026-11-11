@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { MapPin, ArrowCounterClockwise } from '@phosphor-icons/react';
+import { ArrowCounterClockwise } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Segmented } from '@/components/segmented';
@@ -188,68 +188,73 @@ function PlanTheDay() {
         )}
       </div>
 
-      <ol className="mt-4 flex flex-col gap-3">
+      <ol className="mt-2 seam-t">
         {periods.map((p) => {
           const key = slotKey(p);
           const choice = decisions[key];
           const summary = byCode.get(p.subjectCode);
+          const name = summary?.title ?? (p.subjectTitle || p.subjectCode);
           return (
-            <li key={key} className="rounded-2xl p-4 ring-seam">
-              <div className="flex items-start justify-between gap-3">
+            <li key={key} className="seam-b">
+              <div className="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 py-2.5 sm:grid-cols-[52px_minmax(0,1fr)_auto] sm:py-2">
+                <div className="self-start sm:self-center">
+                  <span className="figure block text-[15px] leading-none text-mark tnum">{p.period.replace(/\D/g, '')}</span>
+                  <span className="mt-1 block text-[11px] leading-none text-dropout-quiet tnum">{p.start ?? ''}</span>
+                </div>
+
                 <div className="min-w-0">
-                  <p className="text-[12px] text-dropout-quiet tnum">
-                    {p.start ? `${p.start}${p.end ? `–${p.end}` : ''}` : p.period.replace(/^P/, 'Period ')}
-                    <span className="mx-1.5" aria-hidden>
-                      ·
-                    </span>
+                  <p className="truncate text-[14px] font-semibold leading-snug">{name}</p>
+                  <p className="mt-0.5 truncate text-[11px] leading-tight text-dropout-quiet">
                     {typeLabel(p)}
-                    {p.room && (
-                      <span className="ml-1.5 inline-flex items-center gap-1">
-                        <MapPin size={12} aria-hidden /> {p.room}
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-1 text-[16px] font-semibold leading-snug">
-                    {summary?.title ?? (p.subjectTitle || p.subjectCode)}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-dropout-quiet tnum">
-                    {p.subjectCode}
-                    {summary?.pct != null && ` · now ${fmtPct(summary.pct)}`}
+                    {p.room ? ` · ${p.room}` : ''} · <span className="tnum">{p.subjectCode}</span>
                   </p>
                 </div>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-2" role="group" aria-label={`${summary?.title ?? p.subjectCode}, ${p.period}`}>
-                {CHOICES.map((c) => {
-                  const on = choice === c.value;
-                  return (
-                    <button
-                      key={c.value}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() =>
-                        setDecisions((d) => {
-                          const next = { ...d };
-                          if (on) delete next[key];
-                          else next[key] = c.value;
-                          return next;
-                        })
-                      }
-                      className={cn(
-                        'press min-h-11 whitespace-nowrap rounded-full px-1.5 text-[12px] font-semibold',
-                        on ? c.on : 'ring-seam text-dropout-text hover:text-mark',
-                      )}
-                    >
-                      {c.label}
-                    </button>
-                  );
-                })}
+
+                <div className="col-span-2 flex items-center justify-between gap-3 sm:col-span-1 sm:justify-end">
+                  <span className="text-[12px] text-dropout-quiet tnum sm:hidden">
+                    {summary?.pct != null ? `now ${fmtPct(summary.pct)}` : ''}
+                  </span>
+                  <span className="hidden text-[12px] text-dropout-quiet tnum lg:inline">
+                    {summary?.pct != null ? fmtPct(summary.pct) : ''}
+                  </span>
+                  <div
+                    className="inline-flex divide-x divide-seam overflow-hidden rounded-full ring-seam"
+                    role="group"
+                    aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
+                  >
+                    {CHOICES.map((c) => {
+                      const on = choice === c.value;
+                      return (
+                        <button
+                          key={c.value}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            setDecisions((d) => {
+                              const next = { ...d };
+                              if (on) delete next[key];
+                              else next[key] = c.value;
+                              return next;
+                            })
+                          }
+                          className={cn(
+                            'press h-9 whitespace-nowrap px-2.5 text-[12px] font-semibold sm:h-8',
+                            on ? c.on : 'text-dropout-text hover:text-mark',
+                          )}
+                        >
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </li>
           );
         })}
       </ol>
 
-      <p className="mt-6 text-[12px] text-dropout-quiet pretty">
+      <p className="mt-4 text-[12px] text-dropout-quiet pretty">
         A planner only: attended, bunked and not-conducted periods change the percentages above, never your recorded
         attendance. “Not conducted” counts for neither side.
       </p>
