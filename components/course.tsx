@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { CaretDown, MapPin, Minus, Plus } from '@phosphor-icons/react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { CaretDown, Clock, Minus, Plus } from '@phosphor-icons/react';
 import { BubbleSheet, type Future } from './bubbles';
 import { Figure } from './motion';
 import { Ring } from './ring';
@@ -20,38 +20,43 @@ import {
   type Status,
   type SubjectAttendance,
 } from '@/lib/math';
-import { whenLabel, type CourseDelta, type CourseSummary, type NextClass } from '@/lib/insights';
+import { whenLabel, type ComponentSummary, type CourseDelta, type CourseSummary, type NextClass } from '@/lib/insights';
 import type { Settings } from './store';
 
-export const STATUS_INK: Record<Status, string> = {
-  safe: 'text-cruise',
-  condonation: 'text-thin',
-  // Medical is administrative, not alarm: it borrows the focus blue (already in
-  // the palette) so it reads apart from condonation's amber and detention's red.
-  medical: 'text-focus',
-  detained: 'text-red',
-};
-
-/** Badge for a course's band: tinted with its ink, filled solid only when detained. */
-export const STATUS_BADGE: Record<Status, string> = {
-  safe: 'text-cruise bg-[#3ddc97]/10 ring-[#3ddc97]/30',
-  condonation: 'text-thin bg-[#f5b544]/10 ring-[#f5b544]/30',
-  medical: 'text-focus bg-[#7ea6ff]/10 ring-[#7ea6ff]/30',
-  detained: 'bg-[#ff6b5e] text-black ring-[#ff6b5e]',
-};
-
-export function StatusBadge({ status, className }: { status: Status | null; className?: string }) {
+/** The college's band, in its exact words. Detained is the one that shouts. */
+export function Band({ status, className }: { status: Status | null; className?: string }) {
   if (!status) return null;
+  if (status === 'detained') {
+    return (
+      <span data-tone="detained" className={cn('band inline-flex items-center rounded-full bg-det px-2 py-[3px] text-black', className)}>
+        {STATUS_LABEL[status]}
+      </span>
+    );
+  }
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset',
-        STATUS_BADGE[status],
-        className,
-      )}
-    >
-      <span className="dot bg-current" aria-hidden />
+    <span data-tone={status} className={cn('band inline-flex items-center gap-1.5 text-tone', className)}>
+      <span className="dot" aria-hidden />
       {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/** "2 to spare", "attend 3", "out of reach" for one class type. */
+function BudgetTag({ c, pct, target }: { c: ComponentSummary; pct: number | null; target: number }) {
+  if (pct == null || !c.budget) return <span className="w-[86px] text-right text-[12.5px] text-fg-3">—</span>;
+  if (pct >= target) {
+    const n = c.budget.spare;
+    return (
+      <span data-tone={n > 0 ? 'safe' : 'none'} className="w-[86px] text-right text-[12.5px] font-semibold text-tone tnum">
+        {!Number.isFinite(n) ? 'plenty spare' : n > 0 ? `${n} to spare` : 'none spare'}
+      </span>
+    );
+  }
+  const n = c.budget.needed;
+  const tone = statusOf(pct) === 'condonation' ? 'condonation' : 'detained';
+  return (
+    <span data-tone={tone} className="w-[86px] text-right text-[12.5px] font-semibold text-tone tnum">
+      {Number.isFinite(n) ? `attend ${n}` : 'out of reach'}
     </span>
   );
 }
@@ -61,24 +66,24 @@ function Stepper({ value, onChange, label }: { value: number; onChange: (v: numb
     <div className="flex items-center gap-1" role="group" aria-label={label}>
       <button
         type="button"
-        className="press inline-flex h-9 w-9 items-center justify-center rounded-full ring-seam text-dropout-text hover:text-mark disabled:opacity-30"
+        className="icon-btn press !h-9 !w-9"
         onClick={() => onChange(Math.max(0, value - 1))}
         disabled={value <= 0}
         aria-label={`${label}: one fewer`}
       >
-        <Minus size={15} aria-hidden />
+        <Minus size={14} weight="bold" aria-hidden />
       </button>
-      <span className="figure w-7 text-center text-[18px]" aria-live="polite">
+      <span className="figure w-8 text-center text-[19px]" aria-live="polite">
         {value}
       </span>
       <button
         type="button"
-        className="press inline-flex h-9 w-9 items-center justify-center rounded-full ring-seam text-dropout-text hover:text-mark disabled:opacity-30"
+        className="icon-btn press !h-9 !w-9"
         onClick={() => onChange(Math.min(60, value + 1))}
         disabled={value >= 60}
         aria-label={`${label}: one more`}
       >
-        <Plus size={15} aria-hidden />
+        <Plus size={14} weight="bold" aria-hidden />
       </button>
     </div>
   );
@@ -92,6 +97,7 @@ export function CourseRow({
   next,
   onSeen,
   countUp,
+  index = 0,
 }: {
   subject: SubjectAttendance;
   summary: CourseSummary;
@@ -100,6 +106,7 @@ export function CourseRow({
   next: NextClass | null;
   onSeen: (code: string) => void;
   countUp: boolean;
+  index?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<SandboxPlan>(emptyPlan);
@@ -113,7 +120,7 @@ export function CourseRow({
   const hasDelta = delta.length > 0;
   const detailId = `detail-${subject.code}`;
 
-  // A change from the last sync stays lit until the row has been in view.
+  // A change from the last sync stays lit until the card has been in view.
   useEffect(() => {
     if (!hasDelta || !ref.current || typeof IntersectionObserver === 'undefined') return;
     let timer: number | undefined;
@@ -154,108 +161,129 @@ export function CourseRow({
 
   const deltaText = delta
     .map((d) =>
-      [
-        d.attended > 0 && `+${countOf(d.attended, d.k)} attended`,
-        d.missed > 0 && `+${countOf(d.missed, d.k)} missed`,
-      ]
+      [d.attended > 0 && `+${countOf(d.attended, d.k)} attended`, d.missed > 0 && `+${countOf(d.missed, d.k)} missed`]
         .filter(Boolean)
         .join(', '),
     )
     .join(', ');
 
-
   return (
     <article
       ref={ref}
       id={`course-${subject.code}`}
-      className="scroll-mt-24 rounded-2xl p-4 ring-seam"
+      data-tone={status ?? 'none'}
+      className="card rise scroll-mt-24 p-5"
+      style={{ '--i': index } as CSSProperties}
       aria-label={summary.title}
     >
-      {/* Fixed grid: details in the left column, the ring anchored in an 84px cell. */}
-      <button
-        type="button"
+      {/* The light sits behind the ring, top right. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-24 -top-28 -z-10 h-[300px] w-[300px]"
+        style={{ background: 'radial-gradient(closest-side, color-mix(in oklab, var(--tone) 22%, transparent), transparent)' }}
+      />
+      {/* The whole head toggles the plan for a pointer; keyboards use the Plan button. */}
+      <div
         onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-controls={detailId}
-        className="press grid w-full grid-cols-[minmax(0,1fr)_84px] items-start gap-x-4 text-left"
+        className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4"
       >
-        <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[11px] font-medium text-dropout-quiet tnum">{subject.code}</span>
-            <StatusBadge status={status} />
-          </span>
-          <span className="mt-1 line-clamp-2 block text-[15px] font-semibold leading-tight pretty">{summary.title}</span>
-          <span className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
-            {summary.components.map((c) => (
-              <span key={c.k} className="whitespace-nowrap text-[12px] leading-tight text-dropout-text">
-                {c.label}{' '}
-                <span className="font-semibold text-mark tnum">
-                  {c.attended}/{Math.max(0, c.effective)}
-                </span>
-              </span>
-            ))}
-            {summary.components.length === 0 && (
-              <span className="text-[12px] text-dropout-quiet">No classes counted yet</span>
-            )}
-          </span>
-          {hasDelta && (
-            <span className="mt-2 inline-flex rounded-full bg-[#0d1a14] px-2 py-0.5 text-[11px] font-medium text-cruise">
-              {deltaText} since you last looked
-            </span>
-          )}
-        </span>
-        <span className="justify-self-end">
-          <Ring value={summary.pct} tone={status ? STATUS_INK[status] : 'text-dropout-text'} countUp={countUp} />
-        </span>
-      </button>
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="mono text-[12px] text-fg-3">{subject.code}</span>
+            <Band status={status} />
+          </p>
+          <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] pretty">{summary.title}</h3>
+          <p className="mt-1.5 text-[14px] leading-snug text-fg-2 pretty">{summary.verdict}</p>
+        </div>
+        <Ring value={summary.pct} tone={status} target={target} countUp={countUp} delay={Math.min(index, 8) * 70} size={92} stroke={8} />
+      </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-seam pt-2.5">
+      {summary.components.length > 0 ? (
+        <ul className="mt-4 flex flex-col gap-1" aria-label={`${summary.title}: classes by type`}>
+          {summary.components.map((c) => (
+            <li key={c.k} className="flex items-center justify-between gap-3 rounded-[12px] bg-white/[0.035] px-3 py-[7px] text-[13px]">
+              <span className="text-fg-2">{c.label}</span>
+              <span className="flex items-center gap-3">
+                <span className="tnum font-semibold">
+                  {c.attended}
+                  <span className="font-normal text-fg-3">/{Math.max(0, c.effective)}</span>
+                </span>
+                <BudgetTag c={c} pct={summary.pct} target={target} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-[13px] text-fg-3">No classes counted yet</p>
+      )}
+
+      {hasDelta && (
+        <p data-tone="safe" className="chip mt-3">
+          {deltaText} since you last looked
+        </p>
+      )}
+
+      <div className="mt-4 flex items-center justify-between gap-3 hair-t pt-3.5">
         {next ? (
           <Link
             href={`/timetable?day=${next.day}#slot-${next.day}-${next.period.period}`}
-            className="press inline-flex min-w-0 items-center gap-1.5 rounded-full text-[12px] text-dropout-text hover:text-mark"
+            className="press inline-flex min-w-0 items-center gap-1.5 rounded-full text-[13px] text-fg-2 hover:text-fg"
           >
-            <MapPin size={13} aria-hidden />
+            <Clock size={14} aria-hidden className="shrink-0" />
             <span className="truncate">
               Next class {whenLabel(next)}
               {next.period.room ? ` · ${next.period.room}` : ''}
             </span>
           </Link>
         ) : (
-          <span className="text-[12px] text-dropout-quiet">No class scheduled</span>
+          <span className="text-[13px] text-fg-3">No class scheduled</span>
         )}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-controls={detailId}
-          className="press inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] font-medium text-dropout-text hover:text-mark"
+          className="press inline-flex shrink-0 items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2"
         >
           {open ? 'Hide plan' : 'Plan'}
           <span className="t-acc-chevron" aria-hidden>
-            <CaretDown size={13} />
+            <CaretDown size={12} weight="bold" />
           </span>
         </button>
       </div>
-
 
       <div className="t-acc" data-open={open}>
         <div className="t-acc-panel" id={detailId}>
           <div className="t-acc-panel-inner">
             <div className="pt-4" inert={!open}>
-              <div className="flex flex-col gap-4">
+              <ul className="mb-3 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-fg-3" aria-label="How to read the bubbles">
+                <li className="inline-flex items-center gap-1.5">
+                  <span className="h-[9px] w-[9px] rounded-full bg-fg" aria-hidden /> attended
+                </li>
+                <li className="inline-flex items-center gap-1.5">
+                  <span className="h-[9px] w-[9px] rounded-full shadow-[inset_0_0_0_1.5px_rgba(255,255,255,0.26)]" aria-hidden /> missed
+                </li>
+                <li className="inline-flex items-center gap-1.5">
+                  <span className="h-[9px] w-[9px] rounded-full shadow-[inset_0_0_0_1.5px_var(--color-safe)]" aria-hidden /> can skip
+                </li>
+                <li className="inline-flex items-center gap-1.5">
+                  <span className="h-[9px] w-[9px] rounded-full shadow-[inset_0_0_0_1.5px_var(--color-cond)]" aria-hidden /> must attend
+                </li>
+              </ul>
+              <div className="flex flex-col gap-2">
                 {summary.components.map((c) => {
                   const d = delta.find((x) => x.k === c.k);
                   const pre = tcbr?.[c.k] ?? 0;
                   return (
-                    <div key={c.k}>
-                      <p className="text-[13px] text-dropout-text">
-                        {c.label}{' '}
-                        <span className="font-semibold text-mark tnum">
-                          {c.attended}/{Math.max(0, c.effective)}
+                    <div key={c.k} className="rounded-[16px] bg-white/[0.035] p-3.5">
+                      <p className="flex items-baseline justify-between text-[13px] text-fg-2">
+                        <span>{c.label}</span>
+                        <span className="tnum font-semibold text-fg">
+                          {c.attended}
+                          <span className="font-normal text-fg-3">/{Math.max(0, c.effective)}</span>
                         </span>
                       </p>
-                      <div className="mt-2">
+                      <div className="mt-2.5">
                         <BubbleSheet
                           attended={c.attended}
                           conducted={c.conducted}
@@ -266,17 +294,17 @@ export function CourseRow({
                           label={`${c.label}: attended ${c.attended} of ${Math.max(0, c.effective)}`}
                         />
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[12px] text-dropout-text">Attend</span>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12.5px] text-fg-2">Attend</span>
                           <Stepper
                             value={plan[c.k].attend}
                             onChange={(v) => setFor(c.k, { attend: v })}
                             label={`Attend upcoming ${COMPONENT_PLURAL[c.k]}`}
                           />
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[12px] text-dropout-text">Skip</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12.5px] text-fg-2">Skip</span>
                           <Stepper
                             value={plan[c.k].skip}
                             onChange={(v) => setFor(c.k, { skip: v })}
@@ -289,42 +317,28 @@ export function CourseRow({
                 })}
               </div>
 
-
-              <div className="seam-t mt-4 flex flex-wrap items-end justify-between gap-3 pt-4">
+              <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-dropout-text">
-                    {planning ? 'After that plan' : 'Add classes to see where you’d land'}
-                  </p>
+                  <p className="text-[13px] text-fg-2">{planning ? 'After that plan' : 'Add classes to see where you’d land'}</p>
                   {planning && projectedStatus && (
-                    <p className={cn('mt-1 text-[13px] font-semibold', STATUS_INK[projectedStatus])}>
+                    <p data-tone={projectedStatus} className="mt-1 text-[13px] font-semibold text-tone">
                       {STATUS_LABEL[projectedStatus]}
                       {projected != null && projected < target && projected >= 75 ? `, under ${target}%` : ''}
                     </p>
                   )}
                 </div>
-                <div className="flex items-end gap-3">
+                <div className="flex items-end gap-2">
                   {planning && (
-                    <button
-                      type="button"
-                      className="press min-h-9 rounded-full px-3 text-[13px] text-dropout-text hover:text-mark"
-                      onClick={() => setPlan(emptyPlan())}
-                    >
+                    <button type="button" className="btn btn-ghost btn-sm press" onClick={() => setPlan(emptyPlan())}>
                       Reset
                     </button>
                   )}
-                  <Figure
-                    value={projected}
-                    className={cn('figure text-[34px]', planning && projectedStatus ? STATUS_INK[projectedStatus] : 'text-dropout-quiet')}
-                  />
+                  <span data-tone={planning && projectedStatus ? projectedStatus : 'none'}>
+                    <Figure value={projected} className={cn('figure text-[38px]', planning && projectedStatus ? 'text-tone' : 'text-fg-3')} />
+                  </span>
                 </div>
               </div>
-
-              <p className="mt-3 text-[14px] text-mark pretty">{summary.verdict}</p>
-              {planning && (
-                <p className="mt-2 text-[12px] text-dropout-quiet">
-                  A projection only: recorded attendance is untouched.
-                </p>
-              )}
+              {planning && <p className="mt-2 text-[12px] text-fg-3">A projection only: recorded attendance is untouched.</p>}
             </div>
           </div>
         </div>
@@ -332,4 +346,3 @@ export function CourseRow({
     </article>
   );
 }
-

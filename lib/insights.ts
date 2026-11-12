@@ -9,6 +9,8 @@ import {
   countOf,
   courseTcbr,
   effectiveConducted,
+  emptyPlan,
+  sandboxPct,
   statusOf,
   weightedPct,
   type Budget,
@@ -190,10 +192,72 @@ export function nextClassOf(code: string, timetable: TimetableDay[], now = new D
   return null;
 }
 
-/** Reads after "Next class": "today at 14:30", "tomorrow at 09:50", "on Fri, period 3". */
+/** Reads after "Next class": "today at 2:30 pm", "tomorrow at 9:50 am", "on Fri, period 3". */
 export function whenLabel(n: NextClass): string {
   const day = n.inDays === 0 ? 'today' : n.inDays === 1 ? 'tomorrow' : `on ${n.day}`;
-  return n.period.start ? `${day} at ${n.period.start}` : `${day}, ${n.period.period.replace(/^P/, 'period ')}`;
+  return n.period.start ? `${day} at ${clockOf(n.period.start)}` : `${day}, ${n.period.period.replace(/^P/, 'period ')}`;
+}
+
+/** "9:50" → "9:50 am", "1:40" → "1:40 pm". KLU prints afternoons on a 12-hour clock without am/pm. */
+export function clockOf(hhmm: string | null | undefined): string {
+  if (!hhmm) return '';
+  const m = minutesOf(hhmm);
+  if (m == null) return hhmm;
+  const h24 = Math.floor(m / 60) % 24;
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m % 60).padStart(2, '0')} ${h24 < 12 ? 'am' : 'pm'}`;
+}
+
+/** The first day (from today) that still has classes ahead, with those classes in order. */
+export interface Agenda {
+  /** 0 = today, 1 = tomorrow, … */
+  inDays: number;
+  day: string;
+  date: Date;
+  periods: TimetablePeriod[];
+}
+
+export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | null {
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  for (let offset = 0; offset < 7; offset++) {
+    const day = WEEK[(now.getDay() + offset) % 7];
+    let periods = sortPeriods(timetable.find((d) => d.day === day)?.periods ?? []);
+    if (offset === 0) {
+      periods = periods.filter((p) => {
+        const start = minutesOf(p.start);
+        return start != null && start > nowMin;
+      });
+    }
+    if (periods.length > 0) {
+      return { inDays: offset, day, date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset), periods };
+    }
+  }
+  return null;
+}
+
+/** What missing one class of a course would do, with every other class attended. */
+export interface SkipCall {
+  now: number | null;
+  /** The course's figure if this class is missed. */
+  after: number | null;
+  /** Missing it keeps the course at or above the target. */
+  skippable: boolean;
+  /** Under the target already: classes of this type to attend in a row to reach it (Infinity: out of reach). */
+  needed: number | null;
+}
+
+export function skipCall(subj: SubjectAttendance, settings: SummarySettings, k: ComponentKey): SkipCall {
+  const tcbr = courseTcbr(subj.code, settings.tcbr);
+  const now = weightedPct(subj, settings.weights, tcbr);
+  const plan = emptyPlan();
+  plan[k].skip = 1;
+  const after = sandboxPct(subj, settings.weights, plan, tcbr);
+  const skippable = after != null && after >= settings.target;
+  let needed: number | null = null;
+  if (now != null && now < settings.target) {
+    needed = componentBudget(subj, settings.weights, settings.target, k, tcbr)?.needed ?? null;
+  }
+  return { now, after, skippable, needed };
 }
 
 /* ------------------------------------------------------------------ */

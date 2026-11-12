@@ -252,7 +252,7 @@ test('timetable: a course’s next class opens its day; slots link back', async 
   await page.waitForURL(/\/timetable\?day=/);
   await page.getByRole('heading', { name: 'Timetable' }).waitFor();
   const day = new URL(page.url()).searchParams.get('day');
-  await page.getByRole('tab', { name: day, exact: true }).and(page.locator('[aria-selected="true"]')).waitFor();
+  await page.getByRole('tab', { name: new RegExp(`^${day}\\s*\\d+$`) }).and(page.locator('[aria-selected="true"]')).waitFor();
   const slot = page.locator('ol li a').filter({ hasText: 'Probability and Statistics' }).first();
   await slot.click();
   await page.waitForURL(/#course-24MT2005/);
@@ -560,11 +560,15 @@ test('tab bar navigates on phones; the rest live under More; desktop shows every
   const tabs = page.getByRole('navigation', { name: 'Sections' }).last();
   await tabs.getByRole('link', { name: 'Timetable' }).click();
   await page.waitForURL(/\/timetable$/);
-  await tabs.getByRole('link', { name: 'History' }).click();
-  await page.waitForURL(/\/history$/);
+  await tabs.getByRole('link', { name: 'Forecast' }).click();
+  await page.waitForURL(/\/forecast$/);
   await tabs.getByRole('button', { name: 'More' }).click();
   const more = page.getByRole('dialog', { name: 'More' });
-  await more.getByRole('link', { name: 'CGPA' }).click();
+  await more.getByRole('link', { name: 'History' }).click();
+  await page.waitForURL(/\/history$/);
+  await more.waitFor({ state: 'detached' });
+  await tabs.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'CGPA' }).click();
   await page.waitForURL(/\/cgpa$/);
   assert.equal(await tabs.getByRole('button', { name: 'More' }).getAttribute('aria-expanded'), 'false');
   await ctx.close();

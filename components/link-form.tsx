@@ -137,8 +137,8 @@ export function LinkForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
       {mode === 'repair' ? (
-        <p className="text-[14px] text-dropout-text">
-          University ID <span className="tnum font-semibold text-mark">{fixedId}</span>
+        <p className="flex items-center justify-between rounded-[13px] bg-raised px-3.5 py-3 text-[14px] text-fg-2 hair">
+          University ID <span className="mono font-semibold text-fg">{fixedId}</span>
         </p>
       ) : (
         <div>
@@ -187,26 +187,26 @@ export function LinkForm({
             type="button"
             onClick={() => void loadCaptcha()}
             disabled={captchaState === 'loading' || busy}
-            className="press -mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-[13px] font-medium text-dropout-text hover:text-mark disabled:opacity-40"
+            className="press -mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold text-fg-2 hover:text-fg disabled:opacity-40"
           >
             <ArrowClockwise size={15} aria-hidden /> New captcha
           </button>
         </div>
         <div className="flex items-stretch gap-3">
-          <div className="flex h-12 w-[132px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-mark">
+          <div className="flex h-12 w-[136px] shrink-0 items-center justify-center overflow-hidden rounded-[13px] bg-fg">
             {captchaState === 'ready' && captcha ? (
               // eslint-disable-next-line @next/next/no-img-element -- a data URL from the ERP; next/image can't optimise it
               <img src={captcha.image} alt="ERP captcha" className="h-full w-full object-contain p-1" />
             ) : captchaState === 'loading' ? (
-              <CircleNotch size={20} className="spin text-[#4d6185]" aria-label="Loading captcha" />
+              <CircleNotch size={20} className="spin text-black/50" aria-label="Loading captcha" />
             ) : (
-              <span className="px-2 text-center text-[11px] font-medium text-[#4d6185]">No captcha</span>
+              <span className="px-2 text-center text-[11px] font-semibold text-black/60">No captcha</span>
             )}
           </div>
           <input
             ref={captchaInput}
             id={`cap-${mode}`}
-            className="field flex-1 tracking-[0.12em]"
+            className="field mono flex-1 tracking-[0.14em]"
             value={captchaText}
             onChange={(e) => setCaptchaText(e.target.value)}
             autoComplete="off"
@@ -217,7 +217,7 @@ export function LinkForm({
             aria-describedby={`cap-hint-${mode}${error?.field === 'captcha' ? ' link-error' : ''}`}
           />
         </div>
-        <p id={`cap-hint-${mode}`} className="mt-1.5 text-[12px] text-dropout-quiet" aria-live="polite">
+        <p id={`cap-hint-${mode}`} className="mt-2 text-[12.5px] text-fg-3" aria-live="polite">
           {captchaState === 'loading'
             ? slow
               ? 'Waking the captcha reader. The first read can take half a minute.'
@@ -233,19 +233,19 @@ export function LinkForm({
       {mode === 'add' && (
         <div>
           <label className="label" htmlFor="label-add">
-            Name for this account <span className="text-dropout-quiet">(optional)</span>
+            Name for this account <span className="text-fg-3">(optional)</span>
           </label>
           <input id="label-add" className="field" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} />
         </div>
       )}
 
       {error && (
-        <p id="link-error" role="alert" className="rounded-xl bg-[#1a0d0c] px-3.5 py-3 text-[14px] text-[#ffb4ab]">
+        <p id="link-error" role="alert" data-tone="detained" className="rounded-[14px] bg-tone/12 px-4 py-3 text-[14px] text-fg ring-1 ring-inset ring-tone/30">
           {error.text}
         </p>
       )}
 
-      <button type="submit" disabled={busy || captchaState !== 'ready'} className={cn('btn btn-mark press mt-1 w-full', busy && 'cursor-wait')}>
+      <button type="submit" disabled={busy || captchaState !== 'ready'} className={cn('btn btn-primary btn-lg press mt-1 w-full', busy && 'cursor-wait')}>
         {busy ? (
           <>
             <CircleNotch size={18} className="spin" aria-hidden />
@@ -257,9 +257,9 @@ export function LinkForm({
           'Link and sync'
         )}
       </button>
-      {busy && <p className="-mt-2 text-center text-[12px] text-dropout-quiet">This takes about 20 seconds.</p>}
+      {busy && <p className="-mt-2 text-center text-[12.5px] text-fg-3">This takes about 20 seconds.</p>}
 
-      <p className="text-[12px] leading-relaxed text-dropout-quiet pretty">
+      <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
         Attenly keeps your University ID and ERP password with your Google account so it can sign in and sync for you.
         They are stored as you typed them, not encrypted.
       </p>

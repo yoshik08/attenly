@@ -6,10 +6,10 @@ import { Trash } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { Segmented } from '@/components/segmented';
 import { BubbleSheet } from '@/components/bubbles';
-import { Figure } from '@/components/motion';
-import { STATUS_INK } from '@/components/course';
+import { Ring } from '@/components/ring';
+import { PageHeader } from '@/components/page';
 import { cn } from '@/components/cn';
-import { ceilPct, COMPONENT_LABELS, COMPONENT_ORDER, simpleAttendance, statusOf, type ComponentKey } from '@/lib/math';
+import { ceilPct, COMPONENT_LABELS, COMPONENT_ORDER, simpleAttendance, statusOf, type ComponentKey, type Status } from '@/lib/math';
 
 interface Saved {
   name: string;
@@ -63,9 +63,8 @@ export default function CalculatorPage() {
   };
 
   return (
-    <div className="page-in mx-auto max-w-[640px] py-6 lg:py-10">
-      <h1 className="title-l">Calculator</h1>
-      <p className="mt-1.5 text-[14px] text-dropout-text">For numbers you have in your head. No ERP needed.</p>
+    <div className="page-in max-w-[1000px]">
+      <PageHeader title="Calculator" sub="For numbers you have in your head. No ERP needed." />
       <Segmented
         className="mt-6"
         label="Calculator"
@@ -76,29 +75,31 @@ export default function CalculatorPage() {
           { value: 'components', label: 'By component' },
         ]}
       />
-      <div className="mt-6">
-        {mode === 'simple' ? (
-          <Simple target={settings.target} onSave={save} />
-        ) : (
-          <Components settings={settings} onSave={save} />
-        )}
+      <div className="mt-5">
+        {mode === 'simple' ? <Simple target={settings.target} onSave={save} /> : <Components settings={settings} onSave={save} />}
       </div>
 
       {saved.length > 0 && (
         <section className="mt-12" aria-label="Saved results">
-          <h2 className="text-[13px] font-medium text-dropout-text">Saved results</h2>
-          <ul className="mt-2">
+          <h2 className="h2">Saved results</h2>
+          <ul className="card mt-4 px-4">
             {saved.map((d, i) => (
-              <li key={`${d.at}-${i}`} className="seam-b flex items-center justify-between gap-3 py-3">
+              <li key={`${d.at}-${i}`} className={cn('flex items-center justify-between gap-3 py-3', i > 0 && 'hair-t')}>
                 <div className="min-w-0">
-                  <p className="truncate text-[15px] font-medium">{d.name}</p>
-                  <p className="text-[12px] text-dropout-quiet">
-                    {d.kind === 'simple' ? 'Attended / total' : 'By component'}, saved {new Date(d.at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  <p className="truncate text-[15px] font-semibold">{d.name}</p>
+                  <p className="text-[12px] text-fg-3">
+                    {d.kind === 'simple' ? 'Attended / total' : 'By component'}, saved{' '}
+                    {new Date(d.at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="figure text-[22px]">{d.result}</span>
-                  <button type="button" onClick={() => remove(i)} className="press inline-flex h-11 w-11 items-center justify-center rounded-full text-dropout-quiet hover:text-red" aria-label={`Delete ${d.name}`}>
+                  <span className="figure text-[24px]">{d.result}</span>
+                  <button
+                    type="button"
+                    onClick={() => remove(i)}
+                    className="press inline-flex h-11 w-11 items-center justify-center rounded-full text-fg-3 hover:bg-det/12 hover:text-det"
+                    aria-label={`Delete ${d.name}`}
+                  >
                     <Trash size={17} aria-hidden />
                   </button>
                 </div>
@@ -115,7 +116,7 @@ function SaveRow({ disabled, onSave }: { disabled: boolean; onSave: (name: strin
   const [name, setName] = useState('');
   return (
     <form
-      className="seam-t mt-6 flex items-end gap-2 pt-5"
+      className="mt-4 flex items-end gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (disabled || !name.trim()) return;
@@ -129,10 +130,93 @@ function SaveRow({ disabled, onSave }: { disabled: boolean; onSave: (name: strin
         </label>
         <input id="save-name" className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Course name" maxLength={40} />
       </div>
-      <button type="submit" className="btn btn-line press" disabled={disabled || !name.trim()}>
+      <button type="submit" className="btn btn-secondary press min-h-[48px]" disabled={disabled || !name.trim()}>
         Save
       </button>
     </form>
+  );
+}
+
+function BigField({
+  id,
+  label,
+  value,
+  onChange,
+  invalid,
+  decimal = false,
+  suffix,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+  decimal?: boolean;
+  suffix?: string;
+}) {
+  return (
+    <div>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          className="field figure !min-h-[64px] !text-[28px]"
+          inputMode={decimal ? 'decimal' : 'numeric'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid ? true : undefined}
+        />
+        {suffix && <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-fg-3">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Answer({
+  value,
+  status,
+  target,
+  title,
+  verdict,
+  exact,
+  children,
+  empty,
+}: {
+  value: number | null;
+  status: Status | null;
+  target: number;
+  title: string;
+  verdict?: string | null;
+  exact?: string | null;
+  children?: React.ReactNode;
+  empty: string;
+}) {
+  return (
+    <div
+      data-tone={status ?? 'none'}
+      className="card glow p-5 sm:p-6"
+      style={{ '--gs': '420px', '--gx': '-170px', '--gy': '-200px' } as React.CSSProperties}
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-5">
+        <Ring value={value} tone={status} target={target} size={124} stroke={10} />
+        <div className="min-w-0">
+          <p className="text-[13px] text-fg-2">{title}</p>
+          {value != null ? (
+            <>
+              <p className="mt-1 text-[17px] font-semibold text-tone">{value >= target ? 'At or above target' : 'Below target'}</p>
+              {exact && <p className="mono mt-1 text-[12px] text-fg-3">{exact}</p>}
+            </>
+          ) : (
+            <p className="mt-1 text-[15px] text-fg-3">{empty}</p>
+          )}
+        </div>
+      </div>
+      {verdict && <p className="mt-5 text-[16px] leading-snug pretty">{verdict}</p>}
+      {children}
+    </div>
   );
 }
 
@@ -162,61 +246,45 @@ function Simple({ target, onSave }: { target: number; onSave: (s: Omit<Saved, 'a
   }
 
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label" htmlFor="calc-total">
-            Classes held
-          </label>
-          <input id="calc-total" className="field tnum" inputMode="numeric" value={total} onChange={(e) => setTotal(e.target.value)} aria-invalid={err && total ? true : undefined} />
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="card p-5 sm:p-6">
+        <div className="grid grid-cols-2 gap-3">
+          <BigField id="calc-total" label="Classes held" value={total} onChange={setTotal} invalid={Boolean(err && total)} />
+          <BigField id="calc-att" label="Classes attended" value={attended} onChange={setAttended} invalid={Boolean(err && attended)} />
         </div>
-        <div>
-          <label className="label" htmlFor="calc-att">
-            Classes attended
-          </label>
-          <input id="calc-att" className="field tnum" inputMode="numeric" value={attended} onChange={(e) => setAttended(e.target.value)} aria-invalid={err && attended ? true : undefined} />
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-dropout-text">
-        <span>Aim for {tgt}%</span>
-        <Link href="/forecast" className="rounded font-medium underline decoration-seam-strong hover:text-mark">
-          Change the target
-        </Link>
-      </div>
-
-      {err && (
-        <p role="alert" className="mt-4 text-[14px] text-red">
-          {err}
+        <p className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-fg-2">
+          <span>Aim for {tgt}%</span>
+          <Link href="/forecast" className="link">
+            Change the target
+          </Link>
         </p>
-      )}
-
-      <div className="mt-6 rounded-2xl p-5 ring-seam" aria-live="polite">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-dropout-text">The ERP would show</p>
-            {r && <p className={cn('mt-0.5 text-[13px] font-semibold', status ? STATUS_INK[status] : 'text-dropout-text')}>{r.shown >= tgt ? 'At or above target' : 'Below target'}</p>}
-          </div>
-          {r && <Figure value={r.shown} className="figure text-[56px]" />}
-        </div>
-        {r && (
-          <>
-            <p className="mt-1 text-right text-[12px] text-dropout-quiet tnum">{r.exact.toFixed(2)}% before rounding up</p>
-            <p className="mt-4 text-[15px] pretty">{verdict}</p>
-            {t != null && a != null && t <= 140 && (
-              <div className="mt-4">
-                <BubbleSheet
-                  attended={a}
-                  conducted={t}
-                  future={r.shown >= tgt ? { kind: 'spare', count: r.spare } : { kind: 'need', count: r.needed, tone: r.shown >= 75 ? 'thin' : 'red' }}
-                  label={`${a} of ${t} attended`}
-                />
-              </div>
-            )}
-          </>
+        {err && (
+          <p role="alert" className="mt-3 text-[14px] text-det">
+            {err}
+          </p>
         )}
-        {!r && !err && <p className="mt-3 text-[14px] text-dropout-quiet">Enter the classes held and attended.</p>}
+        <SaveRow disabled={!r} onSave={(name) => r && onSave({ name, kind: 'simple', result: `${r.shown}%` })} />
       </div>
-      <SaveRow disabled={!r} onSave={(name) => r && onSave({ name, kind: 'simple', result: `${r.shown}%` })} />
+      <Answer
+        value={r?.shown ?? null}
+        status={status}
+        target={tgt}
+        title="The ERP would show"
+        verdict={verdict}
+        exact={r ? `${r.exact.toFixed(2)}% before rounding up` : null}
+        empty="Enter the classes held and attended."
+      >
+        {r && t != null && a != null && t <= 140 && (
+          <div className="mt-4">
+            <BubbleSheet
+              attended={a}
+              conducted={t}
+              future={r.shown >= tgt ? { kind: 'spare', count: r.spare } : { kind: 'need', count: r.needed, tone: r.shown >= 75 ? 'thin' : 'red' }}
+              label={`${a} of ${t} attended`}
+            />
+          </div>
+        )}
+      </Answer>
     </div>
   );
 }
@@ -249,46 +317,40 @@ function Components({
   const status = statusOf(result?.shown ?? null);
 
   return (
-    <div>
-      <p className="text-[14px] text-dropout-text pretty">
-        Leave a component empty if the course doesn’t have it. Weights follow Settings: lecture {weights.L}, tutorial {weights.T}, practical {weights.P}, skilling {weights.S}.
-      </p>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        {COMPONENT_ORDER.map((k) => (
-          <div key={k}>
-            <label className="label" htmlFor={`comp-${k}`}>
-              {COMPONENT_LABELS[k]} %
-            </label>
-            <input
-              id={`comp-${k}`}
-              className="field tnum"
-              inputMode="decimal"
-              value={vals[k]}
-              onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
-            />
-          </div>
-        ))}
-      </div>
-      {err && (
-        <p role="alert" className="mt-4 text-[14px] text-red">
-          {err}
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="card p-5 sm:p-6">
+        <p className="text-[14px] text-fg-2 pretty">
+          Leave a component empty if the course doesn’t have it. Weights follow Settings: lecture {weights.L}, tutorial {weights.T},
+          practical {weights.P}, skilling {weights.S}.
         </p>
-      )}
-      <div className="mt-6 rounded-2xl p-5 ring-seam" aria-live="polite">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-dropout-text">Weighted attendance</p>
-            {result && <p className={cn('mt-0.5 text-[13px] font-semibold', status ? STATUS_INK[status] : 'text-dropout-text')}>{result.shown >= target ? 'At or above target' : 'Below target'}</p>}
-          </div>
-          {result && <Figure value={result.shown} className="figure text-[56px]" />}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {COMPONENT_ORDER.map((k) => (
+            <BigField
+              key={k}
+              id={`comp-${k}`}
+              label={`${COMPONENT_LABELS[k]} %`}
+              value={vals[k]}
+              decimal
+              suffix="%"
+              onChange={(v) => setVals((x) => ({ ...x, [k]: v }))}
+            />
+          ))}
         </div>
-        {result ? (
-          <p className="mt-1 text-right text-[12px] text-dropout-quiet tnum">{result.exact.toFixed(2)}% before rounding up</p>
-        ) : (
-          !err && <p className="mt-3 text-[14px] text-dropout-quiet">Enter at least one component.</p>
+        {err && (
+          <p role="alert" className="mt-3 text-[14px] text-det">
+            {err}
+          </p>
         )}
+        <SaveRow disabled={!result} onSave={(name) => result && onSave({ name, kind: 'components', result: `${result.shown}%` })} />
       </div>
-      <SaveRow disabled={!result} onSave={(name) => result && onSave({ name, kind: 'components', result: `${result.shown}%` })} />
+      <Answer
+        value={result?.shown ?? null}
+        status={status}
+        target={target}
+        title="Weighted attendance"
+        exact={result ? `${result.exact.toFixed(2)}% before rounding up` : null}
+        empty={err ? 'Fix the highlighted figure.' : 'Enter at least one component.'}
+      />
     </div>
   );
 }

@@ -17,13 +17,16 @@ export function Segmented<T extends string>({
   label,
   className,
   size = 'md',
+  stretch = false,
 }: {
-  options: { value: T; label: string; hint?: string }[];
+  options: { value: T; label: string; hint?: string; aria?: string }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
   className?: string;
   size?: 'md' | 'sm';
+  /** Segments share the full width. */
+  stretch?: boolean;
 }) {
   const bar = useRef<HTMLDivElement>(null);
   const pill = useRef<HTMLSpanElement>(null);
@@ -73,7 +76,7 @@ export function Segmented<T extends string>({
       ref={bar}
       role="tablist"
       aria-label={label}
-      className={cn('t-tabs max-w-full', className)}
+      className={cn('t-tabs max-w-full', stretch && 'flex w-full', className)}
       onKeyDown={onKey}
     >
       <span ref={pill} className="t-tabs-pill" aria-hidden />
@@ -87,8 +90,9 @@ export function Segmented<T extends string>({
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={o.hint}
+            aria-label={o.aria}
             onClick={() => onChange(o.value)}
-            className={cn('t-tab tnum', size === 'sm' && '!h-[30px] !px-3 !text-[13px]')}
+            className={cn('t-tab tnum', stretch && 'flex-1', size === 'sm' && '!h-[30px] !px-3 !text-[13px]')}
           >
             {o.label}
           </button>

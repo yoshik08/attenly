@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { GoogleLogo } from '@phosphor-icons/react';
+import { ArrowsClockwise, Calculator, GoogleLogo, Key } from '@phosphor-icons/react';
 import { BASE_PATH, CANONICAL_ORIGIN } from '@/lib/api';
 import { LinkForm } from './link-form';
 import { useStore } from './store';
-import { claimIntro, pencilSweep } from './motion';
+import { reducedMotion } from './motion';
+import { cn } from './cn';
 
 const AUTH_ERRORS: Record<string, string> = {
   OAuthCallback: 'Google sign-in didn’t finish. Try again.',
@@ -19,25 +20,64 @@ const AUTH_ERRORS: Record<string, string> = {
   Default: 'Google sign-in didn’t finish. Try again.',
 };
 
-/** Twelve bubbles inking in: the product's whole idea, without a single fake number. */
-function SheetMotif() {
-  const ref = useRef<HTMLDivElement>(null);
+/**
+ * Three rings drawing themselves in light, each cut at the 85% line. Pure
+ * form: no figures, so nothing here pretends to be anyone's attendance.
+ */
+function HeroRings({ className }: { className?: string }) {
+  const [go, setGo] = useState(false);
   useEffect(() => {
-    if (claimIntro()) pencilSweep(ref.current);
+    if (reducedMotion()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- no sweep: show the end state at once
+      setGo(true);
+      return;
+    }
+    const t = window.setTimeout(() => setGo(true), 120);
+    return () => window.clearTimeout(t);
   }, []);
-  const states = ['on', 'on', 'on', 'off', 'on', 'on', 'on', 'on', 'off', 'on', 'on', 'on'];
+  const rings = [
+    { r: 128, len: 93, tone: 'safe' },
+    { r: 100, len: 79, tone: 'condonation' },
+    { r: 72, len: 68, tone: 'medical' },
+  ] as const;
+  const a = 0.85 * 2 * Math.PI;
   return (
-    <div ref={ref} className="sheet !gap-2 [--b:18px]" aria-hidden>
-      {states.map((s, i) => (
-        <span key={i} className="bub" data-s={s} />
-      ))}
-      <span className="sheet-future">
-        <span className="bub" data-s="spare" />
-        <span className="bub" data-s="spare" />
-      </span>
+    <div className={cn('relative aspect-square', className)} aria-hidden>
+      <div
+        className="absolute inset-[8%] rounded-full opacity-70 blur-3xl"
+        style={{ background: 'conic-gradient(from 0deg, rgba(52,212,122,0.28), rgba(255,178,62,0.2), rgba(106,168,255,0.24), rgba(52,212,122,0.28))' }}
+      />
+      <svg viewBox="0 0 300 300" className="relative h-full w-full -rotate-90 overflow-visible">
+        {rings.map((ring, i) => (
+          <g key={ring.r} data-tone={ring.tone}>
+            <circle cx="150" cy="150" r={ring.r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="20" />
+            <circle
+              cx="150"
+              cy="150"
+              r={ring.r}
+              fill="none"
+              strokeWidth="20"
+              strokeLinecap="round"
+              pathLength={100}
+              strokeDasharray="100"
+              strokeDashoffset={go ? 100 - ring.len : 100}
+              className="ring-arc"
+              style={{ stroke: 'var(--tone)', transition: 'stroke-dashoffset 1600ms cubic-bezier(0.22,1,0.36,1)', transitionDelay: `${i * 160}ms` }}
+            />
+          </g>
+        ))}
+        {/* One cut through every ring at the 85% line. */}
+        <line x1={150 + 58 * Math.cos(a)} y1={150 + 58 * Math.sin(a)} x2={150 + 142 * Math.cos(a)} y2={150 + 142 * Math.sin(a)} stroke="#000" strokeWidth="3.5" />
+      </svg>
     </div>
   );
 }
+
+const POINTS = [
+  { Icon: Key, title: 'Signs in for you', body: 'It reads the ERP captcha itself. You type your password once.' },
+  { Icon: ArrowsClockwise, title: 'Syncs on its own', body: 'Attendance, timetable and grades stay fresh in the background.' },
+  { Icon: Calculator, title: 'Says what you can skip', body: 'Per course and class type, by the ERP’s own weighted formula.' },
+];
 
 export function SignIn() {
   const [busy, setBusy] = useState(false);
@@ -74,36 +114,51 @@ export function SignIn() {
   };
 
   return (
-    <section className="page-in mx-auto flex min-h-[calc(100dvh-var(--bar-h)-80px)] max-w-[520px] flex-col justify-center py-12">
-      <SheetMotif />
-      <h1 className="title-l mt-8 balance text-[40px] lg:text-[48px]">Your KL attendance, without the ERP.</h1>
-      <p className="mt-4 max-w-[46ch] text-[16px] text-dropout-text pretty">
-        Attenly signs into the ERP for you, keeps your attendance synced on its own, and tells you how many classes you can
-        still skip before 85%.
-      </p>
-      {error && (
-        <p role="alert" className="mt-6 rounded-xl bg-[#1a0d0c] px-3.5 py-3 text-[14px] text-[#ffb4ab]">
-          {error}
+    <section className="page-in grid min-h-[calc(100dvh-var(--bar-h)-var(--safe-t)-40px)] items-center gap-10 py-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:py-12">
+      <HeroRings className="mx-auto w-[min(76vw,300px)] lg:order-2 lg:w-full lg:max-w-[460px]" />
+      <div className="lg:order-1">
+        <h1 className="display balance !text-[42px] !leading-[1.02] sm:!text-[54px] lg:!text-[64px]">Your KL attendance, without the ERP.</h1>
+        <p className="mt-5 max-w-[46ch] text-[17px] leading-relaxed text-fg-2 pretty">
+          Attenly signs into the ERP for you, keeps your attendance synced on its own, and tells you how many classes you can
+          still skip before 85%.
         </p>
-      )}
-      {offCanonical ? (
-        // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
-        <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-mark press mt-8 w-full sm:w-auto sm:self-start">
-          <GoogleLogo size={18} weight="bold" aria-hidden />
-          Continue with Google
-        </a>
-      ) : (
-        <button type="button" onClick={start} disabled={busy} className="btn btn-mark press mt-8 w-full sm:w-auto sm:self-start">
-          <GoogleLogo size={18} weight="bold" aria-hidden />
-          {busy ? 'Opening Google…' : 'Continue with Google'}
-        </button>
-      )}
-      <p className="mt-6 text-[12px] text-dropout-quiet">
-        Unofficial student project, not affiliated with KL University.{' '}
-        <Link href="/privacy" className="underline hover:text-mark">
-          Privacy
-        </Link>
-      </p>
+        {error && (
+          <p role="alert" data-tone="detained" className="mt-6 rounded-[14px] bg-tone/12 px-4 py-3 text-[14px] text-fg">
+            {error}
+          </p>
+        )}
+        {offCanonical ? (
+          // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
+          <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
+            <GoogleLogo size={19} weight="bold" aria-hidden />
+            Continue with Google
+          </a>
+        ) : (
+          <button type="button" onClick={start} disabled={busy} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
+            <GoogleLogo size={19} weight="bold" aria-hidden />
+            {busy ? 'Opening Google…' : 'Continue with Google'}
+          </button>
+        )}
+        <ul className="mt-10 grid gap-5 sm:grid-cols-3 sm:gap-4">
+          {POINTS.map(({ Icon, title, body }) => (
+            <li key={title} className="flex gap-3 sm:flex-col sm:gap-2.5">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-raised hair">
+                <Icon size={18} className="text-fg" aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[14px] font-semibold">{title}</span>
+                <span className="mt-0.5 block text-[13px] leading-snug text-fg-2">{body}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-10 text-[12.5px] text-fg-3">
+          Unofficial student project, not affiliated with KL University.{' '}
+          <Link href="/privacy" className="link">
+            Privacy
+          </Link>
+        </p>
+      </div>
     </section>
   );
 }
@@ -111,13 +166,13 @@ export function SignIn() {
 export function FirstLink() {
   const { user, onLinked } = useStore();
   return (
-    <section className="page-in mx-auto max-w-[460px] py-10">
-      <h1 className="title-l balance">Link your ERP account</h1>
-      <p className="mt-3 text-[15px] text-dropout-text pretty">
+    <section className="page-in mx-auto max-w-[480px] pb-6 pt-8 lg:pt-16">
+      <h1 className="display balance">Link your ERP account</h1>
+      <p className="mt-3 text-[15px] leading-relaxed text-fg-2 pretty">
         {user?.name ? `Signed in as ${user.name}. ` : ''}
         Log in to the KL ERP here once. From then on Attenly signs in and syncs for you.
       </p>
-      <div className="mt-8">
+      <div className="card mt-8 p-5 lg:p-6">
         <LinkForm mode="first" onLinked={(id, snap) => void onLinked(id, snap)} />
       </div>
     </section>

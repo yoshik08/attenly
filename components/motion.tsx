@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { animate, stagger, waapi, utils } from 'animejs';
+import { animate, utils } from 'animejs';
 
 const useIso = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
@@ -21,27 +21,6 @@ export function claimIntro(): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * The signature moment: attended bubbles ink in left to right, like a pencil
- * sweeping the answer sheet. Compositor-only (WAAPI transform + opacity),
- * capped at half a second whatever the number of bubbles, cleaned up after.
- */
-export function pencilSweep(root: HTMLElement | null) {
-  if (!root) return;
-  const marks = root.querySelectorAll<HTMLElement>('.bub[data-s="on"]');
-  if (marks.length === 0) return;
-  // Whole sweep ≤ ~480 ms: ≤ 280 ms of stagger plus a 200 ms ink-in.
-  const step = Math.min(4, 280 / marks.length);
-  const anim = waapi.animate(marks, {
-    scale: [0.35, 1],
-    opacity: [0, 1],
-    duration: 200,
-    delay: stagger(step),
-    ease: 'cubic-bezier(0.23, 1, 0.32, 1)',
-  });
-  void anim.then(() => anim.revert());
 }
 
 /**
