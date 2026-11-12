@@ -53,10 +53,49 @@ export interface SummarySettings {
   tcbr: TcbrSettings;
 }
 
-function cleanTitle(title: string, code: string): string {
-  const t = (title || '').split('|')[0].replace(/\s+/g, ' ').trim();
-  return t && t !== code ? t : code;
+/** Short words that stay lower case inside a title. */
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'the', 'to', 'via', 'with']);
+/** Letters that stay capitals when a shouted title is calmed down. */
+const ACRONYMS = new Set([
+  'AI', 'ML', 'DL', 'NLP', 'IOT', 'IT', 'UI', 'UX', 'OOP', 'OOPS', 'DBMS', 'RDBMS', 'OS', 'CN', 'API', 'APIS', 'AR', 'VR', 'XR',
+  'CSE', 'ECE', 'EEE', 'ECM', 'SQL', 'NOSQL', 'GIS', 'AWS', 'GPU', 'CPU', 'DSA', 'HTML', 'CSS', 'JS', 'PHP', 'IDE', 'SDLC',
+  'VLSI', 'PCB', 'DSP', 'MEMS', 'CAD', 'CAM', 'R&D', 'KL', 'KLU', 'II', 'III', 'IV', 'VI', 'VII', 'VIII', 'IX', 'XI', 'XII',
+]);
+
+/** One piece of a word ("DEVELOPMENT", "II", "(IOT)"). */
+function titlePart(part: string, first: boolean): string {
+  const bare = part.replace(/^[^A-Za-z0-9&+#]+|[^A-Za-z0-9&+#]+$/g, '');
+  if (!bare) return part;
+  const upper = bare.toUpperCase();
+  if (ACRONYMS.has(upper) || /\d/.test(bare) || /[+#]/.test(bare)) return part.replace(bare, upper === 'IOT' ? 'IoT' : upper);
+  if (!first && SMALL_WORDS.has(bare.toLowerCase())) return part.toLowerCase();
+  return part.toLowerCase().replace(/^([^a-z]*)([a-z])/, (_, pre: string, ch: string) => pre + ch.toUpperCase());
 }
+
+/** A word, hyphenated or slashed parts each on their own ("DEVELOPMENT-II" → "Development-II"). */
+function titleWord(word: string, first: boolean): string {
+  return word
+    .split(/([-/])/)
+    .map((part, i) => (part === '-' || part === '/' ? part : titlePart(part, first && i === 0)))
+    .join('');
+}
+
+/**
+ * The ERP shouts most course names ("GENERATIVE AI AND AI PLATFORMS"). A title
+ * with no lower-case letters is set in title case, keeping acronyms and roman
+ * numerals; a title that already has mixed case is left as written.
+ */
+export function courseTitle(title: string | null | undefined, code: string): string {
+  const t = (title || '').split('|')[0].replace(/\s+/g, ' ').trim();
+  if (!t || t === code) return code;
+  if (/[a-z]/.test(t) || !/[A-Z]{3}/.test(t)) return t;
+  return t
+    .split(' ')
+    .map((w, i) => titleWord(w, i === 0))
+    .join(' ');
+}
+
+const cleanTitle = courseTitle;
 
 /** The single best move toward the target: fewest classes of one type. */
 function bestCatchUp(comps: ComponentSummary[], key: 'needed' | 'spare') {
@@ -217,6 +256,9 @@ export interface Agenda {
   periods: TimetablePeriod[];
 }
 
+/** When the ERP prints no clock times, today's classes count as still ahead until this time. */
+export const UNTIMED_DAY_ENDS = 17 * 60;
+
 export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | null {
   const nowMin = now.getHours() * 60 + now.getMinutes();
   for (let offset = 0; offset < 7; offset++) {
@@ -225,7 +267,9 @@ export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | 
     if (offset === 0) {
       periods = periods.filter((p) => {
         const start = minutesOf(p.start);
-        return start != null && start > nowMin;
+        // No time printed (the ERP often gives only "Period 1"): assume the day runs until late afternoon.
+        if (start == null) return nowMin < UNTIMED_DAY_ENDS;
+        return start > nowMin;
       });
     }
     if (periods.length > 0) {

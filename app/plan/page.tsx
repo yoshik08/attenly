@@ -10,7 +10,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { Ring } from '@/components/ring';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, courseTcbr, emptyPlan, sandboxPct, statusOf, type ComponentKey, type SandboxPlan } from '@/lib/math';
-import { clockOf, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { clockOf, courseTitle, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import type { TimetablePeriod } from '@/lib/erp/parsers';
 import { termText } from '@/lib/terms';
 import { useNow } from '@/lib/time';
@@ -178,7 +178,7 @@ function PlanTheDay() {
           const key = slotKey(day, p);
           const choice = decisions[key];
           const summary = byCode.get(p.subjectCode);
-          const name = summary?.title ?? (p.subjectTitle || p.subjectCode);
+          const name = summary?.title ?? courseTitle(p.subjectTitle, p.subjectCode);
           const after = afterFor(p.subjectCode);
           const changed = summary?.pct != null && after != null && after !== summary.pct;
           return (

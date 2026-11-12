@@ -965,3 +965,56 @@ button:disabled {
     display: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Course identity (Timetable): a hue per course, set with --h          */
+/* ------------------------------------------------------------------ */
+
+.hue-block {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: radial-gradient(130% 90% at 0% 0%, oklch(0.66 0.13 var(--h) / 0.3), transparent 60%),
+    linear-gradient(160deg, oklch(0.42 0.095 var(--h) / 0.78), oklch(0.29 0.065 var(--h) / 0.62) 78%);
+  box-shadow: inset 0 0 0 1px oklch(0.8 0.1 var(--h) / 0.24), inset 0 1px 0 oklch(0.97 0.04 var(--h) / 0.14);
+  transition: opacity 220ms var(--ease-smooth), filter 220ms var(--ease-smooth), box-shadow 220ms var(--ease-smooth),
+    transform 160ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hue-block:hover {
+    box-shadow: inset 0 0 0 1px oklch(0.85 0.1 var(--h) / 0.45), inset 0 1px 0 oklch(0.96 0.04 var(--h) / 0.14);
+  }
+}
+.hue-ink {
+  color: oklch(0.95 0.035 var(--h));
+}
+.hue-meta {
+  color: oklch(0.88 0.035 var(--h));
+}
+.hue-dot {
+  background: oklch(0.78 0.12 var(--h));
+}
+.hue-cell {
+  background: oklch(0.7 0.11 var(--h));
+}
+/* Spotlight: one course lit, the rest of the week stepping back. */
+[data-focus] .hue-block:not([data-on]),
+[data-focus] .hue-cell:not([data-on]),
+[data-focus] .tt-row:not([data-on]) {
+  opacity: 0.18;
+  filter: saturate(0.3);
+}
+[data-focus] .hue-block[data-on] {
+  box-shadow: inset 0 0 0 1.5px oklch(0.88 0.11 var(--h) / 0.8), 0 0 28px oklch(0.7 0.12 var(--h) / 0.35);
+}
+.hue-cell,
+.tt-row {
+  transition: opacity 220ms var(--ease-smooth), filter 220ms var(--ease-smooth);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hue-block,
+  .hue-cell,
+  .tt-row {
+    transition: none !important;
+  }
+}

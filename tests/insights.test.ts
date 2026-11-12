@@ -1,7 +1,7 @@
 /** Per-course summaries, the plate, next class, and change badges. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agendaOf, clockOf, countsOf, deltaOf, minutesOf, nextClassOf, skipCall, summarize, whenLabel } from '../lib/insights';
+import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, minutesOf, nextClassOf, skipCall, summarize, whenLabel } from '../lib/insights';
 import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
@@ -156,4 +156,24 @@ test('skip call: one missed class against the target, same rounding as the cards
   const under = skipCall(course('C', 'Systems', { L: [29, 38], T: [9, 11] }), settings, 'L');
   assert.equal(under.skippable, false);
   assert.ok(Number.isFinite(under.needed!) && under.needed! > 0);
+});
+
+test('course titles: shouted ERP names are calmed, acronyms and mixed case kept', () => {
+  assert.equal(courseTitle('GENERATIVE AI AND AI PLATFORMS', 'X'), 'Generative AI and AI Platforms');
+  assert.equal(courseTitle('ADVANCED OBJECT ORIENTED PROGRAMMING', 'X'), 'Advanced Object Oriented Programming');
+  assert.equal(courseTitle('INSIGHTS TO SUSTAINABLE DEVELOPMENT-II', 'X'), 'Insights to Sustainable Development-II');
+  assert.equal(courseTitle('INTERNET OF THINGS (IOT)', 'X'), 'Internet of Things (IoT)');
+  assert.equal(courseTitle('Operating Systems', 'X'), 'Operating Systems');
+  assert.equal(courseTitle('DBMS', 'X'), 'DBMS');
+  assert.equal(courseTitle('', '24CS2201'), '24CS2201');
+  assert.equal(courseTitle('CLOUD INFRASTRUCTURE | 24CS3101', 'X'), 'Cloud Infrastructure');
+});
+
+test('up next without clock times: today counts until late afternoon', () => {
+  const tt: TimetableDay[] = [
+    { day: 'Thu', periods: [{ period: 'P1', start: '', end: '', subjectCode: 'A', subjectTitle: '', room: '', faculty: '', type: 'L' }] },
+    { day: 'Fri', periods: [{ period: 'P1', start: '', end: '', subjectCode: 'B', subjectTitle: '', room: '', faculty: '', type: 'L' }] },
+  ];
+  assert.equal(agendaOf(tt, new Date(2026, 10, 12, 3, 6))!.day, 'Thu');
+  assert.equal(agendaOf(tt, new Date(2026, 10, 12, 18, 0))!.day, 'Fri');
 });
