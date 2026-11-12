@@ -153,3 +153,24 @@ test('calculator: attended / total against 85%', () => {
   assert.equal(simpleAttendance(1.5, 4, 85), null);
   assert.equal(simpleAttendance(0, 0, 85), null);
 });
+
+test('what-if: planned classes of a type that has not been held yet still count', () => {
+  // Lectures so far, no practicals yet: planning two missed practicals must lower the figure.
+  const s: SubjectAttendance = {
+    code: 'X',
+    title: 'X',
+    components: {
+      L: { attended: 10, conducted: 10 },
+      T: { attended: 0, conducted: 0 },
+      P: { attended: 0, conducted: 0 },
+      S: { attended: 0, conducted: 0 },
+    },
+  };
+  assert.equal(weightedPct(s, DEFAULT_WEIGHTS), 100);
+  const plan = emptyPlan();
+  plan.P.skip = 2;
+  // (10 × 100) / (10 × 100 + 2 × 50) = 90.9…, rounded up.
+  assert.equal(sandboxPct(s, DEFAULT_WEIGHTS, plan), 91);
+  // Nothing planned for it: an unheld component still doesn't count.
+  assert.equal(sandboxPct(s, DEFAULT_WEIGHTS, emptyPlan()), 100);
+});

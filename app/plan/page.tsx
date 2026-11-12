@@ -1,37 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import { ArrowCounterClockwise } from '@phosphor-icons/react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowCounterClockwise, ArrowRight, CalendarBlank, Check, Minus, X } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
-import { Segmented } from '@/components/segmented';
-import { Figure } from '@/components/motion';
+import { DayStrip, defaultDayOf, FULL_DAY, nextDateOf, WEEK_ORDER } from '@/components/day-strip';
+import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
+import { Ring } from '@/components/ring';
 import { cn } from '@/components/cn';
-import { COMPONENT_LABELS, courseTcbr, emptyPlan, fmtPct, sandboxPct, statusOf, type ComponentKey, type SandboxPlan } from '@/lib/math';
-import { STATUS_INK } from '@/components/course';
-import { summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { COMPONENT_LABELS, courseTcbr, emptyPlan, sandboxPct, statusOf, type ComponentKey, type SandboxPlan } from '@/lib/math';
+import { clockOf, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import type { TimetablePeriod } from '@/lib/erp/parsers';
 import { termText } from '@/lib/terms';
 import { useNow } from '@/lib/time';
 
-const ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const FULL: Record<string, string> = {
-  Mon: 'Monday',
-  Tue: 'Tuesday',
-  Wed: 'Wednesday',
-  Thu: 'Thursday',
-  Fri: 'Friday',
-  Sat: 'Saturday',
-  Sun: 'Sunday',
-};
-
 type Decision = 'attended' | 'bunk' | 'not-conducted';
 
-const CHOICES: { value: Decision; label: string; on: string }[] = [
-  { value: 'attended', label: 'Attended', on: 'bg-mark text-black' },
-  { value: 'bunk', label: 'Bunk', on: 'bg-[#2a1210] text-red ring-1 ring-inset ring-[#ff6b5e]/55' },
-  { value: 'not-conducted', label: 'Not conducted', on: 'bg-[#121826] text-mark' },
+const CHOICES: { value: Decision; label: string; Icon: typeof Check; on: string }[] = [
+  { value: 'attended', label: 'Attended', Icon: Check, on: 'bg-fg text-black' },
+  { value: 'bunk', label: 'Bunk', Icon: X, on: 'bg-det text-black' },
+  { value: 'not-conducted', label: 'Not conducted', Icon: Minus, on: 'bg-raised-2 text-fg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]' },
 ];
 
 export default function PlanTheDayPage() {
@@ -46,17 +35,19 @@ function typeLabel(p: TimetablePeriod) {
   return p.type ? COMPONENT_LABELS[p.type] : 'Class';
 }
 
-function slotKey(p: TimetablePeriod) {
-  return `${p.period}|${p.subjectCode}`;
+/** A decision belongs to one period of one day. */
+function slotKey(day: string, p: TimetablePeriod) {
+  return `${day}|${p.period}|${p.subjectCode}`;
 }
 
 function PlanTheDay() {
   const { snapshot, settings } = useStore();
   const now = useNow(60_000);
+  const date = useMemo(() => new Date(now), [now]);
   const timetable = useMemo(() => snapshot?.timetable ?? [], [snapshot]);
   const subjects = useMemo(() => snapshot?.attendance ?? [], [snapshot]);
   const days = useMemo(
-    () => ORDER.filter((d) => (timetable.find((t) => t.day === d)?.periods.length ?? 0) > 0),
+    () => WEEK_ORDER.filter((d) => (timetable.find((t) => t.day === d)?.periods.length ?? 0) > 0),
     [timetable],
   );
   const byCode = useMemo(() => {
@@ -65,27 +56,26 @@ function PlanTheDay() {
     return m;
   }, [subjects, settings]);
 
-  const today = WEEK[new Date(now).getDay()];
-  const defaultDay = useMemo(() => {
-    if (days.includes(today)) return today;
-    const start = ORDER.indexOf(today);
-    for (let i = 1; i <= 7; i++) {
-      const d = ORDER[(start + i) % 7];
-      if (days.includes(d)) return d;
-    }
-    return days[0] ?? 'Mon';
-  }, [days, today]);
+  const today = WEEK[date.getDay()];
   const [picked, setPicked] = useState<string | null>(null);
-  const day = picked && days.includes(picked) ? picked : defaultDay;
+  const day = picked && days.includes(picked) ? picked : defaultDayOf(days, date);
 
-  const periods = useMemo(() => timetable.find((t) => t.day === day)?.periods ?? [], [timetable, day]);
+  // Opened from Up next for a given day: ?day=Fri
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('day');
+    // Read once after hydration; the server render can't see the query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q && WEEK_ORDER.includes(q)) setPicked(q);
+  }, []);
+
+  const periods = useMemo(() => sortPeriods(timetable.find((t) => t.day === day)?.periods ?? []), [timetable, day]);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
 
   // What the day would add, per course, as a what-if plan (in memory only).
   const plans = useMemo(() => {
     const m = new Map<string, SandboxPlan>();
     for (const p of periods) {
-      const d = decisions[slotKey(p)];
+      const d = decisions[slotKey(day, p)];
       if (!d || d === 'not-conducted') continue;
       const plan = m.get(p.subjectCode) ?? emptyPlan();
       const k: ComponentKey = p.type ?? 'L';
@@ -94,7 +84,7 @@ function PlanTheDay() {
       m.set(p.subjectCode, plan);
     }
     return m;
-  }, [periods, decisions]);
+  }, [periods, decisions, day]);
 
   /** The course's percentage once the day's plan is applied. */
   const afterFor = (code: string): number | null => {
@@ -106,147 +96,136 @@ function PlanTheDay() {
     return sandboxPct(subj, settings.weights, plan, courseTcbr(code, settings.tcbr));
   };
 
-  const decided = periods.filter((p) => decisions[slotKey(p)]).length;
+  const decided = periods.filter((p) => decisions[slotKey(day, p)]).length;
+  const resetDay = () =>
+    setDecisions((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith(`${day}|`))));
+  const term = termText(snapshot?.term);
 
   if (days.length === 0) {
     return (
-      <section className="page-in py-8">
-        <h1 className="title-l">Plan the day</h1>
-        <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{termText(snapshot?.term)}</p>
-        <p className="mt-8 text-[15px] font-semibold">The ERP has no timetable for this semester.</p>
-        <p className="mt-1 text-[13px] text-dropout-text">
+      <section className="page-in">
+        <PageHeader title="Plan the day" sub={<TermLine term={term} />} />
+        <Empty icon={CalendarBlank} title="The ERP has no timetable for this semester.">
           A day can be planned here once your department publishes the timetable.{' '}
-          <Link href="/settings#semester" className="underline decoration-seam-strong hover:text-mark">
+          <Link href="/settings#semester" className="link">
             Look at another semester
           </Link>
-        </p>
+        </Empty>
       </section>
     );
   }
 
+  const dayDate = nextDateOf(day, date);
 
   return (
-    <div className="page-in py-6 lg:py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="title-l">Plan the day</h1>
-          <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">
-            {termText(snapshot?.term)}{' '}
-            <Link href="/settings#semester" className="ml-1 rounded font-medium text-dropout-text underline decoration-seam-strong hover:text-mark">
-              Change
-            </Link>
-          </p>
-        </div>
-      </div>
-
-      <div className="-mx-4 mt-5 overflow-x-auto px-4 pb-1">
-        <Segmented
-          label="Day to plan"
-          value={day}
-          onChange={setPicked}
-          options={days.map((d) => ({ value: d, label: d, hint: d === today ? `${FULL[d]} (today)` : FULL[d] }))}
-          size="sm"
-        />
-      </div>
+    <div className="page-in">
+      <PageHeader title="Plan the day" sub={<TermLine term={term} />} />
+      <DayStrip className="mt-6" label="Day to plan" days={days} value={day} onChange={setPicked} now={date} />
 
       {/* Every course, at a glance: the strip answers the plan as it changes. */}
-      <div className="seam-b mt-5 pb-4">
-        <ul className="flex flex-wrap gap-2" aria-label="Courses and the percentage each would have">
+      <div className="material sticky top-[calc(var(--bar-h)+var(--safe-t))] z-30 -mx-4 mt-5 px-4 py-3 sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-12 lg:px-12">
+        <ul
+          tabIndex={0}
+          className="-mx-4 flex gap-2 overflow-x-auto rounded-[18px] px-4 no-bar sm:mx-0 sm:px-0 lg:flex-wrap"
+          aria-label="Courses and the percentage each would have"
+        >
           {subjects.map((s) => {
             const summary = byCode.get(s.code);
             const after = afterFor(s.code);
             const status = statusOf(after);
             const changed = !!summary && after != null && summary.pct != null && after !== summary.pct;
             return (
-              <li key={s.code} className="flex items-baseline gap-1.5 rounded-full px-3 py-1.5 ring-seam">
-                <span className="text-[12px] text-dropout-text tnum">{s.code}</span>
-                {after == null ? (
-                  <span className="figure text-[15px] text-dropout-quiet">—</span>
-                ) : (
-                  <Figure value={after} className={cn('figure text-[15px]', status ? STATUS_INK[status] : 'text-dropout-quiet')} />
+              <li
+                key={s.code}
+                data-tone={changed ? (after! > summary!.pct! ? 'safe' : 'detained') : 'none'}
+                className={cn(
+                  'flex shrink-0 items-center gap-2.5 rounded-[18px] bg-surface py-2 pl-2 pr-3.5 hair transition-shadow',
+                  changed && 'shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--tone)_45%,transparent)]',
                 )}
-                {changed && <span className="text-[11px] text-dropout-quiet tnum">was {fmtPct(summary.pct)}</span>}
+              >
+                <Ring value={after} tone={status} target={settings.target} size={46} stroke={4.5} />
+                <span className="min-w-0">
+                  <span className="mono block text-[11.5px] text-fg-3">{s.code}</span>
+                  <span className="block max-w-[150px] truncate text-[13px] font-semibold">{summary?.title ?? s.code}</span>
+                  {changed && <span className="block text-[11.5px] font-semibold text-tone tnum">was {summary.pct}%</span>}
+                </span>
               </li>
             );
           })}
         </ul>
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 className="title-s mt-6">
-          {FULL[day]}
-          {day === today && <span className="ml-2 text-[13px] font-medium text-dropout-text">today</span>}
+      <div className="mt-6 flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="h2">
+          {FULL_DAY[day]}{' '}
+          <span className="font-sans text-[15px] font-medium tracking-normal text-fg-3">
+            {dayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+            {day === today ? ' · today' : ''}
+          </span>
         </h2>
-        {decided > 0 && (
-          <button
-            type="button"
-            className="press inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[13px] text-dropout-text hover:text-mark"
-            onClick={() => setDecisions({})}
-          >
-            <ArrowCounterClockwise size={14} aria-hidden /> Reset the day
-          </button>
-        )}
+        <p className="flex items-center gap-3 text-[13px] text-fg-3 tnum">
+          {decided} of {periods.length} planned
+          {decided > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm press !min-h-8 !px-3" onClick={resetDay}>
+              <ArrowCounterClockwise size={14} aria-hidden /> Reset the day
+            </button>
+          )}
+        </p>
       </div>
 
-      <ol className="mt-2 seam-t">
-        {periods.map((p) => {
-          const key = slotKey(p);
+      <ol className="mt-3 flex flex-col gap-2">
+        {periods.map((p, i) => {
+          const key = slotKey(day, p);
           const choice = decisions[key];
           const summary = byCode.get(p.subjectCode);
           const name = summary?.title ?? (p.subjectTitle || p.subjectCode);
+          const after = afterFor(p.subjectCode);
+          const changed = summary?.pct != null && after != null && after !== summary.pct;
           return (
-            <li key={key} className="seam-b">
-              <div className="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 py-2.5 sm:grid-cols-[52px_minmax(0,1fr)_auto] sm:py-2">
-                <div className="self-start sm:self-center">
-                  <span className="figure block text-[15px] leading-none text-mark tnum">{p.period.replace(/\D/g, '')}</span>
-                  <span className="mt-1 block text-[11px] leading-none text-dropout-quiet tnum">{p.start ?? ''}</span>
+            <li
+              key={key}
+              data-tone={choice === 'bunk' ? 'detained' : choice === 'attended' ? 'safe' : 'none'}
+              className="card rise p-3.5 sm:p-4"
+              style={{ '--i': i } as React.CSSProperties}
+            >
+              <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 lg:grid-cols-[64px_minmax(0,1fr)_auto_auto] lg:gap-x-5">
+                <div>
+                  <span className="figure block text-[22px] leading-none">{p.period.replace(/\D/g, '')}</span>
+                  <span className="mono mt-1 block text-[11px] text-fg-3">{clockOf(p.start).split(' ')[0]}</span>
                 </div>
 
                 <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold leading-snug">{name}</p>
-                  <p className="mt-0.5 truncate text-[11px] leading-tight text-dropout-quiet">
+                  <p className="truncate text-[15px] font-semibold leading-snug">{name}</p>
+                  <p className="mt-0.5 truncate text-[12.5px] text-fg-2">
                     {typeLabel(p)}
-                    {p.room ? ` · ${p.room}` : ''} · <span className="tnum">{p.subjectCode}</span>
+                    {p.room ? ` · ${p.room}` : ''} · <span className="mono text-fg-3">{p.subjectCode}</span>
                   </p>
                 </div>
 
-                <div className="col-span-2 flex items-center justify-between gap-3 sm:col-span-1 sm:justify-end">
-                  <span className="text-[12px] text-dropout-quiet tnum sm:hidden">
-                    {summary?.pct != null ? `now ${fmtPct(summary.pct)}` : ''}
-                  </span>
-                  <span className="hidden text-[12px] text-dropout-quiet tnum lg:inline">
-                    {summary?.pct != null ? fmtPct(summary.pct) : ''}
-                  </span>
-                  <div
-                    className="inline-flex divide-x divide-seam overflow-hidden rounded-full ring-seam"
-                    role="group"
-                    aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
-                  >
-                    {CHOICES.map((c) => {
-                      const on = choice === c.value;
-                      return (
-                        <button
-                          key={c.value}
-                          type="button"
-                          aria-pressed={on}
-                          onClick={() =>
-                            setDecisions((d) => {
-                              const next = { ...d };
-                              if (on) delete next[key];
-                              else next[key] = c.value;
-                              return next;
-                            })
-                          }
-                          className={cn(
-                            'press h-9 whitespace-nowrap px-2.5 text-[12px] font-semibold sm:h-8',
-                            on ? c.on : 'text-dropout-text hover:text-mark',
-                          )}
-                        >
-                          {c.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                <span className="flex items-center justify-end gap-1.5 text-[13px] tnum">
+                  {summary?.pct != null ? (
+                    <>
+                      <span className={changed ? 'text-fg-3' : 'font-semibold text-fg'}>{summary.pct}%</span>
+                      {changed && (
+                        <>
+                          <ArrowRight size={12} className="text-fg-3" aria-hidden />
+                          <span data-tone={statusOf(after) ?? 'none'} className="font-semibold text-tone">
+                            {after}%
+                          </span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-fg-3">—</span>
+                  )}
+                </span>
+
+                <div
+                  className="col-span-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair lg:col-span-1 lg:inline-flex"
+                  role="group"
+                  aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
+                >
+                  <Choices choice={choice} onPick={(v) => setDecisions((d) => toggle(d, key, v))} />
                 </div>
               </div>
             </li>
@@ -254,11 +233,42 @@ function PlanTheDay() {
         })}
       </ol>
 
-      <p className="mt-4 text-[12px] text-dropout-quiet pretty">
+      <Footnote>
         A planner only: attended, bunked and not-conducted periods change the percentages above, never your recorded
         attendance. “Not conducted” counts for neither side.
-      </p>
+      </Footnote>
     </div>
   );
 }
 
+function toggle(d: Record<string, Decision>, key: string, v: Decision) {
+  const next = { ...d };
+  if (next[key] === v) delete next[key];
+  else next[key] = v;
+  return next;
+}
+
+function Choices({ choice, onPick }: { choice: Decision | undefined; onPick: (v: Decision) => void }) {
+  return (
+    <>
+      {CHOICES.map((c) => {
+        const on = choice === c.value;
+        return (
+          <button
+            key={c.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onPick(c.value)}
+            className={cn(
+              'press inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-semibold lg:h-9 lg:flex-none lg:px-3',
+              on ? c.on : 'text-fg-2 hover:bg-white/[0.06] hover:text-fg',
+            )}
+          >
+            <c.Icon size={13} weight="bold" aria-hidden className="hidden sm:block" />
+            {c.label}
+          </button>
+        );
+      })}
+    </>
+  );
+}

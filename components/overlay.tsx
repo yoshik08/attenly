@@ -6,14 +6,13 @@ import { cn } from './cn';
 
 /**
  * Mount → open → closing → unmounted, so exit transitions can play.
- * Closing is shorter than opening (150 vs 250 ms), as the motion tokens say.
  *
  * Mounted whenever `open` is true, and kept mounted (`lingering`) through the
  * exit. State only changes from timer/frame callbacks, never during render,
  * so React's dev double-rendering can't lose an update. Reopening while the
  * exit plays just reverses the CSS transition.
  */
-export function usePresence(open: boolean, closeMs = 150) {
+export function usePresence(open: boolean, closeMs = 160) {
   const [lingering, setLingering] = useState(open);
   const [entered, setEntered] = useState(false);
   useEffect(() => {
@@ -41,7 +40,7 @@ export function usePresence(open: boolean, closeMs = 150) {
   return { mounted, shown: open && entered, closing: !open && lingering };
 }
 
-/** Anchored panel that grows from its trigger. */
+/** Anchored glass panel that grows from its trigger (downward from a bar, upward from the sidebar's foot). */
 export function Popover({
   open,
   onClose,
@@ -49,6 +48,7 @@ export function Popover({
   children,
   className,
   label,
+  placement = 'down',
 }: {
   open: boolean;
   onClose: () => void;
@@ -56,6 +56,7 @@ export function Popover({
   children: ReactNode;
   className?: string;
   label: string;
+  placement?: 'down' | 'up';
 }) {
   const { mounted, shown, closing } = usePresence(open);
   const panel = useRef<HTMLDivElement>(null);
@@ -91,10 +92,13 @@ export function Popover({
       ref={panel}
       role="dialog"
       aria-label={label}
+      data-side={placement}
       className={cn(
-        // Phones: full width under the bar (a narrow trigger can sit anywhere in it).
-        // Desktop: anchored under its trigger.
-        't-dropdown fixed inset-x-3 top-[calc(var(--bar-h)+var(--safe-t)+6px)] z-50 rounded-2xl bg-sheet ring-seam shadow-[0_18px_40px_rgba(0,0,0,0.55)] lg:absolute lg:inset-x-auto lg:right-0 lg:top-[calc(100%+8px)] lg:w-[320px]',
+        't-dropdown z-50 overflow-hidden rounded-[22px] bg-[#161618]/95 shadow-[0_24px_64px_rgba(0,0,0,0.7)] hair backdrop-blur-2xl',
+        placement === 'down'
+          ? // Phones: full width under the bar (a narrow trigger can sit anywhere in it).
+            'fixed inset-x-3 top-[calc(var(--bar-h)+var(--safe-t)+6px)] lg:absolute lg:inset-x-auto lg:right-0 lg:top-[calc(100%+8px)] lg:w-[340px]'
+          : 'absolute bottom-[calc(100%+8px)] left-0 w-[320px]',
         shown && !closing && 'is-open',
         closing && 'is-closing',
         className,
@@ -107,21 +111,28 @@ export function Popover({
 
 /**
  * Modal sheet on a native <dialog>: focus is trapped, Escape closes it, the
- * page behind is inert. Bottom sheet on phones, centred panel on desktop.
+ * page behind is inert. Rises from the bottom edge on phones, a centred panel
+ * on desktop.
  */
 export function Sheet({
   open,
   onClose,
   title,
   children,
+  wide = false,
+  bare = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** A wider panel on desktop. */
+  wide?: boolean;
+  /** No visible heading row (the content brings its own); the title still names the dialog. */
+  bare?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { mounted, shown, closing } = usePresence(open);
+  const { mounted, shown, closing } = usePresence(open, 230);
 
   useEffect(() => {
     const d = ref.current;
@@ -154,29 +165,31 @@ export function Sheet({
     <dialog
       ref={ref}
       aria-label={title}
-      className="m-0 h-full max-h-none w-full max-w-none bg-transparent p-0 backdrop:bg-transparent"
+      className="m-0 h-full max-h-none w-full max-w-none bg-transparent p-0 text-fg backdrop:bg-transparent"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className={cn('scrim fixed inset-0', shown && !closing && 'is-open')} aria-hidden onClick={onClose} />
-      <div className="pointer-events-none fixed inset-0 flex items-end justify-center lg:items-center">
+      <div className="pointer-events-none fixed inset-0 flex items-end justify-center lg:items-center lg:p-6">
         <div
           className={cn(
-            't-modal pointer-events-auto relative max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-sheet p-5 pb-[calc(20px+var(--safe-b))] ring-seam lg:max-w-[460px] lg:rounded-3xl lg:p-7',
+            't-modal pointer-events-auto relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[30px] bg-sheet px-5 pb-[calc(22px+var(--safe-b))] pt-2.5 shadow-[0_-12px_60px_rgba(0,0,0,0.6)] hair lg:rounded-[28px] lg:px-7 lg:pb-7 lg:pt-6',
+            wide ? 'lg:max-w-[560px]' : 'lg:max-w-[460px]',
             shown && !closing && 'is-open',
             closing && 'is-closing',
           )}
         >
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <h2 className="title-s text-[20px]">{title}</h2>
+          <div className="mx-auto mb-3 grabber lg:hidden" aria-hidden />
+          <div className={cn('flex items-start justify-between gap-4', bare ? 'absolute right-3 top-3 z-10 lg:right-4 lg:top-4' : 'mb-5')}>
+            {!bare && <h2 className="h2 text-[21px]">{title}</h2>}
             <button
               type="button"
               onClick={onClose}
-              className="press -mr-2 -mt-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-dropout-text hover:text-mark"
+              className={cn('icon-btn press shrink-0', !bare && '-mr-1')}
               aria-label="Close"
             >
-              <X size={20} />
+              <X size={17} weight="bold" />
             </button>
           </div>
           {children}

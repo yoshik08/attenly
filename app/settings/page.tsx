@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowsClockwise, CaretDown, Minus, Plus, SignOut, Trash } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, IdentificationCard, Minus, Plus, SignOut, Trash } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { Sheet } from '@/components/overlay';
 import { LinkForm } from '@/components/link-form';
 import { BootScreen } from '@/components/states';
 import { SignIn } from '@/components/gate';
+import { PageHeader } from '@/components/page';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_TARGET, DEFAULT_WEIGHTS, TARGETS, type ComponentKey } from '@/lib/math';
 import { ago, useNow } from '@/lib/time';
@@ -23,10 +24,10 @@ export default function SettingsPage() {
 
 function Section({ id, title, children, note }: { id?: string; title: string; note?: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="seam-b scroll-mt-24 py-8">
-      <h2 className="title-s text-[19px]">{title}</h2>
-      {note && <p className="mt-1.5 max-w-[60ch] text-[14px] text-dropout-text pretty">{note}</p>}
-      <div className="mt-5">{children}</div>
+    <section id={id} className="scroll-mt-24 pt-10">
+      <h2 className="h2 text-[18px]">{title}</h2>
+      {note && <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-fg-2 pretty">{note}</p>}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -87,7 +88,7 @@ function Select({
             </option>
           ))}
         </select>
-        <CaretDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-dropout-text" aria-hidden />
+        <CaretDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-2" aria-hidden />
       </div>
     </div>
   );
@@ -127,6 +128,7 @@ function SemesterSection() {
       title="Semester"
       note="Attenly shows the newest semester you have courses in on the ERP. Pick one yourself to look back at an earlier semester."
     >
+      <div className="card p-4 sm:p-5">
       <Segmented
         label="Semester choice"
         value={mode}
@@ -140,11 +142,11 @@ function SemesterSection() {
         ]}
       />
       {mode === 'auto' ? (
-        <p className="mt-4 text-[14px] text-dropout-text" aria-live="polite">
+        <p className="mt-4 text-[14px] text-fg-2" aria-live="polite">
           {pending ? 'Finding your newest semester…' : showing ? `Showing ${showing}.` : 'Sync once to find your semester.'}
         </p>
       ) : !options ? (
-        <p className="mt-4 text-[14px] text-dropout-text">Sync once to load the ERP’s list of semesters.</p>
+        <p className="mt-4 text-[14px] text-fg-2">Sync once to load the ERP’s list of semesters.</p>
       ) : (
         <div className="mt-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -153,7 +155,7 @@ function SemesterSection() {
           </div>
           <button
             type="button"
-            className="btn btn-mark press mt-4"
+            className="btn btn-primary press mt-4"
             disabled={pending || !year || !sem || Boolean(sameAsChosen && !error)}
             onClick={() => void apply({ academicyear: year, semesterid: sem })}
           >
@@ -163,10 +165,11 @@ function SemesterSection() {
         </div>
       )}
       {error && (
-        <p role="alert" className="mt-3 text-[14px] text-red">
+        <p role="alert" className="mt-3 text-[14px] text-det">
           {error}
         </p>
       )}
+      </div>
     </Section>
   );
 }
@@ -216,7 +219,7 @@ function NumberField({
           if (!valid) setText(String(value));
         }}
       />
-      {hint && <p className="mt-1.5 text-[12px] text-dropout-quiet">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[12px] text-fg-3">{hint}</p>}
     </div>
   );
 }
@@ -242,25 +245,28 @@ function Settings() {
   };
 
   return (
-    <div className="page-in mx-auto max-w-[720px] py-6 lg:py-10">
-      <h1 className="title-l">Settings</h1>
+    <div className="page-in max-w-[780px]">
+      <PageHeader title="Settings" />
 
       <Section id="accounts" title="ERP accounts" note="Each linked account syncs on its own. The primary one opens first.">
         {accounts.length === 0 ? (
-          <p className="text-[14px] text-dropout-text">No ERP account linked yet. Link one on the Attendance tab.</p>
+          <p className="text-[14px] text-fg-2">No ERP account linked yet. Link one on the Attendance tab.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {accounts.map((a) => (
-              <li key={a.universityId} className="rounded-2xl p-4 ring-seam">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[15px] font-semibold">
-                      {a.label ?? <span className="tnum">{a.universityId}</span>}
-                      {a.primary && <span className="ml-2 rounded-full bg-[#121826] px-2 py-0.5 align-middle text-[11px] font-medium text-dropout-text">primary</span>}
-                      {a.universityId === active && <span className="ml-2 rounded-full bg-[#0d1a14] px-2 py-0.5 align-middle text-[11px] font-medium text-cruise">showing</span>}
+              <li key={a.universityId} className="card p-4 sm:p-5">
+                <div className="flex items-start gap-3.5">
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-raised hair">
+                    <IdentificationCard size={22} className="text-fg-2" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2 text-[16px] font-semibold">
+                      {a.label ?? <span className="mono">{a.universityId}</span>}
+                      {a.primary && <span data-tone="none" className="chip !min-h-[22px] !text-[11px]">primary</span>}
+                      {a.universityId === active && <span data-tone="safe" className="chip !min-h-[22px] !text-[11px]">showing</span>}
                     </p>
-                    {a.label && <p className="text-[13px] text-dropout-quiet tnum">{a.universityId}</p>}
-                    <p className={cn('mt-1 text-[13px]', a.needsPassword ? 'text-thin' : a.lastError ? 'text-[#ffb4ab]' : 'text-dropout-text')}>
+                    {a.label && <p className="mono text-[12.5px] text-fg-3">{a.universityId}</p>}
+                    <p className={cn('mt-1 text-[13px]', a.needsPassword ? 'text-cond' : a.lastError ? 'text-det' : 'text-fg-2')}>
                       {a.needsPassword
                         ? (a.lastError?.message ?? 'Syncing is paused until you enter the ERP password again.')
                         : a.lastError
@@ -271,17 +277,17 @@ function Settings() {
                     </p>
                   </div>
                 </div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 hair-t pt-4">
                   <div className="flex flex-wrap gap-2">
                     {a.universityId !== active && (
-                      <button type="button" className="btn btn-line btn-sm press" onClick={() => void store.switchAccount(a.universityId)}>
+                      <button type="button" className="btn btn-secondary btn-sm press" onClick={() => void store.switchAccount(a.universityId)}>
                         Show this account
                       </button>
                     )}
                     {!a.primary && (
                       <button
                         type="button"
-                        className="btn btn-line btn-sm press"
+                        className="btn btn-secondary btn-sm press"
                         disabled={busyId === a.universityId}
                         onClick={async () => {
                           setBusyId(a.universityId);
@@ -294,7 +300,7 @@ function Settings() {
                         Make primary
                       </button>
                     )}
-                    <button type="button" className={cn('btn btn-sm press', a.needsPassword ? 'btn-mark' : 'btn-line')} onClick={() => setRepair(a.universityId)}>
+                    <button type="button" className={cn('btn btn-sm press', a.needsPassword ? 'btn-primary' : 'btn-secondary')} onClick={() => setRepair(a.universityId)}>
                       {a.needsPassword ? 'Enter password' : 'Change password'}
                     </button>
                   </div>
@@ -316,11 +322,11 @@ function Settings() {
           </ul>
         )}
         {accError && (
-          <p role="alert" className="mt-3 text-[14px] text-red">
+          <p role="alert" className="mt-3 text-[14px] text-det">
             {accError}
           </p>
         )}
-        <button type="button" className="btn btn-line press mt-4" onClick={() => setAdding(true)}>
+        <button type="button" className="btn btn-secondary press mt-3" onClick={() => setAdding(true)}>
           <Plus size={16} aria-hidden /> Link another ERP account
         </button>
       </Section>
@@ -328,9 +334,11 @@ function Settings() {
       <SemesterSection key={activeAccountKey} />
 
       <Section
+        id="target"
         title="Target attendance"
         note="One figure for the whole app: the bands on every course, the rings, the verdicts, the calculator, Plan the day and Forecast. The college's bands themselves (85 safe, 75 condonation, 65 medical, below that detained) do not move."
       >
+        <div className="card p-4 sm:p-5">
         <Segmented
           label="Target attendance"
           value={String(target)}
@@ -341,80 +349,87 @@ function Settings() {
             hint: t === 75 ? 'Hold the condonation line' : 'Hold the safe line',
           }))}
         />
-        <p className="mt-3 text-[13px] text-dropout-text pretty">
+        <p className="mt-3 text-[13.5px] text-fg-2 pretty">
           {target === 85
             ? 'Budgets aim at 85%: a course under it can still be condoned down to 75%.'
             : 'Budgets aim at 75%: the condonation floor, with detention below it at 65%.'}
         </p>
         {target !== DEFAULT_TARGET && (
-          <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>
+          <button type="button" className="btn btn-secondary btn-sm press mt-4" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>
             Back to {DEFAULT_TARGET}%
           </button>
         )}
+        </div>
       </Section>
 
       <Section title="Class weights" note="How much each class type counts. The ERP uses lecture 100, tutorial 100, practical 50, skilling 25.">
+        <div className="card p-4 sm:p-5">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {COMPONENT_ORDER.map((k: ComponentKey) => (
             <NumberField key={k} id={`w-${k}`} label={COMPONENT_LABELS[k]} value={weights[k]} min={0} max={1000} onCommit={(v) => updateSettings({ weights: { ...weights, [k]: v } })} />
           ))}
         </div>
-        <button type="button" className="btn btn-line btn-sm press mt-4" onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}>
+        <button type="button" className="btn btn-secondary btn-sm press mt-4" onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}>
           Reset to {DEFAULT_WEIGHTS.L} / {DEFAULT_WEIGHTS.T} / {DEFAULT_WEIGHTS.P} / {DEFAULT_WEIGHTS.S}
         </button>
+        </div>
       </Section>
 
       <Section title="Late-joiner fix" note="Joined a course late? The ERP drops classes held before you registered. Tell Attenly how many, per course, so the figures match.">
-        <label className="flex cursor-pointer items-center justify-between gap-4">
-          <span className="text-[15px] font-medium">Leave out classes held before I registered</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={tcbr.enabled}
-            onClick={() => updateSettings({ tcbr: { ...tcbr, enabled: !tcbr.enabled } })}
-            className={cn('press relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors', tcbr.enabled ? 'bg-cruise' : 'bg-seam-strong')}
-          >
-            <span className={cn('absolute left-0 top-[3px] h-6 w-6 rounded-full bg-mark transition-transform duration-200 ease-out', tcbr.enabled ? 'translate-x-[23px]' : 'translate-x-[3px]')} />
-          </button>
-        </label>
-        {tcbr.enabled && (
-          <ul className="mt-4">
-            {(snapshot?.attendance ?? []).length === 0 && <li className="text-[14px] text-dropout-text">Courses appear here after your first sync.</li>}
-            {(snapshot?.attendance ?? []).map((s) => {
+        <div className="grouped">
+          <div className="flex items-center justify-between gap-4 px-4 py-3.5 sm:px-5">
+            <span id="tcbr-label" className="text-[15px] font-medium">Leave out classes held before I registered</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={tcbr.enabled}
+              aria-labelledby="tcbr-label"
+              onClick={() => updateSettings({ tcbr: { ...tcbr, enabled: !tcbr.enabled } })}
+              className="switch press"
+            />
+          </div>
+          {tcbr.enabled && (snapshot?.attendance ?? []).length === 0 && (
+            <p className="px-4 py-3.5 text-[14px] text-fg-2 sm:px-5">Courses appear here after your first sync.</p>
+          )}
+          {tcbr.enabled &&
+            (snapshot?.attendance ?? []).map((s) => {
               const v = tcbr.perCourse[s.code] ?? 0;
               return (
-                <li key={s.code} className="seam-b flex items-center justify-between gap-3 py-3">
+                <div key={s.code} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-medium">{s.title || s.code}</p>
-                    <p className="text-[12px] text-dropout-quiet tnum">{s.code}</p>
+                    <p className="mono text-[12px] text-fg-3">{s.code}</p>
                   </div>
                   <div className="flex items-center gap-1" role="group" aria-label={`Classes before registration for ${s.code}`}>
-                    <button type="button" className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam disabled:opacity-30" disabled={v <= 0} onClick={() => setTcbr(s.code, v - 1)} aria-label="One fewer">
-                      <Minus size={16} aria-hidden />
+                    <button type="button" className="icon-btn press !h-10 !w-10" disabled={v <= 0} onClick={() => setTcbr(s.code, v - 1)} aria-label="One fewer">
+                      <Minus size={15} weight="bold" aria-hidden />
                     </button>
                     <span className="figure w-8 text-center text-[20px]">{v}</span>
-                    <button type="button" className="press inline-flex h-11 w-11 items-center justify-center rounded-full ring-seam disabled:opacity-30" disabled={v >= 60} onClick={() => setTcbr(s.code, v + 1)} aria-label="One more">
-                      <Plus size={16} aria-hidden />
+                    <button type="button" className="icon-btn press !h-10 !w-10" disabled={v >= 60} onClick={() => setTcbr(s.code, v + 1)} aria-label="One more">
+                      <Plus size={15} weight="bold" aria-hidden />
                     </button>
                   </div>
-                </li>
+                </div>
               );
             })}
-          </ul>
-        )}
+        </div>
       </Section>
 
       <Section title="Google account">
-        <p className="text-[15px] font-medium">{user?.name ?? 'Signed in'}</p>
-        {user?.email && <p className="text-[14px] text-dropout-text">{user.email}</p>}
-        <button type="button" className="btn btn-danger btn-sm press mt-5" onClick={() => void store.signOut()}>
-          <SignOut size={15} aria-hidden /> Sign out of Google
-        </button>
+        <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold">{user?.name ?? 'Signed in'}</p>
+            {user?.email && <p className="truncate text-[13.5px] text-fg-2">{user.email}</p>}
+          </div>
+          <button type="button" className="btn btn-danger btn-sm press" onClick={() => void store.signOut()}>
+            <SignOut size={15} aria-hidden /> Sign out of Google
+          </button>
+        </div>
       </Section>
 
       <Section title="This device" note="Attenly keeps a copy of your last sync, your settings and saved calculator results in this browser so the app opens instantly.">
         {cleared ? (
-          <p className="text-[14px] text-cruise">Cleared. The next load pulls everything from the cloud again.</p>
+          <p className="text-[14px] text-safe">Cleared. The next load pulls everything from the cloud again.</p>
         ) : (
           <ConfirmButton
             label="Forget data on this device"
@@ -427,9 +442,9 @@ function Settings() {
         )}
       </Section>
 
-      <p className="pt-8 text-[12px] text-dropout-quiet">
+      <p className="pt-12 text-[12.5px] text-fg-3">
         Attenly is an unofficial student project, not affiliated with KL University.{' '}
-        <Link href="/privacy" className="underline hover:text-mark">
+        <Link href="/privacy" className="link">
           Privacy
         </Link>
       </p>

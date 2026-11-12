@@ -1,7 +1,7 @@
 /** Per-course summaries, the plate, next class, and change badges. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countsOf, deltaOf, minutesOf, nextClassOf, summarize, whenLabel } from '../lib/insights';
+import { agendaOf, clockOf, countsOf, deltaOf, minutesOf, nextClassOf, skipCall, summarize, whenLabel } from '../lib/insights';
 import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
@@ -67,11 +67,11 @@ test('next class: later today, otherwise the next day it meets', () => {
   const n1 = nextClassOf('A', tt, tueMorning)!;
   assert.equal(n1.inDays, 0);
   assert.equal(n1.period.room, 'Lab-4');
-  assert.equal(whenLabel(n1), 'today at 1:40');
+  assert.equal(whenLabel(n1), 'today at 1:40 pm');
   const tueEvening = new Date(2026, 10, 3, 18, 0);
   const n2 = nextClassOf('A', tt, tueEvening)!;
   assert.equal(n2.day, 'Thu');
-  assert.equal(whenLabel(n2), 'on Thu at 09:50');
+  assert.equal(whenLabel(n2), 'on Thu at 9:50 am');
   assert.equal(nextClassOf('Z', tt, tueMorning), null);
 });
 
@@ -117,4 +117,43 @@ test('automatic term: newest year first (ERP ids, any order), even before odd', 
   assert.deepEqual(termFromIds({ academicyear: '29', semesterid: '1' }, options), { academicyear: '29', semesterid: '1', semester: 'Odd Sem', yearLabel: '2025-2026' });
   assert.equal(termText({ academicyear: '30', semester: 'Odd Sem' }), 'Odd Sem 30');
   assert.equal(termText({ academicyear: '30', semester: 'Even Sem', yearLabel: '2026-2027' }), 'Even Sem 2026-2027');
+});
+
+test('clock: KLU afternoons read as pm, mornings as am', () => {
+  assert.equal(clockOf('09:00'), '9:00 am');
+  assert.equal(clockOf('12:40'), '12:40 pm');
+  assert.equal(clockOf('1:40'), '1:40 pm');
+  assert.equal(clockOf(''), '');
+  assert.equal(clockOf('later'), 'later');
+});
+
+test('up next: the rest of today, else the next day with classes', () => {
+  const tt: TimetableDay[] = [
+    { day: 'Tue', periods: [{ period: 'P1', start: '09:00', end: '09:50', subjectCode: 'A', subjectTitle: '', room: '', faculty: '', type: 'L' }, { period: 'P5', start: '1:40', end: '2:30', subjectCode: 'B', subjectTitle: '', room: '', faculty: '', type: 'P' }] },
+    { day: 'Thu', periods: [{ period: 'P2', start: '09:50', end: '10:40', subjectCode: 'A', subjectTitle: '', room: '', faculty: '', type: 'T' }] },
+  ];
+  const tueMorning = agendaOf(tt, new Date(2026, 10, 3, 10, 0))!;
+  assert.equal(tueMorning.inDays, 0);
+  assert.deepEqual(tueMorning.periods.map((p) => p.subjectCode), ['B']);
+  const tueEvening = agendaOf(tt, new Date(2026, 10, 3, 18, 0))!;
+  assert.equal(tueEvening.day, 'Thu');
+  assert.equal(tueEvening.inDays, 2);
+  assert.equal(tueEvening.date.getDate(), 5);
+  assert.equal(agendaOf([], new Date()), null);
+});
+
+test('skip call: one missed class against the target, same rounding as the cards', () => {
+  // 36/38 lectures, 20/22 practicals: well above 85, a lecture can go.
+  const safe = skipCall(course('A', 'Databases', { L: [36, 38], P: [20, 22] }), settings, 'L');
+  assert.equal(safe.skippable, true);
+  assert.ok(safe.after! >= 85 && safe.after! <= safe.now!);
+  // 34/40: exactly on the line, so any skip drops below it.
+  const edge = skipCall(course('B', 'Algorithms', { L: [34, 40] }), settings, 'L');
+  assert.equal(edge.now, 85);
+  assert.equal(edge.skippable, false);
+  assert.equal(edge.needed, null);
+  // Under the target: never skippable, and says how many in a row reach it.
+  const under = skipCall(course('C', 'Systems', { L: [29, 38], T: [9, 11] }), settings, 'L');
+  assert.equal(under.skippable, false);
+  assert.ok(Number.isFinite(under.needed!) && under.needed! > 0);
 });

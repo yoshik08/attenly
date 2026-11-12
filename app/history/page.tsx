@@ -1,19 +1,20 @@
 ﻿'use client';
 
 import { useMemo, useState } from 'react';
+import { ClockCounterClockwise } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
-import { MonthCalendar, dayCellClass, dayKey, dayToneClass, MONTHS } from '@/components/month-calendar';
+import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
+import { MonthCalendar, dayCellClass, dayKey, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey } from '@/lib/math';
-import { sortPeriods, WEEK } from '@/lib/insights';
+import { clockOf, sortPeriods, WEEK } from '@/lib/insights';
 import type { ClassRecord } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
 
 type DayTone = 'all' | 'some' | 'none' | 'empty';
-
-const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+type RowState = 'present' | 'absent' | 'not-taken';
 
 function toneOf(records: ClassRecord[] | undefined): DayTone {
   if (!records || records.length === 0) return 'empty';
@@ -22,6 +23,19 @@ function toneOf(records: ClassRecord[] | undefined): DayTone {
   if (present === 0) return 'none';
   return 'some';
 }
+
+const CELL_TONE: Record<DayTone, string> = {
+  all: 'bg-safe/12 text-fg hover:bg-safe/18',
+  some: 'bg-cond/12 text-fg hover:bg-cond/18',
+  none: 'bg-det/14 text-fg hover:bg-det/20',
+  empty: 'text-fg-3/60',
+};
+
+const STATE: Record<RowState, { label: string; tone: string }> = {
+  present: { label: 'Attended', tone: 'safe' },
+  absent: { label: 'Absent', tone: 'detained' },
+  'not-taken': { label: 'Not taken', tone: 'none' },
+};
 
 export default function HistoryPage() {
   return (
@@ -50,7 +64,7 @@ function History() {
   }, [classes]);
 
   const dates = useMemo(() => [...byDate.keys()].sort(), [byDate]);
-  const latest = dates[dates.length - 1] ?? keyOf(today);
+  const latest = dates[dates.length - 1] ?? dayKey(today);
   const [month, setMonth] = useState(() => {
     // Open on the newest month that has records: that is the one being asked about.
     const base = dates.length > 0 ? new Date(`${dates[dates.length - 1]}T00:00:00`) : new Date();
@@ -58,34 +72,32 @@ function History() {
   });
   const [picked, setPicked] = useState<string | null>(null);
   const pickedDate = picked ?? (byDate.has(dayKey(today)) ? dayKey(today) : latest);
-
   const firstClassDate = dates[0] ?? '';
 
   /** The period rows of one day: what the register says, plus timetable slots it never saw. */
   const dayRows = useMemo(() => {
     const records = byDate.get(pickedDate) ?? [];
-    const rows: { key: string; period: string; time: string; code: string; title: string; component: string; state: 'present' | 'absent' | 'not-taken' }[] = [];
+    const date = new Date(`${pickedDate}T00:00:00`);
+    const slots = Number.isNaN(date.getTime()) ? [] : sortPeriods(timetable.find((t) => t.day === WEEK[date.getDay()])?.periods ?? []);
+    const startOf = (period: string) => slots.find((p) => p.period.replace(/\D/g, '') === period)?.start ?? '';
+    const rows: { key: string; period: string; time: string; code: string; title: string; component: string; state: RowState }[] = [];
     for (const r of records) {
-      const subj = byCode.get(r.code);
       rows.push({
         key: `r-${r.code}-${r.component}-${r.period}`,
         period: r.period,
-        time: '',
+        time: startOf(r.period),
         code: r.code,
-        title: subj?.title ?? r.code,
+        title: byCode.get(r.code)?.title ?? r.code,
         component: r.component,
         state: r.present ? 'present' : 'absent',
       });
     }
     // A period the timetable had that the register never recorded did not happen.
-    const date = new Date(`${pickedDate}T00:00:00`);
     const inTerm = firstClassDate && pickedDate >= firstClassDate && date <= today;
-    if (inTerm && !Number.isNaN(date.getTime())) {
-      const weekday = WEEK[date.getDay()];
-      for (const p of sortPeriods(timetable.find((t) => t.day === weekday)?.periods ?? [])) {
+    if (inTerm) {
+      for (const p of slots) {
         const period = p.period.replace(/\D/g, '');
-        const already = rows.some((r) => r.code === p.subjectCode && r.period === period);
-        if (already) continue;
+        if (rows.some((r) => r.code === p.subjectCode && r.period === period)) continue;
         rows.push({
           key: `t-${p.period}-${p.subjectCode}`,
           period,
@@ -102,54 +114,55 @@ function History() {
 
   const counts = dayRows.reduce(
     (n, r) => ({ ...n, [r.state]: n[r.state] + 1 }),
-    { present: 0, absent: 0, 'not-taken': 0 } as Record<'present' | 'absent' | 'not-taken', number>,
+    { present: 0, absent: 0, 'not-taken': 0 } as Record<RowState, number>,
   );
+
+  // The shown month in two numbers.
+  const monthTotals = useMemo(() => {
+    const prefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+    let present = 0;
+    let absent = 0;
+    for (const c of classes) {
+      if (!c.date.startsWith(prefix)) continue;
+      if (c.present) present++;
+      else absent++;
+    }
+    return { present, absent };
+  }, [classes, month]);
 
   if (classes.length === 0) {
     return (
-      <section className="page-in py-8">
-        <h1 className="title-l">History</h1>
-        <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{termText(snapshot?.term)}</p>
-        <p className="mt-8 text-[15px] font-semibold">No day-by-day records yet.</p>
-        <p className="mt-1 max-w-[58ch] text-[13px] text-dropout-text pretty">
-          History is read from each course&rsquo;s attendance register in the ERP. Those pages are fetched on a
-          background sync (about every five minutes) because there is one per course; the manual sync button skips
-          them to stay quick. It fills in on its own.
-        </p>
+      <section className="page-in">
+        <PageHeader title="History" sub={<TermLine term={termText(snapshot?.term)} />} />
+        <Empty icon={ClockCounterClockwise} title="No day-by-day records yet.">
+          History is read from each course&rsquo;s attendance register in the ERP. Those pages are fetched on a background
+          sync (about every five minutes) because there is one per course; the manual sync button skips them to stay quick.
+          It fills in on its own.
+        </Empty>
       </section>
     );
   }
 
-
-  const chip: Record<'present' | 'absent' | 'not-taken', string> = {
-    present: 'bg-[#0d1a14] text-cruise',
-    absent: 'bg-[#2a1210] text-red',
-    'not-taken': 'bg-[#121826] text-dropout-text',
-  };
   const pickedDay = new Date(`${pickedDate}T00:00:00`);
 
   return (
-    <div className="page-in py-6 lg:py-10">
-      <div>
-        <h1 className="title-l">History</h1>
-        <p className="mt-1.5 text-[13px] text-dropout-quiet tnum">{termText(snapshot?.term)}</p>
-      </div>
+    <div className="page-in">
+      <PageHeader title="History" sub={<TermLine term={termText(snapshot?.term)} />} />
 
-      <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
-        <section aria-label="Attendance calendar">
+      <div className="mt-7 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-10">
+        <section aria-label="Attendance calendar" className="card self-start p-4 sm:p-6">
           <MonthCalendar
             month={month}
             onMonthChange={setMonth}
-            label={`Days of the attendance calendar`}
+            label="Days of the attendance calendar"
             renderDay={(date) => {
               const key = dayKey(date);
               const records = byDate.get(key);
               const t = toneOf(records);
               const isToday = key === dayKey(today);
               const selected = key === pickedDate;
-              const summary = records
-                ? `${records.filter((r) => r.present).length} of ${records.length} attended`
-                : 'no classes recorded';
+              const summary = records ? `${records.filter((r) => r.present).length} of ${records.length} attended` : 'no classes recorded';
+              const ordered = records ? [...records].sort((a, b) => Number(a.present) - Number(b.present) || (Number(a.period) || 99) - (Number(b.period) || 99)) : [];
               return (
                 <button
                   key={key}
@@ -160,74 +173,92 @@ function History() {
                   onClick={() => setPicked(key)}
                   className={cn(
                     dayCellClass,
-                    dayToneClass(t === 'all' ? 'green' : t === 'some' ? 'amber' : t === 'none' ? 'red' : 'plain'),
-                    t === 'empty' && 'opacity-50 ring-seam',
-                    isToday && 'ring-2 ring-inset ring-mark',
-                    selected && 'ring-2 ring-inset ring-focus',
+                    'gap-1.5',
+                    CELL_TONE[t],
+                    isToday && 'underline decoration-2 underline-offset-4',
+                    selected && '!shadow-[inset_0_0_0_2px_#f5f5f7]',
                   )}
                 >
                   {date.getDate()}
+                  {ordered.length > 0 && (
+                    <span className="flex max-w-full justify-center gap-[2.5px] px-1" aria-hidden>
+                      {ordered.slice(0, 6).map((r, i) => (
+                        <span key={i} className={cn('h-[4.5px] w-[4.5px] shrink-0 rounded-full', r.present ? 'bg-safe' : 'bg-det')} />
+                      ))}
+                    </span>
+                  )}
                 </button>
               );
             }}
           />
 
-          <ul className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-dropout-text" aria-label="Legend">
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded-[4px] bg-[#0d1a14] ring-1 ring-inset ring-[#3ddc97]/40" aria-hidden /> went to all
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded-[4px] bg-[#1a1508] ring-1 ring-inset ring-[#f5b544]/40" aria-hidden /> missed some
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded-[4px] bg-[#2a1210] ring-1 ring-inset ring-[#ff6b5e]/40" aria-hidden /> missed all
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded-[4px] ring-1 ring-inset ring-seam-strong" aria-hidden /> nothing recorded
-            </li>
-          </ul>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-fg-2" aria-label="Legend">
+              <li className="inline-flex items-center gap-1.5">
+                <span className="h-[7px] w-[7px] rounded-full bg-safe" aria-hidden /> attended
+              </li>
+              <li className="inline-flex items-center gap-1.5">
+                <span className="h-[7px] w-[7px] rounded-full bg-det" aria-hidden /> missed
+              </li>
+              <li className="inline-flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded-[5px] bg-cond/25" aria-hidden /> missed some
+              </li>
+              <li className="inline-flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded-[5px] hair" aria-hidden /> nothing recorded
+              </li>
+            </ul>
+            <p className="text-[12.5px] text-fg-3 tnum">
+              {MONTHS[month.getMonth()]}: {monthTotals.present} attended · {monthTotals.absent} missed
+            </p>
+          </div>
         </section>
 
-        <section className="mt-8 lg:mt-0" aria-label={`Periods on ${pickedDate}`}>
-          <h2 className="title-s">
-            {pickedDay.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </h2>
-          <p className="mt-1 text-[13px] text-dropout-text tnum">
-            {counts.present} attended · {counts.absent} missed
-            {counts['not-taken'] > 0 ? ` · ${counts['not-taken']} not taken` : ''}
-          </p>
+        <section className="self-start" aria-label={`Periods on ${pickedDate}`}>
+          <h2 className="h2 text-[22px]">{pickedDay.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span data-tone="safe" className="chip tnum">
+              {counts.present} attended
+            </span>
+            <span data-tone={counts.absent > 0 ? 'detained' : 'none'} className="chip tnum">
+              {counts.absent} missed
+            </span>
+            {counts['not-taken'] > 0 && (
+              <span data-tone="none" className="chip tnum">
+                {counts['not-taken']} not taken
+              </span>
+            )}
+          </div>
           {dayRows.length === 0 ? (
-            <p className="mt-4 text-[14px] text-dropout-quiet">No classes were recorded on this day.</p>
+            <p className="mt-5 text-[14px] text-fg-3">No classes were recorded on this day.</p>
           ) : (
-            <ol className="mt-3">
-              {dayRows.map((r) => (
-                <li key={r.key} className="seam-b flex items-center justify-between gap-3 py-3">
-                  <span className="flex min-w-0 items-baseline gap-3">
-                    <span className="w-6 shrink-0 text-[12px] text-dropout-quiet tnum">{r.period || '—'}</span>
+            <ol className="card mt-4 px-4">
+              {dayRows.map((r, i) => (
+                <li key={r.key} data-tone={STATE[r.state].tone} className={cn('flex items-center justify-between gap-3 py-3.5', i > 0 && 'hair-t')}>
+                  <span className="flex min-w-0 items-center gap-3.5">
+                    <span className="figure w-6 shrink-0 text-center text-[17px] text-fg-2">{r.period || '—'}</span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-medium">{r.title}</span>
-                      <span className="block text-[12px] text-dropout-quiet tnum">
-                        {r.code}
+                      <span className="block truncate text-[14px] font-semibold">{r.title}</span>
+                      <span className="block truncate text-[12px] text-fg-3">
+                        <span className="mono">{r.code}</span>
                         {r.component ? ` · ${COMPONENT_LABELS[r.component as ComponentKey] ?? r.component}` : ''}
-                        {r.time ? ` · ${r.time}` : ''}
+                        {r.time ? ` · ${clockOf(r.time)}` : ''}
                       </span>
                     </span>
                   </span>
-                  <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold', chip[r.state])}>
-                    {r.state === 'present' ? 'Attended' : r.state === 'absent' ? 'Absent' : 'Not taken'}
+                  <span className="chip shrink-0">
+                    <span className="dot" aria-hidden />
+                    {STATE[r.state].label}
                   </span>
                 </li>
               ))}
             </ol>
           )}
-          <p className="mt-4 text-[12px] text-dropout-quiet pretty">
+          <Footnote className="mt-5">
             Read from the ERP&rsquo;s class registers. &ldquo;Not taken&rdquo; is a timetable period the register never
             recorded, so the class did not happen.
-          </p>
+          </Footnote>
         </section>
       </div>
     </div>
   );
 }
-
-

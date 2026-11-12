@@ -111,11 +111,14 @@ export function weightedSums(
   for (const k of COMPONENT_ORDER) {
     const c = subj.components[k] ?? { conducted: 0, attended: 0 };
     const w = weights[k] ?? 0;
-    const eff = c.conducted - tcbrOf(tcbr, k);
-    if (eff <= 0) continue; // TCBR'd out or never held: not applicable
+    const eff = Math.max(0, c.conducted - tcbrOf(tcbr, k));
     const attend = Math.max(0, plan?.[k].attend ?? 0);
     const skip = Math.max(0, plan?.[k].skip ?? 0);
-    attW += (c.attended + attend) * w;
+    // Nothing held yet (or all of it before registration) and nothing planned:
+    // the component doesn't count. Planned classes of a type that hasn't started
+    // yet do count, so a course's first practicals move the projection.
+    if (eff <= 0 && attend + skip <= 0) continue;
+    attW += ((eff > 0 ? c.attended : 0) + attend) * w;
     condW += (eff + attend + skip) * w;
   }
   return { attW, condW };
