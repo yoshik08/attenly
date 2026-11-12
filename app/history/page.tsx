@@ -8,7 +8,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { MonthCalendar, dayCellClass, dayKey, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey } from '@/lib/math';
-import { clockOf, sortPeriods, WEEK } from '@/lib/insights';
+import { clockOf, courseTitle, sortPeriods, WEEK } from '@/lib/insights';
 import type { ClassRecord } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
@@ -51,7 +51,10 @@ function History() {
   const today = useMemo(() => new Date(now), [now]);
   const classes = useMemo(() => snapshot?.classes ?? [], [snapshot]);
   const timetable = useMemo(() => snapshot?.timetable ?? [], [snapshot]);
-  const byCode = useMemo(() => new Map((snapshot?.attendance ?? []).map((s) => [s.code, s])), [snapshot]);
+  const byCode = useMemo(
+    () => new Map((snapshot?.attendance ?? []).map((s) => [s.code, { ...s, title: courseTitle(s.title, s.code) }])),
+    [snapshot],
+  );
 
   const byDate = useMemo(() => {
     const m = new Map<string, ClassRecord[]>();
@@ -103,7 +106,7 @@ function History() {
           period,
           time: p.start ?? '',
           code: p.subjectCode,
-          title: byCode.get(p.subjectCode)?.title ?? p.subjectTitle ?? p.subjectCode,
+          title: byCode.get(p.subjectCode)?.title ?? courseTitle(p.subjectTitle, p.subjectCode),
           component: p.type ?? '',
           state: 'not-taken',
         });

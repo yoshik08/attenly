@@ -14,6 +14,7 @@ import { COMPONENT_LABELS, COMPONENT_ORDER, DEFAULT_TARGET, DEFAULT_WEIGHTS, TAR
 import { ago, useNow } from '@/lib/time';
 import { Segmented } from '@/components/segmented';
 import { termText, yearsNewestFirst } from '@/lib/terms';
+import { courseTitle } from '@/lib/insights';
 
 export default function SettingsPage() {
   const { phase } = useStore();
@@ -397,7 +398,7 @@ function Settings() {
               return (
                 <div key={s.code} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
                   <div className="min-w-0">
-                    <p className="truncate text-[14px] font-medium">{s.title || s.code}</p>
+                    <p className="truncate text-[14px] font-medium">{courseTitle(s.title, s.code)}</p>
                     <p className="mono text-[12px] text-fg-3">{s.code}</p>
                   </div>
                   <div className="flex items-center gap-1" role="group" aria-label={`Classes before registration for ${s.code}`}>

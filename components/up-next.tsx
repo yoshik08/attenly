@@ -7,7 +7,7 @@ import { cn } from './cn';
 import { FULL_DAY } from './day-strip';
 import type { Settings } from './store';
 import { COMPONENT_LABELS, countOf, statusOf, type ComponentKey, type Status, type SubjectAttendance } from '@/lib/math';
-import { agendaOf, clockOf, minutesOf, skipCall, type CourseSummary, type SkipCall } from '@/lib/insights';
+import { agendaOf, clockOf, courseTitle, minutesOf, skipCall, type CourseSummary, type SkipCall } from '@/lib/insights';
 import type { TimetableDay, TimetablePeriod } from '@/lib/erp/parsers';
 
 const dateFmt = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -58,7 +58,7 @@ function callFor(call: SkipCall | null, k: ComponentKey, target: number): Call {
 function untilLabel(p: TimetablePeriod, inDays: number, day: string, now: Date): string {
   if (inDays === 0) {
     const start = minutesOf(p.start);
-    if (start == null) return 'Later today';
+    if (start == null) return 'Today';
     const mins = start - (now.getHours() * 60 + now.getMinutes());
     if (mins < 60) return `Starts in ${mins} min`;
     const h = Math.floor(mins / 60);
@@ -103,7 +103,7 @@ export function UpNext({
     const k: ComponentKey = p.type ?? 'L';
     const subj = subjects.find((s) => s.code === p.subjectCode);
     const call = callFor(subj ? skipCall(subj, settings, k) : null, k, settings.target);
-    return { p, k, call, title: summaries.get(p.subjectCode)?.title ?? (p.subjectTitle || p.subjectCode) };
+    return { p, k, call, title: summaries.get(p.subjectCode)?.title ?? courseTitle(p.subjectTitle, p.subjectCode) };
   });
   const [first, ...rest] = rows;
   const dayWord = agenda.inDays === 0 ? 'Today' : agenda.inDays === 1 ? 'Tomorrow' : FULL_DAY[agenda.day];
