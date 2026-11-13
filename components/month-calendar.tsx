@@ -25,7 +25,7 @@ export const dayKey = (d: Date) =>
 
 /** The one day-cell shape: a rounded square that fills its column. Callers add the tone. */
 export const dayCellClass =
-  'press relative flex aspect-square w-full flex-col items-center justify-center rounded-[14px] text-[14px] font-semibold tnum disabled:cursor-not-allowed';
+  'press lg-press relative flex aspect-square w-full flex-col items-center justify-center rounded-[14px] text-[14px] font-semibold tnum disabled:cursor-not-allowed';
 
 /**
  * The month grid History, Forecast and the last-instruction-day picker share:
@@ -56,7 +56,7 @@ export function MonthCalendar({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            className="icon-btn press"
+            className="icon-btn press lg lg-btn"
             onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
             aria-label="Previous month"
           >
@@ -64,7 +64,7 @@ export function MonthCalendar({
           </button>
           <button
             type="button"
-            className="icon-btn press"
+            className="icon-btn press lg lg-btn"
             onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
             aria-label="Next month"
           >

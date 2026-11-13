@@ -44,7 +44,7 @@ function ConfirmButton({ label, confirm, onConfirm, busy }: { label: string; con
   return (
     <button
       type="button"
-      className="btn btn-danger btn-sm press"
+      className="btn btn-danger btn-sm press lg lg-btn"
       data-armed={armed}
       disabled={busy}
       onClick={() => (armed ? (setArmed(false), onConfirm()) : setArmed(true))}
@@ -78,7 +78,7 @@ function Select({
       <div className="relative">
         <select
           id={id}
-          className="field appearance-none pr-10"
+          className="field appearance-none pr-10 lg lg-input"
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
@@ -129,7 +129,7 @@ function SemesterSection() {
       title="Semester"
       note="Attenly shows the newest semester you have courses in on the ERP. Pick one yourself to look back at an earlier semester."
     >
-      <div className="card p-4 sm:p-5">
+      <div className="card p-4 sm:p-5 lg lg-card lg-frost">
       <Segmented
         label="Semester choice"
         value={mode}
@@ -156,7 +156,7 @@ function SemesterSection() {
           </div>
           <button
             type="button"
-            className="btn btn-primary press mt-4"
+            className="btn btn-primary press mt-4 lg lg-btn"
             disabled={pending || !year || !sem || Boolean(sameAsChosen && !error)}
             onClick={() => void apply({ academicyear: year, semesterid: sem })}
           >
@@ -207,7 +207,7 @@ function NumberField({
       </label>
       <input
         id={id}
-        className="field tnum"
+        className="field tnum lg lg-input"
         inputMode="decimal"
         value={text}
         aria-invalid={valid ? undefined : true}
@@ -255,7 +255,7 @@ function Settings() {
         ) : (
           <ul className="flex flex-col gap-3">
             {accounts.map((a) => (
-              <li key={a.universityId} className="card p-4 sm:p-5">
+              <li key={a.universityId} className="card p-4 sm:p-5 lg lg-card lg-frost">
                 <div className="flex items-start gap-3.5">
                   <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-raised hair">
                     <IdentificationCard size={22} className="text-fg-2" aria-hidden />
@@ -263,8 +263,8 @@ function Settings() {
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-[16px] font-semibold">
                       {a.label ?? <span className="mono">{a.universityId}</span>}
-                      {a.primary && <span data-tone="none" className="chip !min-h-[22px] !text-[11px]">primary</span>}
-                      {a.universityId === active && <span data-tone="safe" className="chip !min-h-[22px] !text-[11px]">showing</span>}
+                      {a.primary && <span data-tone="none" className="chip !min-h-[22px] !text-[11px] lg lg-pill">primary</span>}
+                      {a.universityId === active && <span data-tone="safe" className="chip !min-h-[22px] !text-[11px] lg lg-pill">showing</span>}
                     </p>
                     {a.label && <p className="mono text-[12.5px] text-fg-3">{a.universityId}</p>}
                     <p className={cn('mt-1 text-[13px]', a.needsPassword ? 'text-cond' : a.lastError ? 'text-det' : 'text-fg-2')}>
@@ -281,14 +281,14 @@ function Settings() {
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 hair-t pt-4">
                   <div className="flex flex-wrap gap-2">
                     {a.universityId !== active && (
-                      <button type="button" className="btn btn-secondary btn-sm press" onClick={() => void store.switchAccount(a.universityId)}>
+                      <button type="button" className="btn btn-secondary btn-sm press lg lg-btn" onClick={() => void store.switchAccount(a.universityId)}>
                         Show this account
                       </button>
                     )}
                     {!a.primary && (
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm press"
+                        className="btn btn-secondary btn-sm press lg lg-btn"
                         disabled={busyId === a.universityId}
                         onClick={async () => {
                           setBusyId(a.universityId);
@@ -301,7 +301,7 @@ function Settings() {
                         Make primary
                       </button>
                     )}
-                    <button type="button" className={cn('btn btn-sm press', a.needsPassword ? 'btn-primary' : 'btn-secondary')} onClick={() => setRepair(a.universityId)}>
+                    <button type="button" className={cn('btn btn-sm press lg lg-btn', a.needsPassword ? 'btn-primary' : 'btn-secondary')} onClick={() => setRepair(a.universityId)}>
                       {a.needsPassword ? 'Enter password' : 'Change password'}
                     </button>
                   </div>
@@ -327,7 +327,7 @@ function Settings() {
             {accError}
           </p>
         )}
-        <button type="button" className="btn btn-secondary press mt-3" onClick={() => setAdding(true)}>
+        <button type="button" className="btn btn-secondary press mt-3 lg lg-btn" onClick={() => setAdding(true)}>
           <Plus size={16} aria-hidden /> Link another ERP account
         </button>
       </Section>
@@ -339,7 +339,7 @@ function Settings() {
         title="Target attendance"
         note="One figure for the whole app: the bands on every course, the rings, the verdicts, the calculator, Plan the day and Forecast. The college's bands themselves (85 safe, 75 condonation, 65 medical, below that detained) do not move."
       >
-        <div className="card p-4 sm:p-5">
+        <div className="card p-4 sm:p-5 lg lg-card lg-frost">
         <Segmented
           label="Target attendance"
           value={String(target)}
@@ -356,7 +356,7 @@ function Settings() {
             : 'Budgets aim at 75%: the condonation floor, with detention below it at 65%.'}
         </p>
         {target !== DEFAULT_TARGET && (
-          <button type="button" className="btn btn-secondary btn-sm press mt-4" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>
+          <button type="button" className="btn btn-secondary btn-sm press mt-4 lg lg-btn" onClick={() => updateSettings({ target: DEFAULT_TARGET })}>
             Back to {DEFAULT_TARGET}%
           </button>
         )}
@@ -364,20 +364,20 @@ function Settings() {
       </Section>
 
       <Section title="Class weights" note="How much each class type counts. The ERP uses lecture 100, tutorial 100, practical 50, skilling 25.">
-        <div className="card p-4 sm:p-5">
+        <div className="card p-4 sm:p-5 lg lg-card lg-frost">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {COMPONENT_ORDER.map((k: ComponentKey) => (
             <NumberField key={k} id={`w-${k}`} label={COMPONENT_LABELS[k]} value={weights[k]} min={0} max={1000} onCommit={(v) => updateSettings({ weights: { ...weights, [k]: v } })} />
           ))}
         </div>
-        <button type="button" className="btn btn-secondary btn-sm press mt-4" onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}>
+        <button type="button" className="btn btn-secondary btn-sm press mt-4 lg lg-btn" onClick={() => updateSettings({ weights: DEFAULT_WEIGHTS })}>
           Reset to {DEFAULT_WEIGHTS.L} / {DEFAULT_WEIGHTS.T} / {DEFAULT_WEIGHTS.P} / {DEFAULT_WEIGHTS.S}
         </button>
         </div>
       </Section>
 
       <Section title="Late-joiner fix" note="Joined a course late? The ERP drops classes held before you registered. Tell Attenly how many, per course, so the figures match.">
-        <div className="grouped">
+        <div className="grouped lg lg-card lg-frost">
           <div className="flex items-center justify-between gap-4 px-4 py-3.5 sm:px-5">
             <span id="tcbr-label" className="text-[15px] font-medium">Leave out classes held before I registered</span>
             <button
@@ -402,11 +402,11 @@ function Settings() {
                     <p className="mono text-[12px] text-fg-3">{s.code}</p>
                   </div>
                   <div className="flex items-center gap-1" role="group" aria-label={`Classes before registration for ${s.code}`}>
-                    <button type="button" className="icon-btn press !h-10 !w-10" disabled={v <= 0} onClick={() => setTcbr(s.code, v - 1)} aria-label="One fewer">
+                    <button type="button" className="icon-btn press !h-10 !w-10 lg lg-btn" disabled={v <= 0} onClick={() => setTcbr(s.code, v - 1)} aria-label="One fewer">
                       <Minus size={15} weight="bold" aria-hidden />
                     </button>
                     <span className="figure w-8 text-center text-[20px]">{v}</span>
-                    <button type="button" className="icon-btn press !h-10 !w-10" disabled={v >= 60} onClick={() => setTcbr(s.code, v + 1)} aria-label="One more">
+                    <button type="button" className="icon-btn press !h-10 !w-10 lg lg-btn" disabled={v >= 60} onClick={() => setTcbr(s.code, v + 1)} aria-label="One more">
                       <Plus size={15} weight="bold" aria-hidden />
                     </button>
                   </div>
@@ -417,12 +417,12 @@ function Settings() {
       </Section>
 
       <Section title="Google account">
-        <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+        <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5 lg lg-card lg-frost">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-semibold">{user?.name ?? 'Signed in'}</p>
             {user?.email && <p className="truncate text-[13.5px] text-fg-2">{user.email}</p>}
           </div>
-          <button type="button" className="btn btn-danger btn-sm press" onClick={() => void store.signOut()}>
+          <button type="button" className="btn btn-danger btn-sm press lg lg-btn" onClick={() => void store.signOut()}>
             <SignOut size={15} aria-hidden /> Sign out of Google
           </button>
         </div>

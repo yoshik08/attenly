@@ -14,7 +14,7 @@ export function BootScreen() {
       <div className="skel mt-8 h-[220px] w-full rounded-[24px]" />
       <div className="mt-10 grid gap-3 md:grid-cols-2 lg:gap-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="card p-5">
+          <div key={i} className="card p-5 lg lg-card lg-frost">
             <div className="flex justify-between gap-4">
               <div className="flex-1">
                 <div className="skel h-3 w-24" />
@@ -39,7 +39,7 @@ export function LoadError({ message, onRetry }: { message: string | null; onRetr
         icon={CloudSlash}
         title={message ?? 'Attenly can’t reach its server right now.'}
         action={
-          <button type="button" className="btn btn-primary press" onClick={() => void onRetry()}>
+          <button type="button" className="btn btn-primary press lg lg-btn" onClick={() => void onRetry()}>
             Try again
           </button>
         }
@@ -74,7 +74,7 @@ export function DataGate({ title, children }: { title: string; children: ReactNo
           action={
             !sync.running &&
             !activeAccount?.needsPassword && (
-              <button type="button" className="btn btn-primary press" onClick={() => void forceSync()}>
+              <button type="button" className="btn btn-primary press lg lg-btn" onClick={() => void forceSync()}>
                 <ArrowsClockwise size={18} aria-hidden /> Sync now
               </button>
             )

@@ -50,7 +50,7 @@ function Cgpa() {
           icon={GraduationCap}
           title="No graded semesters on the ERP yet."
           action={
-            <button type="button" className="btn btn-secondary press" disabled={sync.running} onClick={() => void forceSync()}>
+            <button type="button" className="btn btn-secondary press lg lg-btn" disabled={sync.running} onClick={() => void forceSync()}>
               <ArrowsClockwise size={18} className={sync.running ? 'spin' : ''} aria-hidden />
               {sync.running ? 'Syncing…' : 'Check now'}
             </button>
@@ -68,7 +68,7 @@ function Cgpa() {
 
       <section
         data-tone="mark"
-        className="card glow mt-7 grid grid-cols-[minmax(0,1fr)] gap-8 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-end lg:gap-12"
+        className="card glow mt-7 grid grid-cols-[minmax(0,1fr)] gap-8 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-end lg:gap-12 lg lg-card"
         style={{ '--gs': '520px', '--gx': '-200px', '--gy': '-260px' } as React.CSSProperties}
         aria-label="CGPA and SGPA by semester"
       >
@@ -94,7 +94,7 @@ function Cgpa() {
                   type="button"
                   onClick={() => setPicked(t.key)}
                   aria-pressed={active}
-                  className="press group flex h-full min-w-0 max-w-[72px] flex-1 flex-col items-center justify-end gap-2"
+                  className="press group flex h-full min-w-0 max-w-[72px] flex-1 flex-col items-center justify-end gap-2 lg-press"
                 >
                   <span className="sr-only">
                     {t.semester} {t.academicYear}, SGPA
@@ -128,7 +128,7 @@ function Cgpa() {
                 SGPA <span className="font-semibold text-fg">{selected.sgpa != null ? selected.sgpa.toFixed(2) : '—'}</span> · {selected.credits} credits
               </p>
             </div>
-            <div className="card mt-4 px-4 sm:px-5">
+            <div className="card mt-4 px-4 sm:px-5 lg lg-card lg-frost">
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="text-[12px] text-fg-3">

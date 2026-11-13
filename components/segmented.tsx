@@ -76,7 +76,7 @@ export function Segmented<T extends string>({
       ref={bar}
       role="tablist"
       aria-label={label}
-      className={cn('t-tabs max-w-full', stretch && 'flex w-full', className)}
+      className={cn('t-tabs max-w-full lg lg-nav', stretch && 'flex w-full', className)}
       onKeyDown={onKey}
     >
       <span ref={pill} className="t-tabs-pill" aria-hidden />
@@ -92,7 +92,7 @@ export function Segmented<T extends string>({
             title={o.hint}
             aria-label={o.aria}
             onClick={() => onChange(o.value)}
-            className={cn('t-tab tnum', stretch && 'flex-1', size === 'sm' && '!h-[30px] !px-3 !text-[13px]')}
+            className={cn('t-tab tnum lg-press', stretch && 'flex-1', size === 'sm' && '!h-[30px] !px-3 !text-[13px]')}
           >
             {o.label}
           </button>

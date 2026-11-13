@@ -94,7 +94,7 @@ export function Popover({
       aria-label={label}
       data-side={placement}
       className={cn(
-        't-dropdown z-50 overflow-hidden rounded-[22px] bg-[#161618]/95 shadow-[0_24px_64px_rgba(0,0,0,0.7)] hair backdrop-blur-2xl',
+        't-dropdown z-50 overflow-hidden rounded-[22px] bg-[#161618]/95 shadow-[0_24px_64px_rgba(0,0,0,0.7)] hair backdrop-blur-2xl lg lg-card lg-frost',
         placement === 'down'
           ? // Phones: full width under the bar (a narrow trigger can sit anywhere in it).
             'fixed inset-x-3 top-[calc(var(--bar-h)+var(--safe-t)+6px)] lg:absolute lg:inset-x-auto lg:right-0 lg:top-[calc(100%+8px)] lg:w-[340px]'
@@ -174,7 +174,7 @@ export function Sheet({
       <div className="pointer-events-none fixed inset-0 flex items-end justify-center lg:items-center lg:p-6">
         <div
           className={cn(
-            't-modal pointer-events-auto relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[30px] bg-sheet px-5 pb-[calc(22px+var(--safe-b))] pt-2.5 shadow-[0_-12px_60px_rgba(0,0,0,0.6)] hair lg:rounded-[28px] lg:px-7 lg:pb-7 lg:pt-6',
+            't-modal pointer-events-auto relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[30px] bg-sheet px-5 pb-[calc(22px+var(--safe-b))] pt-2.5 shadow-[0_-12px_60px_rgba(0,0,0,0.6)] hair lg:rounded-[28px] lg:px-7 lg:pb-7 lg:pt-6 lg lg-card lg-frost',
             wide ? 'lg:max-w-[560px]' : 'lg:max-w-[460px]',
             shown && !closing && 'is-open',
             closing && 'is-closing',
@@ -186,7 +186,7 @@ export function Sheet({
             <button
               type="button"
               onClick={onClose}
-              className={cn('icon-btn press shrink-0', !bare && '-mr-1')}
+              className={cn('icon-btn press shrink-0 lg lg-btn', !bare && '-mr-1')}
               aria-label="Close"
             >
               <X size={17} weight="bold" />

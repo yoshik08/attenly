@@ -155,7 +155,7 @@ function Forecast() {
                 setPickError(null);
                 setPicking(true);
               }}
-              className="press inline-flex h-10 items-center gap-2 rounded-full bg-raised px-3.5 text-[13px] text-fg-2 hair hover:bg-raised-2"
+              className="press inline-flex h-10 items-center gap-2 rounded-full bg-raised px-3.5 text-[13px] text-fg-2 hair hover:bg-raised-2 lg lg-btn"
             >
               <CalendarBlank size={16} aria-hidden />
               <span>Last instruction day</span>
@@ -173,7 +173,7 @@ function Forecast() {
       />
 
       <div className="mt-7 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10">
-        <section aria-label="Days" className="card self-start p-4 sm:p-6">
+        <section aria-label="Days" className="card self-start p-4 sm:p-6 lg lg-card lg-frost">
           <MonthCalendar
             month={month}
             onMonthChange={setMonth}
@@ -223,13 +223,13 @@ function Forecast() {
             }}
           />
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <button type="button" className="btn btn-secondary btn-sm press" onClick={() => markAll('absent')}>
+            <button type="button" className="btn btn-secondary btn-sm press lg lg-btn" onClick={() => markAll('absent')}>
               Mark absent
             </button>
-            <button type="button" className="btn btn-secondary btn-sm press" onClick={() => markAll('holiday')}>
+            <button type="button" className="btn btn-secondary btn-sm press lg lg-btn" onClick={() => markAll('holiday')}>
               Mark holiday
             </button>
-            <button type="button" className="btn btn-ghost btn-sm press" onClick={() => setMarks({})}>
+            <button type="button" className="btn btn-ghost btn-sm press lg lg-btn" onClick={() => setMarks({})}>
               <ArrowCounterClockwise size={14} aria-hidden /> Reset
             </button>
           </div>
@@ -270,7 +270,7 @@ function Forecast() {
               const status = statusOf(after);
               const delta = before != null && after != null ? after - before : null;
               return (
-                <li key={s.code} data-tone={status ?? 'none'} className="card rise flex items-center gap-3 p-3.5 sm:p-4" style={{ '--i': i } as React.CSSProperties}>
+                <li key={s.code} data-tone={status ?? 'none'} className="card rise flex items-center gap-3 p-3.5 sm:p-4 lg lg-card lg-frost" style={{ '--i': i } as React.CSSProperties}>
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-[14px] font-semibold leading-snug">{summary?.title ?? s.code}</p>
                     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -342,10 +342,10 @@ function Forecast() {
           </p>
         )}
         <div className="mt-5 flex items-center justify-between gap-3 hair-t pt-4">
-          <button type="button" className="btn btn-ghost btn-sm press" onClick={() => void clearDay()}>
+          <button type="button" className="btn btn-ghost btn-sm press lg lg-btn" onClick={() => void clearDay()}>
             Use month end
           </button>
-          <button type="button" className="btn btn-secondary btn-sm press" onClick={() => setPicking(false)}>
+          <button type="button" className="btn btn-secondary btn-sm press lg lg-btn" onClick={() => setPicking(false)}>
             Close
           </button>
         </div>

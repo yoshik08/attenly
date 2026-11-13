@@ -123,7 +123,7 @@ function PlanTheDay() {
       <DayStrip className="mt-6" label="Day to plan" days={days} value={day} onChange={setPicked} now={date} />
 
       {/* Every course, at a glance: the strip answers the plan as it changes. */}
-      <div className="material sticky top-[calc(var(--bar-h)+var(--safe-t))] z-30 -mx-4 mt-5 px-4 py-3 sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-12 lg:px-12">
+      <div className="material sticky top-[calc(var(--bar-h)+var(--safe-t))] z-30 -mx-4 mt-5 px-4 py-3 sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-12 lg:px-12 lg lg-card lg-frost max-sm:rounded-none">
         <ul
           tabIndex={0}
           className="-mx-4 flex gap-2 overflow-x-auto rounded-[18px] px-4 no-bar sm:mx-0 sm:px-0 lg:flex-wrap"
@@ -166,7 +166,7 @@ function PlanTheDay() {
         <p className="flex items-center gap-3 text-[13px] text-fg-3 tnum">
           {decided} of {periods.length} planned
           {decided > 0 && (
-            <button type="button" className="btn btn-ghost btn-sm press !min-h-8 !px-3" onClick={resetDay}>
+            <button type="button" className="btn btn-ghost btn-sm press !min-h-8 !px-3 lg lg-btn" onClick={resetDay}>
               <ArrowCounterClockwise size={14} aria-hidden /> Reset the day
             </button>
           )}
@@ -185,7 +185,7 @@ function PlanTheDay() {
             <li
               key={key}
               data-tone={choice === 'bunk' ? 'detained' : choice === 'attended' ? 'safe' : 'none'}
-              className="card rise p-3.5 sm:p-4"
+              className="card rise p-3.5 sm:p-4 lg lg-card lg-frost"
               style={{ '--i': i } as React.CSSProperties}
             >
               <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 lg:grid-cols-[64px_minmax(0,1fr)_auto_auto] lg:gap-x-5">
@@ -221,7 +221,7 @@ function PlanTheDay() {
                 </span>
 
                 <div
-                  className="col-span-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair lg:col-span-1 lg:inline-flex"
+                  className="col-span-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair lg:col-span-1 lg:inline-flex lg lg-nav"
                   role="group"
                   aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
                 >
@@ -260,7 +260,7 @@ function Choices({ choice, onPick }: { choice: Decision | undefined; onPick: (v:
             aria-pressed={on}
             onClick={() => onPick(c.value)}
             className={cn(
-              'press inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-semibold lg:h-9 lg:flex-none lg:px-3',
+              'press inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-semibold lg:h-9 lg:flex-none lg:px-3 lg-press',
               on ? c.on : 'text-fg-2 hover:bg-white/[0.06] hover:text-fg',
             )}
           >

@@ -1,0 +1,149 @@
+/* Liquid Glass design system. Include once, site-wide.
+   Classes: .lg (base) + .lg-card | .lg-btn | .lg-nav | .lg-input | .lg-pill
+   Add .lg-press to any element for the iOS press animation (on by default for .lg-btn).
+   Add .lg-frost (or data-lg-refract="off") to keep an .lg element on the frosted fallback:
+   use it on lists, long or full-page panels, and anything tall.
+
+   The whole file sits in the components layer, so Tailwind utilities (and any unlayered
+   site CSS) always win: glass adds a material, never a position, colour or size.
+
+   Press uses the `scale` property, not `transform`, so it composes with transforms set
+   elsewhere (entrance animations, translate utilities) instead of fighting them. */
+
+@layer components {
+  :root {
+    --lg-radius: 28px;
+    --lg-radius-sm: 16px;
+    --lg-tint: rgba(255, 255, 255, 0.055);
+    --lg-blur: 2px; /* blur applied after refraction (Chromium) */
+    --lg-frost: 14px; /* blur used by the frosted fallback */
+    --lg-sat: 1.35;
+    --lg-bright: 0.92;
+    --lg-text: #f5f5f7;
+    --lg-edge: rgba(255, 255, 255, 0.13);
+    --lg-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --lg-press-scale: 1.07;
+    --lg-rim:
+      inset 0 0 0 1px var(--lg-edge),
+      inset 1px 1px 0 rgba(255, 255, 255, 0.22),
+      inset -1px -1px 0 rgba(255, 255, 255, 0.05);
+    --lg-shadow: var(--lg-rim), 0 10px 36px rgba(0, 0, 0, 0.22);
+  }
+
+  .lg {
+    position: relative;
+    color: var(--lg-text);
+    background: var(--lg-tint);
+    border-radius: var(--lg-radius);
+    /* Fallback (Safari, Firefox, iOS): frosted glass */
+    -webkit-backdrop-filter: blur(var(--lg-frost)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
+    backdrop-filter: blur(var(--lg-frost)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
+    box-shadow: var(--lg-shadow);
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+  }
+  /* Glass inside glass: the outer pane is a backdrop root, so an inner blur only
+     re-blurs the pane's own tint. Skip it (the runtime skips refraction there too). */
+  .lg .lg {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* A pane inside a pane (rows, tiles) takes a quieter rim and casts no shadow. */
+  .lg .lg-card {
+    --lg-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 1px 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  /* Specular highlight, follows the pointer while pressed. An element whose own
+     ::after is taken can carry a <span class="lg-hl"> child instead. */
+  .lg::after,
+  .lg-press::after,
+  .lg-hl {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle at var(--lg-x, 50%) var(--lg-y, 0%), rgba(255, 255, 255, 0.45), transparent 62%);
+    transition: opacity 0.3s ease;
+  }
+  .lg-press {
+    position: relative;
+  }
+
+  /* Each pressable sets its own scale: the custom property inherits, and a button
+     inside a card must not take the card's gentler 1.02. */
+  .lg-btn,
+  .lg-press { --lg-press-scale: 1.07; }
+
+  /* Components */
+  .lg-card { padding: 20px 24px; --lg-press-scale: 1.02; }
+  .lg-nav  { padding: 10px 18px; border-radius: 999px; display: flex; align-items: center; gap: 12px; }
+  .lg-pill { padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
+  .lg-btn  {
+    padding: 14px 28px;
+    border: 0;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .lg-input {
+    padding: 14px 18px;
+    border: 0;
+    border-radius: var(--lg-radius-sm);
+    font: inherit;
+    outline: none;
+  }
+  .lg-input::placeholder { color: rgba(255, 255, 255, 0.6); }
+  .lg-input:focus-visible,
+  .lg-btn:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: 3px; }
+
+  /* iOS-style press: spring up, spring back */
+  .lg-btn,
+  .lg-press { transition: scale 0.45s var(--lg-spring); }
+  .lg-btn.is-pressed,
+  .lg-press.is-pressed { scale: var(--lg-press-scale); transition-duration: 0.25s; }
+  .lg.is-pressed::after,
+  .lg-press.is-pressed::after,
+  .is-pressed > .lg-hl { opacity: 1; }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .lg-btn, .lg-press { transition: none; }
+    .lg-btn.is-pressed, .lg-press.is-pressed { scale: none; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .lg {
+      background: rgba(22, 22, 25, 0.96);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* Optional backdrop: glass needs something behind it. Muted, and kept off the
+     status hues (green, amber, blue, red) so those stay legible on the glass.
+     A fixed layer rather than background-attachment: fixed, which iOS ignores
+     and which makes scrolling janky on phones. */
+  /* The layer sits at z-index -1 in the root stacking context, under everything,
+     so <body> must not paint its own background over it (the canvas, html, can). */
+  .lg-bg {
+    min-height: 100vh;
+  }
+  .lg-bg::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(48vmax 34vmax at 12% -4%, rgba(112, 86, 196, 0.34) 0%, transparent 70%),
+      radial-gradient(40vmax 30vmax at 92% 8%, rgba(150, 92, 150, 0.2) 0%, transparent 70%),
+      radial-gradient(56vmax 36vmax at 58% 104%, rgba(76, 70, 120, 0.2) 0%, transparent 70%),
+      #000;
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .lg-bg::before { display: none; }
+  }
+}

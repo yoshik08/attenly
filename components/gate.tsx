@@ -129,12 +129,12 @@ export function SignIn() {
         )}
         {offCanonical ? (
           // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
-          <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
+          <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto lg lg-btn">
             <GoogleLogo size={19} weight="bold" aria-hidden />
             Continue with Google
           </a>
         ) : (
-          <button type="button" onClick={start} disabled={busy} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
+          <button type="button" onClick={start} disabled={busy} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto lg lg-btn">
             <GoogleLogo size={19} weight="bold" aria-hidden />
             {busy ? 'Opening Google…' : 'Continue with Google'}
           </button>
@@ -172,7 +172,7 @@ export function FirstLink() {
         {user?.name ? `Signed in as ${user.name}. ` : ''}
         Log in to the KL ERP here once. From then on Attenly signs in and syncs for you.
       </p>
-      <div className="card mt-8 p-5 lg:p-6">
+      <div className="card mt-8 p-5 lg:p-6 lg lg-card">
         <LinkForm mode="first" onLinked={(id, snap) => void onLinked(id, snap)} />
       </div>
     </section>

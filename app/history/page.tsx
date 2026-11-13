@@ -156,7 +156,7 @@ function History() {
       <PageHeader title="History" sub={<TermLine term={termText(snapshot?.term)} />} />
 
       <div className="mt-7 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-10">
-        <section aria-label="Attendance calendar" className="card self-start p-4 sm:p-6">
+        <section aria-label="Attendance calendar" className="card self-start p-4 sm:p-6 lg lg-card lg-frost">
           <MonthCalendar
             month={month}
             onMonthChange={setMonth}
@@ -222,14 +222,14 @@ function History() {
         <section className="self-start" aria-label={`Periods on ${pickedDate}`}>
           <h2 className="h2 text-[22px]">{pickedDay.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            <span data-tone="safe" className="chip tnum">
+            <span data-tone="safe" className="chip tnum lg lg-pill">
               {counts.present} attended
             </span>
-            <span data-tone={counts.absent > 0 ? 'detained' : 'none'} className="chip tnum">
+            <span data-tone={counts.absent > 0 ? 'detained' : 'none'} className="chip tnum lg lg-pill">
               {counts.absent} missed
             </span>
             {counts['not-taken'] > 0 && (
-              <span data-tone="none" className="chip tnum">
+              <span data-tone="none" className="chip tnum lg lg-pill">
                 {counts['not-taken']} not taken
               </span>
             )}
@@ -237,7 +237,7 @@ function History() {
           {dayRows.length === 0 ? (
             <p className="mt-5 text-[14px] text-fg-3">No classes were recorded on this day.</p>
           ) : (
-            <ol className="card mt-4 px-4">
+            <ol className="card mt-4 px-4 lg lg-card lg-frost">
               {dayRows.map((r, i) => (
                 <li key={r.key} data-tone={STATE[r.state].tone} className={cn('flex items-center justify-between gap-3 py-3.5', i > 0 && 'hair-t')}>
                   <span className="flex min-w-0 items-center gap-3.5">
@@ -251,7 +251,7 @@ function History() {
                       </span>
                     </span>
                   </span>
-                  <span className="chip shrink-0">
+                  <span className="chip shrink-0 lg lg-pill">
                     <span className="dot" aria-hidden />
                     {STATE[r.state].label}
                   </span>

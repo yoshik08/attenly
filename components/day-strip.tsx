@@ -79,7 +79,7 @@ export function DayStrip({
               tabIndex={selected ? 0 : -1}
               onClick={() => onChange(d)}
               className={cn(
-                'press flex h-[70px] min-w-[52px] flex-1 flex-col items-center justify-center gap-[3px] rounded-[18px] sm:max-w-[84px]',
+                'press flex h-[70px] min-w-[52px] flex-1 flex-col items-center justify-center gap-[3px] rounded-[18px] sm:max-w-[84px] lg lg-btn',
                 selected ? 'bg-fg text-black' : 'bg-surface text-fg hair hover:bg-raised',
               )}
             >
