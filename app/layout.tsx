@@ -4,6 +4,7 @@ import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
 import { StoreProvider } from '@/components/store';
 import { AppShell } from '@/components/shell';
+import { LiquidGlass } from '@/components/liquid-glass';
 
 const archivo = Archivo({
   subsets: ['latin'],
@@ -34,7 +35,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${archivo.variable} ${geist.variable} ${geistMono.variable}`}>
-      <body>
+      <body className="lg-bg">
+        <LiquidGlass />
         <AuthProvider>
           <StoreProvider>
             <AppShell>{children}</AppShell>

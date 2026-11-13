@@ -33,7 +33,7 @@ export function TermLine({ term, children }: { term: string; children?: ReactNod
   return (
     <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       {term && <span className="tnum">{term}</span>}
-      <Link href="/settings#semester" className="link text-[13px]">
+      <Link href="/settings#semester" className="link text-[13px] lg-press">
         Change
       </Link>
       {children}
@@ -61,7 +61,7 @@ export function Notice({
     <div
       role={role}
       data-tone={tone}
-      className={cn('card glow rounded-[20px] p-4', className)}
+      className={cn('card glow rounded-[20px] p-4 lg lg-card', className)}
       style={{ '--gs': '280px', '--gx': '-130px', '--gy': '-150px' } as CSSProperties}
     >
       <div className="flex gap-3">
@@ -91,7 +91,7 @@ export function Empty({
   className?: string;
 }) {
   return (
-    <div className={cn('card mt-8 flex flex-col items-start p-6 lg:p-8', className)}>
+    <div className={cn('card mt-8 flex flex-col items-start p-6 lg:p-8 lg lg-card lg-frost', className)}>
       {Icon && (
         <span className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-raised hair">
           <Icon size={24} className="text-fg-2" aria-hidden />

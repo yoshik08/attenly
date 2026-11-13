@@ -66,7 +66,7 @@ function Stepper({ value, onChange, label }: { value: number; onChange: (v: numb
     <div className="flex items-center gap-1" role="group" aria-label={label}>
       <button
         type="button"
-        className="icon-btn press !h-9 !w-9"
+        className="icon-btn press !h-9 !w-9 lg lg-btn"
         onClick={() => onChange(Math.max(0, value - 1))}
         disabled={value <= 0}
         aria-label={`${label}: one fewer`}
@@ -78,7 +78,7 @@ function Stepper({ value, onChange, label }: { value: number; onChange: (v: numb
       </span>
       <button
         type="button"
-        className="icon-btn press !h-9 !w-9"
+        className="icon-btn press !h-9 !w-9 lg lg-btn"
         onClick={() => onChange(Math.min(60, value + 1))}
         disabled={value >= 60}
         aria-label={`${label}: one more`}
@@ -172,7 +172,7 @@ export function CourseRow({
       ref={ref}
       id={`course-${subject.code}`}
       data-tone={status ?? 'none'}
-      className="card rise scroll-mt-24 p-5"
+      className="card rise scroll-mt-24 p-5 lg lg-card lg-frost"
       style={{ '--i': index } as CSSProperties}
       aria-label={summary.title}
     >
@@ -201,7 +201,7 @@ export function CourseRow({
       {summary.components.length > 0 ? (
         <ul className="mt-4 flex flex-col gap-1" aria-label={`${summary.title}: classes by type`}>
           {summary.components.map((c) => (
-            <li key={c.k} className="flex items-center justify-between gap-3 rounded-[12px] bg-white/[0.035] px-3 py-[7px] text-[13px]">
+            <li key={c.k} className="flex items-center justify-between gap-3 rounded-[12px] bg-white/[0.035] px-3 py-[7px] text-[13px] lg lg-card lg-frost">
               <span className="text-fg-2">{c.label}</span>
               <span className="flex items-center gap-3">
                 <span className="tnum font-semibold">
@@ -218,7 +218,7 @@ export function CourseRow({
       )}
 
       {hasDelta && (
-        <p data-tone="safe" className="chip mt-3">
+        <p data-tone="safe" className="chip mt-3 lg lg-pill">
           {deltaText} since you last looked
         </p>
       )}
@@ -227,7 +227,7 @@ export function CourseRow({
         {next ? (
           <Link
             href={`/timetable?day=${next.day}#slot-${next.day}-${next.period.period}`}
-            className="press inline-flex min-w-0 items-center gap-1.5 rounded-full text-[13px] text-fg-2 hover:text-fg"
+            className="press lg-press inline-flex min-w-0 items-center gap-1.5 rounded-full text-[13px] text-fg-2 hover:text-fg"
           >
             <Clock size={14} aria-hidden className="shrink-0" />
             <span className="truncate">
@@ -243,7 +243,7 @@ export function CourseRow({
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-controls={detailId}
-          className="press inline-flex shrink-0 items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2"
+          className="press inline-flex shrink-0 items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2 lg lg-btn"
         >
           {open ? 'Hide plan' : 'Plan'}
           <span className="t-acc-chevron" aria-hidden>
@@ -275,7 +275,7 @@ export function CourseRow({
                   const d = delta.find((x) => x.k === c.k);
                   const pre = tcbr?.[c.k] ?? 0;
                   return (
-                    <div key={c.k} className="rounded-[16px] bg-white/[0.035] p-3.5">
+                    <div key={c.k} className="rounded-[16px] bg-white/[0.035] p-3.5 lg lg-card lg-frost">
                       <p className="flex items-baseline justify-between text-[13px] text-fg-2">
                         <span>{c.label}</span>
                         <span className="tnum font-semibold text-fg">
@@ -329,7 +329,7 @@ export function CourseRow({
                 </div>
                 <div className="flex items-end gap-2">
                   {planning && (
-                    <button type="button" className="btn btn-ghost btn-sm press" onClick={() => setPlan(emptyPlan())}>
+                    <button type="button" className="btn btn-ghost btn-sm press lg lg-btn" onClick={() => setPlan(emptyPlan())}>
                       Reset
                     </button>
                   )}

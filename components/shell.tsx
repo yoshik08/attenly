@@ -95,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function SideLink({ s, pathname }: { s: Section; pathname: string }) {
   const active = isActive(pathname, s.href);
   return (
-    <Link href={s.href} aria-current={active ? 'page' : undefined} className="side-link press">
+    <Link href={s.href} aria-current={active ? 'page' : undefined} className="side-link press lg-press">
       <s.Icon size={19} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-fg' : 'text-fg-3'} />
       {s.label}
     </Link>
@@ -107,7 +107,11 @@ function Sidebar() {
   const hasAccount = useStore().accounts.length > 0;
   return (
     <aside className="side hidden flex-col px-3 pb-4 pt-5 lg:flex">
-      <Link href="/" className="press mx-2 mb-7 flex items-center gap-2.5 self-start rounded-lg px-1 py-1" aria-label="Attenly home">
+      {/* The sidebar's glass is a layer beside its content, never around it: the account
+          menu's sheet and popovers live in here, and a backdrop-filter ancestor would trap them.
+          Tall, so frosted only. */}
+      <span aria-hidden className="lg lg-card lg-frost pointer-events-none absolute inset-0 -z-1 rounded-none shadow-none" />
+      <Link href="/" className="press lg-press mx-2 mb-7 flex items-center gap-2.5 self-start rounded-lg px-1 py-1" aria-label="Attenly home">
         <Logo />
         <span className="wordmark">Attenly</span>
       </Link>
@@ -147,7 +151,7 @@ function TopBar({ signedIn }: { signedIn: boolean }) {
   return (
     <header className={cn('topbar material sticky top-0 z-40', signedIn && 'lg:hidden')} data-scrolled={scrolled}>
       <div className="mx-auto flex h-[var(--bar-h)] max-w-[1120px] items-center justify-between gap-3 px-4 sm:px-6">
-        <Link href="/" className="press flex shrink-0 items-center gap-2 rounded-lg py-1" aria-label="Attenly home">
+        <Link href="/" className="press lg-press flex shrink-0 items-center gap-2 rounded-lg py-1" aria-label="Attenly home">
           <Logo size={20} />
           <span className="wordmark text-[19px]">Attenly</span>
         </Link>
@@ -206,7 +210,7 @@ function Dock() {
     <>
       <nav className="lg:hidden" aria-label="Sections">
         <div className="dock-fade z-30" aria-hidden />
-        <div className="dock glass z-40">
+        <div className="dock glass z-40 lg lg-card">
           <span ref={pill} className="dock-pill" aria-hidden />
           <ul ref={list} className="relative grid h-full grid-cols-5 px-1">
             {DOCK.map(({ href, label, short, Icon }) => {
@@ -218,7 +222,7 @@ function Dock() {
                     aria-current={active ? 'page' : undefined}
                     aria-label={short ? label : undefined}
                     className={cn(
-                      'press flex h-full flex-col items-center justify-center gap-[3px] text-[10.5px] font-semibold',
+                      'press lg-press flex h-full flex-col items-center justify-center gap-[3px] text-[10.5px] font-semibold',
                       active ? 'text-fg' : 'text-fg-2',
                     )}
                   >
@@ -235,7 +239,7 @@ function Dock() {
                 aria-expanded={more}
                 aria-haspopup="dialog"
                 className={cn(
-                  'press flex h-full w-full flex-col items-center justify-center gap-[3px] text-[10.5px] font-semibold',
+                  'press lg-press flex h-full w-full flex-col items-center justify-center gap-[3px] text-[10.5px] font-semibold',
                   moreActive ? 'text-fg' : 'text-fg-2',
                 )}
               >
@@ -257,7 +261,7 @@ function Dock() {
                   onClick={() => setMore(false)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'press flex h-full flex-col gap-3 rounded-[20px] p-4',
+                    'press flex h-full flex-col gap-3 rounded-[20px] p-4 lg lg-card lg-press',
                     active ? 'bg-raised-2 hair' : 'bg-raised hover:bg-raised-2',
                   )}
                 >
@@ -364,8 +368,8 @@ function SyncButton({ variant }: { variant: 'bar' | 'side' }) {
         className={cn(
           'press flex min-w-0 items-center gap-2 text-[13px] font-medium text-fg-2 hover:text-fg',
           variant === 'bar'
-            ? 'h-9 max-w-[200px] rounded-full bg-raised px-3 hair'
-            : 'h-10 w-full rounded-[12px] px-3 hover:bg-white/[0.045]',
+            ? 'h-9 max-w-[200px] rounded-full bg-raised px-3 hair lg lg-btn'
+            : 'h-10 w-full rounded-[12px] px-3 hover:bg-white/[0.045] lg-press',
         )}
       >
         {label}
@@ -428,13 +432,13 @@ function SyncPanel({ v, onDone }: { v: ReturnType<typeof useSyncView>; onDone: (
         data-autofocus
         disabled={sync.running || needsPassword}
         onClick={() => void forceSync()}
-        className="btn btn-primary press mt-4 w-full"
+        className="btn btn-primary press mt-4 w-full lg lg-btn"
       >
         <ArrowsClockwise size={18} className={sync.running ? 'spin' : ''} aria-hidden />
         {sync.running ? 'Syncing…' : failed ? 'Try again' : 'Sync now'}
       </button>
       {needsPassword && (
-        <Link href="/settings#accounts" onClick={onDone} className="btn btn-secondary press mt-2 w-full">
+        <Link href="/settings#accounts" onClick={onDone} className="btn btn-secondary press mt-2 w-full lg lg-btn">
           Enter password
         </Link>
       )}
@@ -475,8 +479,8 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
         className={cn(
           'press flex items-center gap-2.5 text-left',
           variant === 'bar'
-            ? 'h-9 min-w-9 justify-center rounded-full bg-raised px-2.5 hair'
-            : 'w-full rounded-[12px] px-2 py-2 hover:bg-white/[0.045]',
+            ? 'h-9 min-w-9 justify-center rounded-full bg-raised px-2.5 hair lg lg-btn'
+            : 'w-full rounded-[12px] px-2 py-2 hover:bg-white/[0.045] lg-press',
         )}
       >
         {variant === 'bar' ? (
@@ -519,7 +523,7 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
                       setOpen(false);
                       if (!isActive) void switchAccount(a.universityId);
                     }}
-                    className="press flex w-full items-center justify-between gap-3 rounded-[12px] px-2.5 py-2.5 text-left hover:bg-white/[0.05]"
+                    className="press lg-press flex w-full items-center justify-between gap-3 rounded-[12px] px-2.5 py-2.5 text-left hover:bg-white/[0.05]"
                     aria-current={isActive ? 'true' : undefined}
                   >
                     <span className="min-w-0">
@@ -543,20 +547,20 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
               setOpen(false);
               setAdding(true);
             }}
-            className="press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
+            className="press lg-press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
           >
             <Plus size={18} aria-hidden className="text-fg-2" /> Link another ERP account
           </button>
           <Link
             href="/settings"
             onClick={() => setOpen(false)}
-            className="press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
+            className="press lg-press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
           >
             <GearSix size={18} aria-hidden className="text-fg-2" /> Settings
           </Link>
         </div>
         <div className="hair-t p-3">
-          <button type="button" onClick={() => void signOut()} className="btn btn-danger btn-sm press w-full">
+          <button type="button" onClick={() => void signOut()} className="btn btn-danger btn-sm press w-full lg lg-btn">
             <SignOut size={16} aria-hidden /> Sign out of Google
           </button>
         </div>

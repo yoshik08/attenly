@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./liquid-glass.css";
 
 /* ------------------------------------------------------------------ */
 /* Attenly — an instrument on true black.                              */
@@ -86,7 +87,8 @@ html {
 }
 
 body {
-  background: #000;
+  /* Black comes from html (the canvas); body stays clear so the .lg-bg glass backdrop shows. */
+  background: transparent;
   color: var(--color-fg);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -239,7 +241,8 @@ button:disabled {
 }
 
 .material {
-  background: rgba(0, 0, 0, 0.7);
+  /* Light enough not to read as a band over the glass backdrop (.lg-bg); the blur does the hiding. */
+  background: rgba(0, 0, 0, 0.42);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   backdrop-filter: blur(22px) saturate(160%);
 }
@@ -1017,4 +1020,159 @@ button:disabled {
   .tt-row {
     transition: none !important;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Liquid Glass on Attenly's surfaces (app/liquid-glass.css)           */
+/* The glass system sits in the components layer. Attenly's own        */
+/* surface classes are unlayered, so on their own they would keep     */
+/* their flat fills and hairlines over the glass; on .lg elements they */
+/* hand the material over. Nothing here applies without .lg.          */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --lg-tint-hover: rgba(255, 255, 255, 0.09);
+  --lg-tint-strong: rgba(255, 255, 255, 0.1);
+}
+
+/* Attenly sizes every element itself, so the system's box defaults never apply:
+   lg-card, lg-btn, lg-pill and lg-input change the material, never the layout.
+   Same layer and later, so utilities and site classes still win. */
+@layer components {
+  .lg-card,
+  .lg-nav,
+  .lg-pill,
+  .lg-btn,
+  .lg-input {
+    padding: 0;
+  }
+  .lg-pill {
+    font-size: inherit;
+  }
+  .lg-btn {
+    font-weight: inherit;
+  }
+}
+
+/* Fills and hairlines become tint and rim. */
+.lg:is(.card, .grouped, .t-tabs, .btn-secondary, .btn-line, .icon-btn, .bg-surface, .bg-raised) {
+  background: var(--lg-tint);
+}
+.lg.bg-raised-2 {
+  background: var(--lg-tint-strong);
+}
+.lg:is(.card, .grouped, .t-tabs, .btn-secondary, .btn-line, .btn-ghost, .icon-btn, .hair, .hair-t) {
+  box-shadow: var(--lg-shadow);
+}
+.lg.btn-danger:not([data-armed="true"], :focus-visible, :hover) {
+  background: var(--lg-tint);
+  box-shadow: var(--lg-shadow);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lg:is(.btn-secondary, .btn-line, .icon-btn, .hover\:bg-raised, .hover\:bg-raised-2):hover:not(:disabled) {
+    background: var(--lg-tint-hover);
+  }
+}
+/* Badges keep their band colour, rimmed in it. */
+.lg.chip {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone) 30%, transparent), inset 1px 1px 0 rgba(255, 255, 255, 0.12);
+}
+/* Inputs: a clear well; focus and error rings stay Attenly's. */
+.field.lg:not(:focus, [aria-invalid="true"]) {
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--lg-rim);
+}
+.field.lg:focus {
+  background: rgba(255, 255, 255, 0.06);
+}
+/* Segmented control: the selection is a brighter pane. */
+.t-tabs.lg > .t-tabs-pill {
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 1px 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+/* Floating chrome: clearer than a card, so content shows (and refracts) beneath. */
+.glass.lg {
+  background: rgba(24, 24, 28, 0.58);
+  --lg-blur: 5px;
+}
+.dock.lg {
+  box-shadow: var(--lg-rim), 0 16px 48px rgba(0, 0, 0, 0.7);
+}
+.t-modal.lg,
+.t-dropdown.lg {
+  box-shadow: var(--lg-rim), 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+.t-modal.lg {
+  background: rgba(20, 20, 23, 0.92);
+}
+.t-dropdown.lg {
+  background: rgba(22, 22, 25, 0.92);
+}
+/* Plan's sticky course bar: a glass shelf, not a dark band over the backdrop. */
+.material.lg {
+  background: var(--lg-tint);
+  box-shadow: var(--lg-shadow);
+}
+
+/* A card's ::after is its top sheen, so the glass highlight there comes from a
+   .lg-hl child (and a card's ::before is the band glow). */
+.card.lg::after {
+  opacity: 1;
+  transition: none;
+}
+
+/* .press and the glass press on one element: the glass spring wins, .press keeps its fades. */
+.press:is(.lg-press, .lg-btn) {
+  transition: scale 0.45s var(--lg-spring), background-color 150ms ease, color 150ms ease, box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+.press:is(.lg-press, .lg-btn).is-pressed {
+  transition-duration: 0.25s, 150ms, 150ms, 150ms, 150ms;
+}
+.press:is(.lg-press, .lg-btn):active:not(:disabled) {
+  transform: none;
+}
+.hue-block.lg-press {
+  transition: opacity 220ms var(--ease-smooth), filter 220ms var(--ease-smooth), box-shadow 220ms var(--ease-smooth),
+    scale 0.45s var(--lg-spring);
+}
+.hue-block.lg-press.is-pressed {
+  transition-duration: 220ms, 220ms, 220ms, 0.25s;
+}
+.t-tab.lg-press {
+  transition: color 250ms var(--ease-smooth), scale 0.45s var(--lg-spring);
+}
+.t-tab.lg-press.is-pressed {
+  transition-duration: 250ms, 0.25s;
+}
+/* The phone's top bar is clear at the scroll edge and turns to material once content runs
+   beneath it, so at rest it never sits on the backdrop as a dark band. */
+.topbar[data-scrolled="false"] {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* Reduced transparency: back to Attenly's opaque surfaces (the system's own fallback sits in a
+   layer, so these unlayered fills would otherwise keep the glass see-through). */
+@media (prefers-reduced-transparency: reduce) {
+  .lg:is(.card, .grouped, .t-tabs, .bg-surface) {
+    background: var(--color-surface);
+  }
+  .lg:is(.btn-secondary, .btn-line, .icon-btn, .bg-raised, .bg-raised-2),
+  .lg.btn-danger:not([data-armed="true"], :focus-visible, :hover) {
+    background: var(--color-raised);
+  }
+  .glass.lg,
+  .material.lg,
+  .t-modal.lg,
+  .t-dropdown.lg {
+    background: #141417;
+  }
+  .field.lg:not(:focus, [aria-invalid="true"]) {
+    background: #111113;
+  }
+}
+/* Wide controls grow less. */
+.lg-btn.w-full {
+  --lg-press-scale: 1.03;
 }

@@ -82,7 +82,7 @@ export default function CalculatorPage() {
       {saved.length > 0 && (
         <section className="mt-12" aria-label="Saved results">
           <h2 className="h2">Saved results</h2>
-          <ul className="card mt-4 px-4">
+          <ul className="card mt-4 px-4 lg lg-card lg-frost">
             {saved.map((d, i) => (
               <li key={`${d.at}-${i}`} className={cn('flex items-center justify-between gap-3 py-3', i > 0 && 'hair-t')}>
                 <div className="min-w-0">
@@ -97,7 +97,7 @@ export default function CalculatorPage() {
                   <button
                     type="button"
                     onClick={() => remove(i)}
-                    className="press inline-flex h-11 w-11 items-center justify-center rounded-full text-fg-3 hover:bg-det/12 hover:text-det"
+                    className="press inline-flex h-11 w-11 items-center justify-center rounded-full text-fg-3 hover:bg-det/12 hover:text-det lg-press"
                     aria-label={`Delete ${d.name}`}
                   >
                     <Trash size={17} aria-hidden />
@@ -128,9 +128,9 @@ function SaveRow({ disabled, onSave }: { disabled: boolean; onSave: (name: strin
         <label className="label" htmlFor="save-name">
           Save this result as
         </label>
-        <input id="save-name" className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Course name" maxLength={40} />
+        <input id="save-name" className="field lg lg-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Course name" maxLength={40} />
       </div>
-      <button type="submit" className="btn btn-secondary press min-h-[48px]" disabled={disabled || !name.trim()}>
+      <button type="submit" className="btn btn-secondary press min-h-[48px] lg lg-btn" disabled={disabled || !name.trim()}>
         Save
       </button>
     </form>
@@ -162,7 +162,7 @@ function BigField({
       <div className="relative">
         <input
           id={id}
-          className="field figure !min-h-[64px] !text-[28px]"
+          className="field figure !min-h-[64px] !text-[28px] lg lg-input"
           inputMode={decimal ? 'decimal' : 'numeric'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -196,7 +196,7 @@ function Answer({
   return (
     <div
       data-tone={status ?? 'none'}
-      className="card glow p-5 sm:p-6"
+      className="card glow p-5 sm:p-6 lg lg-card"
       style={{ '--gs': '420px', '--gx': '-170px', '--gy': '-200px' } as React.CSSProperties}
       aria-live="polite"
     >
@@ -247,7 +247,7 @@ function Simple({ target, onSave }: { target: number; onSave: (s: Omit<Saved, 'a
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 lg:items-start">
-      <div className="card p-5 sm:p-6">
+      <div className="card p-5 sm:p-6 lg lg-card lg-frost">
         <div className="grid grid-cols-2 gap-3">
           <BigField id="calc-total" label="Classes held" value={total} onChange={setTotal} invalid={Boolean(err && total)} />
           <BigField id="calc-att" label="Classes attended" value={attended} onChange={setAttended} invalid={Boolean(err && attended)} />
@@ -318,7 +318,7 @@ function Components({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 lg:items-start">
-      <div className="card p-5 sm:p-6">
+      <div className="card p-5 sm:p-6 lg lg-card lg-frost">
         <p className="text-[14px] text-fg-2 pretty">
           Leave a component empty if the course doesn’t have it. Weights follow Settings: lecture {weights.L}, tutorial {weights.T},
           practical {weights.P}, skilling {weights.S}.

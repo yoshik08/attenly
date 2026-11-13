@@ -78,7 +78,7 @@ function Payments() {
     <div className="page-in max-w-[900px]">
       <PageHeader title="Payments" sub={`${orders.length} fee order${orders.length === 1 ? '' : 's'} from the ERP`} />
 
-      <div data-tone="safe" className="card glow mt-7 p-5 lg:p-7" style={{ '--gs': '420px', '--gx': '-160px', '--gy': '-220px' } as React.CSSProperties}>
+      <div data-tone="safe" className="card glow mt-7 p-5 lg:p-7 lg lg-card" style={{ '--gs': '420px', '--gx': '-160px', '--gy': '-220px' } as React.CSSProperties}>
         <p className="text-[13px] font-semibold text-fg-2">Paid online</p>
         <p className="figure mt-2 text-[44px] lg:text-[56px]">{money(total)}</p>
         <p className="mt-2 text-[13px] text-fg-3 tnum">
@@ -90,7 +90,7 @@ function Payments() {
         {orders.map((o, i) => {
           const st = statusOf(o.status);
           return (
-            <li key={o.orderNo} className="card rise p-4 sm:p-5" style={{ '--i': i } as React.CSSProperties}>
+            <li key={o.orderNo} className="card rise p-4 sm:p-5 lg lg-card lg-frost" style={{ '--i': i } as React.CSSProperties}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[15px] font-semibold leading-snug pretty">{o.subHead || o.head}</p>
@@ -106,11 +106,11 @@ function Payments() {
                   {[o.head, o.academicYear, o.semester, o.gateway, o.gatewayRef].filter(Boolean).join(' · ')}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span data-tone={st.tone} className="chip">
+                  <span data-tone={st.tone} className="chip lg lg-pill">
                     <span className="dot" aria-hidden />
                     {st.label}
                   </span>
-                  <button type="button" className="btn btn-secondary btn-sm press" onClick={() => void openReceipt(o)}>
+                  <button type="button" className="btn btn-secondary btn-sm press lg lg-btn" onClick={() => void openReceipt(o)}>
                     Receipt
                   </button>
                 </div>
@@ -185,7 +185,7 @@ function Payments() {
                     style={{ background: 'radial-gradient(circle, #121214 5px, transparent 5.5px) 0 0 / 14px 12px repeat-x' }}
                   />
                 </div>
-                <button type="button" className="btn btn-primary press mt-5 w-full sm:w-auto" onClick={() => window.print()}>
+                <button type="button" className="btn btn-primary press mt-5 w-full sm:w-auto lg lg-btn" onClick={() => window.print()}>
                   <Printer size={17} aria-hidden /> Print
                 </button>
               </>

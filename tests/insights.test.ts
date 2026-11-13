@@ -1,7 +1,7 @@
 /** Per-course summaries, the plate, next class, and change badges. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, minutesOf, nextClassOf, skipCall, summarize, whenLabel } from '../lib/insights';
+import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, endOf, minutesOf, nextClassOf, PERIOD_TIMES, skipCall, startOf, summarize, whenLabel } from '../lib/insights';
 import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
@@ -176,4 +176,71 @@ test('up next without clock times: today counts until late afternoon', () => {
   ];
   assert.equal(agendaOf(tt, new Date(2026, 10, 12, 3, 6))!.day, 'Thu');
   assert.equal(agendaOf(tt, new Date(2026, 10, 12, 18, 0))!.day, 'Fri');
+});
+
+/* Untimed ERP periods fall back to KLH's bell schedule. */
+const untimed = (n: number, code: string): TimetableDay['periods'][number] => ({
+  period: `P${n}`, start: '', end: '', subjectCode: code, subjectTitle: '', room: '', faculty: '', type: 'L',
+});
+// P6 has no class on either day: that is this section's lunch, found from the timetable, never assumed.
+const bellWeek: TimetableDay[] = [
+  { day: 'Thu', periods: [1, 2, 3, 4, 5, 7, 8, 9].map((n) => untimed(n, `T${n}`)) },
+  { day: 'Fri', periods: [1, 2, 3, 4, 5, 7, 8, 9].map((n) => untimed(n, `F${n}`)) },
+];
+const thu = (h: number, m: number) => new Date(2026, 10, 12, h, m); // Thu 12 Nov 2026
+
+test('bell schedule: stored like the ERP prints it, read back on the right clock', () => {
+  assert.equal(minutesOf(PERIOD_TIMES[1].start), 8 * 60 + 10);
+  assert.equal(minutesOf(PERIOD_TIMES[5].end), 12 * 60 + 40);
+  assert.equal(minutesOf(PERIOD_TIMES[6].start), 12 * 60 + 40);
+  assert.equal(minutesOf(PERIOD_TIMES[7].start), 13 * 60 + 20);
+  assert.equal(minutesOf(PERIOD_TIMES[9].end), 15 * 60 + 50);
+  for (let n = 1; n < 9; n++) {
+    assert.ok(minutesOf(PERIOD_TIMES[n].start)! < minutesOf(PERIOD_TIMES[n].end)!, `P${n} ends after it starts`);
+    assert.ok(minutesOf(PERIOD_TIMES[n].end)! <= minutesOf(PERIOD_TIMES[n + 1].start)!, `P${n + 1} starts after P${n} ends`);
+  }
+  assert.equal(startOf(untimed(7, 'A')), '1:20');
+  assert.equal(endOf(untimed(7, 'A')), '2:10');
+  assert.equal(startOf({ ...untimed(7, 'A'), period: 'Lab' }), '', 'no number, no bell time');
+});
+
+test('up next, untimed: at 12:20 the 1:20 class leads (P5 started, P6 is lunch)', () => {
+  const now = thu(12, 20);
+  const a = agendaOf(bellWeek, now)!;
+  assert.equal(a.inDays, 0);
+  assert.deepEqual(a.periods.map((p) => p.period), ['P7', 'P8', 'P9']);
+  assert.equal(clockOf(startOf(a.periods[0])), '1:20 pm');
+  assert.equal(minutesOf(startOf(a.periods[0]))! - (now.getHours() * 60 + now.getMinutes()), 60, 'header reads "Starts in 1 h"');
+});
+
+test('up next, untimed: before the bell the day starts at P1; after the last one it moves on', () => {
+  assert.deepEqual(agendaOf(bellWeek, thu(7, 0))!.periods.map((p) => p.period), ['P1', 'P2', 'P3', 'P4', 'P5', 'P7', 'P8', 'P9']);
+  const late = agendaOf(bellWeek, thu(16, 0))!;
+  assert.equal(late.day, 'Fri');
+  assert.equal(late.inDays, 1);
+  assert.equal(late.periods[0].period, 'P1');
+});
+
+test('up next: times the ERP prints win over the bell schedule', () => {
+  const tt: TimetableDay[] = [{ day: 'Thu', periods: [{ ...untimed(1, 'A'), start: '9:30', end: '10:20' }, untimed(2, 'B')] }];
+  const p1 = tt[0].periods[0];
+  assert.equal(startOf(p1), '9:30');
+  assert.equal(endOf(p1), '10:20');
+  // At 9:10 the bell's P1 (8:10) and P2 (9:00) have started, but the ERP says P1 is at 9:30.
+  assert.deepEqual(agendaOf(tt, thu(9, 10))!.periods.map((p) => p.subjectCode), ['A']);
+});
+
+test('next class: an untimed class later today is found', () => {
+  const n = nextClassOf('T8', bellWeek, thu(12, 20))!;
+  assert.equal(n.inDays, 0);
+  assert.equal(n.period.period, 'P8');
+  assert.equal(whenLabel(n), 'today at 2:10 pm');
+  // Once it has started, the next one is Friday's.
+  const twice: TimetableDay[] = [
+    { day: 'Thu', periods: [untimed(8, 'A')] },
+    { day: 'Fri', periods: [untimed(2, 'A')] },
+  ];
+  const fri = nextClassOf('A', twice, thu(14, 30))!;
+  assert.equal(fri.day, 'Fri');
+  assert.equal(whenLabel(fri), 'tomorrow at 9:00 am');
 });

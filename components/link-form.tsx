@@ -147,7 +147,7 @@ export function LinkForm({
           </label>
           <input
             id={`uid-${mode}`}
-            className="field tnum"
+            className="field tnum lg lg-input"
             value={universityId}
             onChange={(e) => setUniversityId(e.target.value.replace(/\s/g, ''))}
             inputMode="numeric"
@@ -167,7 +167,7 @@ export function LinkForm({
         <input
           id={`pwd-${mode}`}
           type="password"
-          className="field"
+          className="field lg lg-input"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
@@ -187,7 +187,7 @@ export function LinkForm({
             type="button"
             onClick={() => void loadCaptcha()}
             disabled={captchaState === 'loading' || busy}
-            className="press -mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold text-fg-2 hover:text-fg disabled:opacity-40"
+            className="press -mr-2 inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold text-fg-2 hover:text-fg disabled:opacity-40 lg-press"
           >
             <ArrowClockwise size={15} aria-hidden /> New captcha
           </button>
@@ -206,7 +206,7 @@ export function LinkForm({
           <input
             ref={captchaInput}
             id={`cap-${mode}`}
-            className="field mono flex-1 tracking-[0.14em]"
+            className="field mono flex-1 tracking-[0.14em] lg lg-input"
             value={captchaText}
             onChange={(e) => setCaptchaText(e.target.value)}
             autoComplete="off"
@@ -235,7 +235,7 @@ export function LinkForm({
           <label className="label" htmlFor="label-add">
             Name for this account <span className="text-fg-3">(optional)</span>
           </label>
-          <input id="label-add" className="field" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} />
+          <input id="label-add" className="field lg lg-input" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} />
         </div>
       )}
 
@@ -245,7 +245,7 @@ export function LinkForm({
         </p>
       )}
 
-      <button type="submit" disabled={busy || captchaState !== 'ready'} className={cn('btn btn-primary btn-lg press mt-1 w-full', busy && 'cursor-wait')}>
+      <button type="submit" disabled={busy || captchaState !== 'ready'} className={cn('btn btn-primary btn-lg press mt-1 w-full lg lg-btn', busy && 'cursor-wait')}>
         {busy ? (
           <>
             <CircleNotch size={18} className="spin" aria-hidden />

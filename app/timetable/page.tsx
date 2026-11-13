@@ -9,7 +9,7 @@ import { defaultDayOf, FULL_DAY, WEEK_ORDER } from '@/components/day-strip';
 import { Empty, PageHeader, TermLine } from '@/components/page';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey, type Status } from '@/lib/math';
-import { clockOf, courseTitle, minutesOf, periodOrder, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { clockOf, courseTitle, endOf, minutesOf, periodOrder, sortPeriods, startOf, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import { courseHues } from '@/lib/hues';
 import type { TimetableDay, TimetablePeriod } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
@@ -193,8 +193,8 @@ function Timetable() {
   const nowMin = date.getHours() * 60 + date.getMinutes();
   const liveOf = (d: string, b: Block) => {
     if (d !== today) return false;
-    const s = minutesOf(b.periods[0].start);
-    const e = minutesOf(b.periods[b.periods.length - 1].end);
+    const s = minutesOf(startOf(b.periods[0]));
+    const e = minutesOf(endOf(b.periods[b.periods.length - 1]));
     return s != null && e != null && s <= nowMin && nowMin < e;
   };
   const term = termText(snapshot?.term);
@@ -280,7 +280,7 @@ function Legend({
                 onClick={() => onPin(c.code)}
                 style={{ '--h': c.hue } as CSSProperties}
                 className={cn(
-                  'tt-row press flex items-center gap-2.5 rounded-[14px] bg-surface py-2 pl-3 pr-3.5 text-left hair hover:bg-raised',
+                  'tt-row press flex items-center gap-2.5 rounded-[14px] bg-surface py-2 pl-3 pr-3.5 text-left hair hover:bg-raised lg lg-btn',
                   pinned === c.code && '!bg-raised-2 !shadow-[inset_0_0_0_1.5px_rgba(255,255,255,0.45)]',
                 )}
               >
@@ -366,7 +366,7 @@ function WeekGrid({
           r.kind === 'period' ? (
             <div key={`h${r.n}`} className="flex flex-col items-end pr-1 pt-2.5" style={{ gridColumn: 1, gridRow: i + 2 }}>
               <span className="figure text-[17px] text-fg-2">{r.n}</span>
-              {r.sample.start && <span className="mono mt-1 text-[10.5px] text-fg-3">{clockOf(r.sample.start)}</span>}
+              {startOf(r.sample) && <span className="mono mt-1 text-[10.5px] text-fg-3">{clockOf(startOf(r.sample))}</span>}
             </div>
           ) : (
             <div key={`g${r.after}`} aria-hidden className="flex items-center" style={{ gridColumn: '2 / -1', gridRow: i + 2 }}>
@@ -473,7 +473,7 @@ function WeekMap({
             title={FULL_DAY[d]}
             onClick={() => onChange(d)}
             className={cn(
-              'press flex min-w-0 flex-col items-center rounded-[16px] px-1 pb-2 pt-2',
+              'press flex min-w-0 flex-col items-center rounded-[16px] px-1 pb-2 pt-2 lg lg-btn',
               selected ? 'bg-raised-2 shadow-[inset_0_0_0_1.5px_#f5f5f7]' : 'bg-surface hair',
             )}
           >
@@ -535,7 +535,7 @@ function DayAgenda({
           const prev = blocks[i - 1];
           const free = prev && b.from > prev.to + 1 ? { from: prev.to + 1, to: b.from - 1 } : null;
           const live = i === nowIdx;
-          const start = b.periods[0].start;
+          const start = startOf(b.periods[0]);
           return (
             <Fragment key={`${b.from}-${b.code}`}>
               {free && (

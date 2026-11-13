@@ -7,7 +7,7 @@ import { cn } from './cn';
 import { FULL_DAY } from './day-strip';
 import type { Settings } from './store';
 import { COMPONENT_LABELS, countOf, statusOf, type ComponentKey, type Status, type SubjectAttendance } from '@/lib/math';
-import { agendaOf, clockOf, courseTitle, minutesOf, skipCall, type CourseSummary, type SkipCall } from '@/lib/insights';
+import { agendaOf, clockOf, courseTitle, endOf, minutesOf, skipCall, startOf, type CourseSummary, type SkipCall } from '@/lib/insights';
 import type { TimetableDay, TimetablePeriod } from '@/lib/erp/parsers';
 
 const dateFmt = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -57,7 +57,7 @@ function callFor(call: SkipCall | null, k: ComponentKey, target: number): Call {
 
 function untilLabel(p: TimetablePeriod, inDays: number, day: string, now: Date): string {
   if (inDays === 0) {
-    const start = minutesOf(p.start);
+    const start = minutesOf(startOf(p));
     if (start == null) return 'Today';
     const mins = start - (now.getHours() * 60 + now.getMinutes());
     if (mins < 60) return `Starts in ${mins} min`;
@@ -113,9 +113,11 @@ export function UpNext({
     <section
       aria-label="Up next"
       data-tone={first.call.tone}
-      className="card glow rise mt-7 lg:mt-9"
+      className="card glow rise mt-7 lg:mt-9 lg lg-card lg-press"
       style={{ '--gs': '620px', '--gx': '-240px', '--gy': '-330px' } as CSSProperties}
     >
+      {/* The card's ::before is its glow and ::after its sheen, so the press highlight is its own layer. */}
+      <span className="lg-hl" aria-hidden />
       <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div className="p-5 lg:p-7">
           <p className="flex flex-wrap items-center gap-x-2 text-[13px] font-semibold text-fg-2">
@@ -124,13 +126,13 @@ export function UpNext({
             <span>{untilLabel(first.p, agenda.inDays, agenda.day, date)}</span>
           </p>
           <div className="mt-4">
-            {first.p.start ? (
-              <TimeFigure hhmm={first.p.start} className="text-[52px] lg:text-[64px]" />
+            {startOf(first.p) ? (
+              <TimeFigure hhmm={startOf(first.p)} className="text-[52px] lg:text-[64px]" />
             ) : (
               <span className="figure text-[44px]">{first.p.period.replace(/^P/, 'Period ')}</span>
             )}
           </div>
-          <Link href={`/#course-${first.p.subjectCode}`} className="group mt-3 block">
+          <Link href={`/#course-${first.p.subjectCode}`} className="group mt-3 block lg-press">
             <h2 className="text-[21px] font-semibold leading-snug tracking-[-0.015em] group-hover:underline group-hover:decoration-white/30 pretty">
               {first.title}
             </h2>
@@ -142,7 +144,7 @@ export function UpNext({
                 <MapPin size={14} aria-hidden /> {first.p.room}
               </span>
             )}
-            {first.p.end && <span className="tnum">until {clockOf(first.p.end)}</span>}
+            {endOf(first.p) && <span className="tnum">until {clockOf(endOf(first.p))}</span>}
           </p>
           <div className="mt-5 rounded-[18px] bg-tone/10 p-4 ring-1 ring-inset ring-tone/25">
             <p className="flex items-center gap-2 text-[18px] font-semibold text-tone">
@@ -160,10 +162,10 @@ export function UpNext({
             </p>
             <p className="text-[13px] text-fg-3 tnum">{left}</p>
           </div>
-          <ol className="mt-2 flex-1">
+          <ol className="mt-2 flex-1 flex flex-col gap-1.5">
             {[first, ...rest].map((r, i) => (
-              <li key={`${r.p.period}-${r.p.subjectCode}`} data-tone={r.call.tone} className={cn('flex items-center gap-3 py-2.5', i > 0 && 'hair-t')}>
-                <span className="mono w-[62px] shrink-0 text-[12.5px] text-fg-2">{clockOf(r.p.start) || r.p.period}</span>
+              <li key={`${r.p.period}-${r.p.subjectCode}`} data-tone={r.call.tone} className={cn('flex items-center gap-3 py-2.5', i > 0 && 'hair-t', 'lg lg-card lg-frost -mx-2.5 rounded-[14px] px-2.5')}>
+                <span className="mono w-[62px] shrink-0 text-[12.5px] text-fg-2">{clockOf(startOf(r.p)) || r.p.period}</span>
                 <span className="min-w-0 flex-1">
                   <span className={cn('block truncate text-[14px] font-medium', i === 0 && 'text-fg')}>{r.title}</span>
                   <span className="block truncate text-[12px] text-fg-3">
@@ -171,14 +173,14 @@ export function UpNext({
                     {r.p.room ? ` · ${r.p.room}` : ''}
                   </span>
                 </span>
-                <span className="chip shrink-0">
+                <span className="chip shrink-0 lg lg-pill">
                   <span className="dot" aria-hidden />
                   {r.call.chip}
                 </span>
               </li>
             ))}
           </ol>
-          <Link href={`/plan?day=${agenda.day}`} className="press mt-3 inline-flex items-center gap-1.5 self-start rounded-full text-[13px] font-semibold text-fg-2 hover:text-fg">
+          <Link href={`/plan?day=${agenda.day}`} className="press lg-press mt-3 inline-flex items-center gap-1.5 self-start rounded-full text-[13px] font-semibold text-fg-2 hover:text-fg">
             Plan the whole day <ArrowRight size={14} weight="bold" aria-hidden />
           </Link>
         </div>
