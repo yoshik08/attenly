@@ -10,7 +10,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { Ring } from '@/components/ring';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, courseTcbr, emptyPlan, sandboxPct, statusOf, type ComponentKey, type SandboxPlan } from '@/lib/math';
-import { clockOf, courseTitle, sortPeriods, summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { clockOf, courseTitle, sortPeriods, startOf, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import type { TimetablePeriod } from '@/lib/erp/parsers';
 import { termText } from '@/lib/terms';
 import { useNow } from '@/lib/time';
@@ -191,7 +191,7 @@ function PlanTheDay() {
               <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 lg:grid-cols-[64px_minmax(0,1fr)_auto_auto] lg:gap-x-5">
                 <div>
                   <span className="figure block text-[22px] leading-none">{p.period.replace(/\D/g, '')}</span>
-                  <span className="mono mt-1 block text-[11px] text-fg-3">{clockOf(p.start).split(' ')[0]}</span>
+                  <span className="mono mt-1 block text-[11px] text-fg-3">{clockOf(startOf(p)).split(' ')[0]}</span>
                 </div>
 
                 <div className="min-w-0">

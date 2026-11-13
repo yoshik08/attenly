@@ -8,7 +8,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { MonthCalendar, dayCellClass, dayKey, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey } from '@/lib/math';
-import { clockOf, courseTitle, sortPeriods, WEEK } from '@/lib/insights';
+import { clockOf, courseTitle, sortPeriods, startOf, WEEK } from '@/lib/insights';
 import type { ClassRecord } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
@@ -82,13 +82,16 @@ function History() {
     const records = byDate.get(pickedDate) ?? [];
     const date = new Date(`${pickedDate}T00:00:00`);
     const slots = Number.isNaN(date.getTime()) ? [] : sortPeriods(timetable.find((t) => t.day === WEEK[date.getDay()])?.periods ?? []);
-    const startOf = (period: string) => slots.find((p) => p.period.replace(/\D/g, '') === period)?.start ?? '';
+    const timeOf = (period: string) => {
+      const slot = slots.find((p) => p.period.replace(/\D/g, '') === period);
+      return slot ? startOf(slot) : '';
+    };
     const rows: { key: string; period: string; time: string; code: string; title: string; component: string; state: RowState }[] = [];
     for (const r of records) {
       rows.push({
         key: `r-${r.code}-${r.component}-${r.period}`,
         period: r.period,
-        time: startOf(r.period),
+        time: timeOf(r.period),
         code: r.code,
         title: byCode.get(r.code)?.title ?? r.code,
         component: r.component,
@@ -104,7 +107,7 @@ function History() {
         rows.push({
           key: `t-${p.period}-${p.subjectCode}`,
           period,
-          time: p.start ?? '',
+          time: startOf(p),
           code: p.subjectCode,
           title: byCode.get(p.subjectCode)?.title ?? courseTitle(p.subjectTitle, p.subjectCode),
           component: p.type ?? '',

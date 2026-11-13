@@ -201,6 +201,33 @@ export function periodOrder(p: TimetablePeriod): number {
   return Number.isNaN(n) ? 999 : n;
 }
 
+/**
+ * KLH's standard bell schedule, in the ERP's own 12-hour, no-am/pm format
+ * (`minutesOf` reads 1–6 as afternoon). Lunch is not fixed here: it is whichever
+ * period a section has free on every weekday, so this table has no gap for it.
+ */
+export const PERIOD_TIMES: Record<number, { start: string; end: string }> = {
+  1: { start: '8:10', end: '9:00' },
+  2: { start: '9:00', end: '9:50' },
+  3: { start: '10:00', end: '10:50' },
+  4: { start: '10:50', end: '11:40' },
+  5: { start: '11:50', end: '12:40' },
+  6: { start: '12:40', end: '1:20' },
+  7: { start: '1:20', end: '2:10' },
+  8: { start: '2:10', end: '3:00' },
+  9: { start: '3:00', end: '3:50' },
+};
+
+/** A period's start: the ERP's time when it prints one, else the bell schedule's ('' when neither knows). */
+export function startOf(p: TimetablePeriod): string {
+  return p.start?.trim() ? p.start : (PERIOD_TIMES[periodOrder(p)]?.start ?? '');
+}
+
+/** A period's end: the ERP's time when it prints one, else the bell schedule's ('' when neither knows). */
+export function endOf(p: TimetablePeriod): string {
+  return p.end?.trim() ? p.end : (PERIOD_TIMES[periodOrder(p)]?.end ?? '');
+}
+
 export function sortPeriods(periods: TimetablePeriod[]): TimetablePeriod[] {
   return [...periods].sort(
     (a, b) => periodOrder(a) - periodOrder(b) || (minutesOf(a.start) ?? 0) - (minutesOf(b.start) ?? 0),
@@ -214,7 +241,7 @@ export interface NextClass {
   inDays: number;
 }
 
-/** The next scheduled class of a course, from `now`. Today's classes count only if their start time is known and ahead. */
+/** The next scheduled class of a course, from `now`. Today's classes count only if their start time (ERP or bell schedule) is known and ahead. */
 export function nextClassOf(code: string, timetable: TimetableDay[], now = new Date()): NextClass | null {
   const nowMin = now.getHours() * 60 + now.getMinutes();
   for (let offset = 0; offset < 7; offset++) {
@@ -222,7 +249,7 @@ export function nextClassOf(code: string, timetable: TimetableDay[], now = new D
     const periods = sortPeriods(timetable.find((d) => d.day === day)?.periods ?? []).filter((p) => p.subjectCode === code);
     for (const p of periods) {
       if (offset === 0) {
-        const start = minutesOf(p.start);
+        const start = minutesOf(startOf(p));
         if (start == null || start <= nowMin) continue;
       }
       return { period: p, day, inDays: offset };
@@ -234,7 +261,8 @@ export function nextClassOf(code: string, timetable: TimetableDay[], now = new D
 /** Reads after "Next class": "today at 2:30 pm", "tomorrow at 9:50 am", "on Fri, period 3". */
 export function whenLabel(n: NextClass): string {
   const day = n.inDays === 0 ? 'today' : n.inDays === 1 ? 'tomorrow' : `on ${n.day}`;
-  return n.period.start ? `${day} at ${clockOf(n.period.start)}` : `${day}, ${n.period.period.replace(/^P/, 'period ')}`;
+  const start = startOf(n.period);
+  return start ? `${day} at ${clockOf(start)}` : `${day}, ${n.period.period.replace(/^P/, 'period ')}`;
 }
 
 /** "9:50" → "9:50 am", "1:40" → "1:40 pm". KLU prints afternoons on a 12-hour clock without am/pm. */
@@ -256,7 +284,7 @@ export interface Agenda {
   periods: TimetablePeriod[];
 }
 
-/** When the ERP prints no clock times, today's classes count as still ahead until this time. */
+/** A period with no ERP time and no bell-schedule slot counts as still ahead today until this time. */
 export const UNTIMED_DAY_ENDS = 17 * 60;
 
 export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | null {
@@ -266,8 +294,8 @@ export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | 
     let periods = sortPeriods(timetable.find((d) => d.day === day)?.periods ?? []);
     if (offset === 0) {
       periods = periods.filter((p) => {
-        const start = minutesOf(p.start);
-        // No time printed (the ERP often gives only "Period 1"): assume the day runs until late afternoon.
+        const start = minutesOf(startOf(p));
+        // Neither the ERP nor the bell schedule knows this period: assume the day runs until late afternoon.
         if (start == null) return nowMin < UNTIMED_DAY_ENDS;
         return start > nowMin;
       });
