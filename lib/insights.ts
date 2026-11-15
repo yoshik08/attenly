@@ -118,22 +118,30 @@ function bestSpare(comps: ComponentSummary[]) {
   return best;
 }
 
-export function summarize(subj: SubjectAttendance, settings: SummarySettings): CourseSummary {
+export function summarize(subj: SubjectAttendance, settings: SummarySettings, timetable: TimetableDay[] = []): CourseSummary {
   const { target, weights } = settings;
   const tcbr = courseTcbr(subj.code, settings.tcbr);
   const pct = weightedPct(subj, weights, tcbr);
   const status = statusOf(pct);
+  const scheduledTypes = new Set<ComponentKey>();
+  for (const day of timetable) {
+    for (const p of day.periods) {
+      if (p.subjectCode === subj.code && p.type != null) scheduledTypes.add(p.type);
+    }
+  }
   const components: ComponentSummary[] = [];
   for (const k of COMPONENT_ORDER) {
     const c = subj.components[k];
-    if (!c || c.conducted <= 0) continue;
+    const recorded = c != null && c.conducted > 0;
+    if (!recorded && !scheduledTypes.has(k)) continue;
+    // Scheduled types can be planned before their first register entry.
     components.push({
       k,
       label: COMPONENT_LABELS[k],
-      conducted: c.conducted,
-      attended: c.attended,
-      effective: effectiveConducted(subj, k, tcbr),
-      budget: componentBudget(subj, weights, target, k, tcbr),
+      conducted: recorded ? c.conducted : 0,
+      attended: recorded ? c.attended : 0,
+      effective: recorded ? effectiveConducted(subj, k, tcbr) : 0,
+      budget: recorded ? componentBudget(subj, weights, target, k, tcbr) : null,
     });
   }
 
