@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, endOf, minutesOf, nextClassOf, PERIOD_TIMES, skipCall, startOf, summarize, whenLabel } from '../lib/insights';
-import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, type ComponentKey, type SubjectAttendance } from '../lib/math';
+import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, emptyPlan, sandboxPct, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
 
@@ -16,6 +16,42 @@ const course = (code: string, title: string, c: Partial<Record<ComponentKey, [nu
     P: { attended: c.P?.[0] ?? 0, conducted: c.P?.[1] ?? 0 },
     S: { attended: c.S?.[0] ?? 0, conducted: c.S?.[1] ?? 0 },
   },
+});
+
+const scheduled = (code: string, types: (ComponentKey | null)[]): TimetableDay => ({
+  day: 'Mon',
+  periods: types.map((type, i) => ({
+    period: `P${i + 1}`, start: '', end: '', subjectCode: code,
+    subjectTitle: '', room: 'H102', faculty: '', type,
+  })),
+});
+
+test('a timetable-only lecture appears as 0/0 and can change the projection', () => {
+  const subject = course('CN', 'Computer Networks and Network Programming', { S: [6, 8] });
+  const before = summarize(subject, settings);
+  const summary = summarize(subject, settings, [scheduled('CN', ['L', 'L', null]), scheduled('OTHER', ['T', 'P'])]);
+  assert.deepEqual(summary.components.map((c) => c.k), ['L', 'S'], 'union is ordered, deduplicated and course-specific');
+  assert.deepEqual(summary.components[0], { k: 'L', label: 'Lecture', attended: 0, conducted: 0, effective: 0, budget: null });
+  assert.deepEqual(summary.components.slice(1), before.components, 'recorded counts and budgets are unchanged');
+  assert.deepEqual({ ...summary, components: [] }, { ...before, components: [] }, 'percentage, band and verdict are unchanged');
+
+  const plan = emptyPlan();
+  plan.L.attend = 1;
+  assert.equal(summary.pct, 75);
+  assert.equal(sandboxPct(subject, settings.weights, plan), 84);
+  assert.deepEqual(subject.components.L, { attended: 0, conducted: 0 }, 'planning leaves the register untouched');
+});
+
+test('only scheduled zero-session types are added, including tutorials and practicals', () => {
+  for (const k of ['L', 'T', 'P', 'S'] as const) {
+    const subject = course('NEW', 'New Course', {});
+    const summary = summarize(subject, { ...settings, tcbr: { enabled: true, perCourse: { NEW: 2 } } }, [scheduled('NEW', [k])]);
+    assert.deepEqual(summary.components, [{ k, label: { L: 'Lecture', T: 'Tutorial', P: 'Practical', S: 'Skilling' }[k], attended: 0, conducted: 0, effective: 0, budget: null }]);
+    assert.equal(summary.pct, null);
+    assert.equal(summary.verdict, 'No classes counted yet.');
+  }
+  const globalLogic = course('GL', 'Global Logic', { S: [11, 11] });
+  assert.deepEqual(summarize(globalLogic, settings, [scheduled('GL', ['S', null]), scheduled('AOOP', ['L'])]), summarize(globalLogic, settings));
 });
 
 test('verdicts name the class type and count against the one target', () => {

@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import { MongoClient } from 'mongodb';
+import { planLtpsData } from './fixtures/plan-ltps.mjs';
 
 let stack;
 let st;
@@ -75,7 +76,7 @@ before(async () => {
   }
   st = JSON.parse(readFileSync('tests/.stack.json', 'utf8'));
   mongo = await MongoClient.connect(st.mongoUri);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   // Warm the dev server so the first assertions don't race compilation.
   for (const p of ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
 });
@@ -202,6 +203,61 @@ test('attendance: course cards, band badges, rings, planner and keyboard', async
   await os.getByRole('button', { name: 'Reset' }).click();
   await os.getByText('Add classes to see where you’d land').waitFor();
   await ctx.close();
+});
+
+test('attendance: timetable-only lectures have 0/0 rows and working Attend / Skip steppers', async () => {
+  const { ctx, page } = await ctxFor(null, { timezoneId: 'Asia/Kolkata', reducedMotion: 'reduce' });
+  try {
+    const now = new Date('2026-11-15T10:30:00+05:30').getTime();
+    // The reported 1 practical / 3 skilling spare budgets use the 75% target.
+    await page.addInitScript(() => localStorage.setItem('attenly:settings:v2', JSON.stringify({ target: 75 })));
+    await page.clock.install({ time: now });
+    await page.route('**/api/data**', (route) => route.fulfill({ json: planLtpsData(now) }));
+    await page.goto(st.app);
+    const aoop = page.getByRole('article', { name: 'Advanced Object Oriented Programming', exact: true });
+    const cn = page.getByRole('article', { name: 'Computer Networks and Network Programming', exact: true });
+    const gl = page.getByRole('article', { name: 'Global Logic', exact: true });
+    const rows = (card) => card.getByRole('list', { name: /classes by type$/ }).locator('li');
+    const rowText = async (card) => (await rows(card).allTextContents()).map((s) => s.replace(/\s+/g, ''));
+    const projection = (card) => card.locator('.t-acc-panel .figure').last().locator('> [aria-hidden="true"]');
+
+    await aoop.waitFor();
+    assert.deepEqual(await rowText(aoop), ['Lecture0/0—', 'Practical2/21tospare', 'Skilling6/63tospare']);
+    assert.deepEqual(await rowText(cn), ['Lecture0/0—', 'Skilling6/8nonespare']);
+    assert.deepEqual(await rowText(gl), ['Skilling11/113tospare']);
+    await aoop.getByRole('link', { name: 'Next class tomorrow at 8:10 am · H102' }).waitFor();
+    await cn.getByRole('link', { name: 'Next class tomorrow at 10:00 am · H102' }).waitFor();
+
+    for (const card of [aoop, cn, gl]) await card.getByRole('button', { name: 'Plan', exact: true }).click();
+    for (const card of [aoop, cn]) {
+      await card.getByRole('group', { name: 'Attend upcoming lectures', exact: true }).waitFor();
+      await card.getByRole('group', { name: 'Skip upcoming lectures', exact: true }).waitFor();
+      assert.equal(await card.getByRole('button', { name: 'Attend upcoming lectures: one fewer' }).isDisabled(), true);
+    }
+    assert.equal(await gl.getByRole('group', { name: /upcoming lectures/ }).count(), 0);
+    assert.equal(await gl.getByRole('group', { name: /upcoming skilling sessions/ }).count(), 2);
+
+    await cn.getByRole('button', { name: 'Attend upcoming lectures: one more' }).click();
+    assert.equal(await projection(cn).innerText(), '84%', 'the first lecture attend raises 75% to 84%');
+    assert.deepEqual(await rowText(cn), ['Lecture0/0—', 'Skilling6/8nonespare'], 'planning preserves recorded counts and budgets');
+
+    await aoop.getByRole('button', { name: 'Attend upcoming lectures: one more' }).click();
+    assert.equal(await projection(aoop).innerText(), '100%', 'an all-attended course stays at 100%');
+    await aoop.getByRole('button', { name: 'Skip upcoming lectures: one more' }).click();
+    assert.equal(await projection(aoop).innerText(), '78%');
+    await aoop.getByRole('button', { name: 'Attend upcoming lectures: one more' }).click();
+    assert.equal(await projection(aoop).innerText(), '82%', 'attending another lecture improves the mixed plan');
+    await aoop.getByRole('button', { name: 'Reset' }).click();
+    assert.equal(await projection(aoop).innerText(), '100%');
+    assert.deepEqual(await rowText(aoop), ['Lecture0/0—', 'Practical2/21tospare', 'Skilling6/63tospare']);
+
+    const ai = page.getByRole('article', { name: 'Generative AI', exact: true });
+    const sdg = page.getByRole('article', { name: 'Insights to Sustainable Development Goals', exact: true });
+    assert.deepEqual((await rowText(ai)).map((s) => s.split(/attend/)[0]), ['Lecture4/4', 'Skilling6/16']);
+    assert.equal((await rowText(sdg))[0].startsWith('Lecture2/4'), true);
+  } finally {
+    await ctx.close();
+  }
 });
 
 test('force sync from the status pill finishes fast, reusing the ERP session', async () => {

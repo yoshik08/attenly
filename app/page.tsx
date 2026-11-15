@@ -33,7 +33,8 @@ function Attendance() {
   const [repairing, setRepairing] = useState(false);
 
   const subjects = useMemo(() => snapshot?.attendance ?? [], [snapshot]);
-  const summaries = useMemo(() => subjects.map((s) => summarize(s, settings)), [subjects, settings]);
+  const timetable = snapshot?.timetable;
+  const summaries = useMemo(() => subjects.map((s) => summarize(s, settings, timetable)), [subjects, settings, timetable]);
   const byCode = useMemo(() => new Map<string, CourseSummary>(summaries.map((s) => [s.code, s])), [summaries]);
   const onSeen = useCallback((code: string) => markSeen(code), [markSeen]);
 
