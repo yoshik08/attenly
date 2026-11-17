@@ -5,6 +5,14 @@ import { AuthProvider } from '@/components/auth-provider';
 import { StoreProvider } from '@/components/store';
 import { AppShell } from '@/components/shell';
 import { LiquidGlass } from '@/components/liquid-glass';
+import { BASE_PATH } from '@/lib/api';
+
+/**
+ * Starts the app's data request while the HTML is still parsing, so it runs alongside the
+ * JavaScript download instead of after hydration. The store picks the response up
+ * (components/store.tsx, takeEarlyData); the cached copy still paints first.
+ */
+const EARLY_DATA = `(function(){try{var a=localStorage.getItem('attenly-active-account');if(!a||!/^[A-Za-z0-9]+$/.test(a))a=null;window.__attenlyEarly={account:a,at:Date.now(),res:fetch('${BASE_PATH}/api/data'+(a?'?account='+encodeURIComponent(a):''),{cache:'no-store'}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})};window.__attenlyEarly.res.catch(function(){})}catch(e){}})();`;
 
 const archivo = Archivo({
   subsets: ['latin'],
@@ -35,6 +43,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${archivo.variable} ${geist.variable} ${geistMono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: EARLY_DATA }} />
+      </head>
       <body className="lg-bg">
         <LiquidGlass />
         <AuthProvider>

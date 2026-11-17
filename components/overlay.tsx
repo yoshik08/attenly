@@ -12,7 +12,7 @@ import { cn } from './cn';
  * so React's dev double-rendering can't lose an update. Reopening while the
  * exit plays just reverses the CSS transition.
  */
-export function usePresence(open: boolean, closeMs = 160) {
+export function usePresence(open: boolean, closeMs = 130) {
   const [lingering, setLingering] = useState(open);
   const [entered, setEntered] = useState(false);
   useEffect(() => {
@@ -132,7 +132,7 @@ export function Sheet({
   bare?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { mounted, shown, closing } = usePresence(open, 230);
+  const { mounted, shown, closing } = usePresence(open, 190);
 
   useEffect(() => {
     const d = ref.current;

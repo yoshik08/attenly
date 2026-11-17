@@ -1,7 +1,23 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { animate, utils } from 'animejs';
+
+/**
+ * Tweens 0 → `to` over `ms` with anime.js's out(4) curve, calling `frame` each frame.
+ * Returns a cancel function. Small enough that the count-up needs no animation library.
+ */
+function tween(to: number, ms: number, frame: (v: number) => void, done: () => void): () => void {
+  let raf = 0;
+  const t0 = performance.now();
+  const step = (t: number) => {
+    const p = Math.min(1, (t - t0) / ms);
+    frame(to * (1 - (1 - p) ** 4));
+    if (p < 1) raf = requestAnimationFrame(step);
+    else done();
+  };
+  raf = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(raf);
+}
 
 const useIso = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
@@ -58,22 +74,19 @@ export function Figure({
     }
     if (before === undefined) {
       if (countUp && !reducedMotion()) {
-        const o = { v: 0 };
         el.textContent = `${fmt(0)}${suffix}`;
-        const a = animate(o, {
-          v: value,
-          duration: 640,
-          ease: 'out(4)',
-          modifier: decimals ? (x: number) => x : utils.round(0),
-          onUpdate: () => {
-            el.textContent = `${fmt(o.v)}${suffix}`;
+        const cancel = tween(
+          value,
+          520,
+          (v) => {
+            el.textContent = `${fmt(decimals ? v : Math.round(v))}${suffix}`;
           },
-          onComplete: () => {
+          () => {
             el.textContent = `${fmt(value)}${suffix}`;
           },
-        });
+        );
         return () => {
-          a.cancel();
+          cancel();
           el.textContent = `${fmt(value)}${suffix}`;
         };
       }

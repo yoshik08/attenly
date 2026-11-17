@@ -19,10 +19,17 @@ export async function GET(req: Request) {
   }
   const requested = new URL(req.url).searchParams.get('account');
   try {
-    const user = await getUser(me.googleId);
+    // The app always asks for the account it showed last, so fetch that snapshot alongside
+    // the user instead of after it: one database round trip instead of two.
+    const [user, guess] = await Promise.all([
+      getUser(me.googleId),
+      requested ? getLatestSnapshot(me.googleId, requested) : Promise.resolve(null),
+    ]);
     const accounts = user ? viewAccounts(user) : [];
     const active = accounts.find((a) => a.universityId === requested) ?? accounts[0] ?? null;
-    const snap = active ? await getLatestSnapshot(me.googleId, active.universityId) : null;
+    // Snapshots are keyed by the Google user, so a guess for an account that is no longer linked
+    // is simply discarded.
+    const snap = !active ? null : active.universityId === requested ? guess : await getLatestSnapshot(me.googleId, active.universityId);
     return Response.json({
       signedIn: true,
       user: { name: me.name, email: me.email, image: me.image },
