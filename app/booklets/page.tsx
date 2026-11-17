@@ -1,0 +1,181 @@
+'use client';
+
+import { useMemo, useState, type CSSProperties } from 'react';
+import { CaretDown, Exam, FilePdf } from '@phosphor-icons/react';
+import { useStore } from '@/components/store';
+import { DataGate } from '@/components/states';
+import { Empty, Footnote, PageHeader } from '@/components/page';
+import { useRecord } from '@/components/records';
+import { Meter, RecordLine, RecordProblem, RecordSkeleton, marks, nameCase } from '@/components/record-ui';
+import { api } from '@/lib/api';
+import type { Paper } from '@/lib/erp/records-parse';
+
+export default function BookletsPage() {
+  return (
+    <DataGate title="Booklets">
+      <Booklets />
+    </DataGate>
+  );
+}
+
+/** Newest term first: by academic year, then Even before Odd (Even comes later in the year). */
+function termOrder(a: Paper, b: Paper) {
+  const rank = (s: string) => (/even/i.test(s) ? 2 : /odd/i.test(s) ? 1 : 3);
+  return b.academicYear.localeCompare(a.academicYear) || rank(b.semester) - rank(a.semester);
+}
+
+function Booklets() {
+  const rec = useRecord('papers');
+  const papers = useMemo(() => [...(rec.data?.papers ?? [])].sort(termOrder), [rec.data]);
+
+  const groups = useMemo(() => {
+    const out: [string, Paper[]][] = [];
+    for (const p of papers) {
+      const label = `${p.semester} ${p.academicYear}`;
+      const last = out[out.length - 1];
+      if (last && last[0] === label) last[1].push(p);
+      else out.push([label, [p]]);
+    }
+    return out;
+  }, [papers]);
+
+  const scored = papers.filter((p) => p.got != null && p.max);
+  const got = scored.reduce((n, p) => n + (p.got ?? 0), 0);
+  const max = scored.reduce((n, p) => n + (p.max ?? 0), 0);
+
+  return (
+    <div className="page-in">
+      <PageHeader
+        title="Booklets"
+        sub={
+          <RecordLine fetchedAt={rec.fetchedAt} loading={rec.loading} onRefresh={rec.refresh}>
+            {papers.length > 0 && (
+              <span className="tnum">
+                {papers.length} evaluated paper{papers.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </RecordLine>
+        }
+      />
+      <RecordProblem error={rec.error} code={rec.code} hasData={Boolean(rec.data)} />
+
+      {!rec.data && rec.loading ? (
+        <RecordSkeleton cards={4} />
+      ) : papers.length === 0 ? (
+        rec.data && (
+          <Empty icon={Exam} title="No evaluated answer scripts on the ERP yet.">
+            Once a mid-term is evaluated, its scanned booklet and each question&rsquo;s marks show up here.
+          </Empty>
+        )
+      ) : (
+        <>
+          {max > 0 && (
+            <section
+              data-tone="mark"
+              className="card glow mt-7 p-5 lg:p-6 lg lg-card"
+              aria-label="All papers"
+              style={{ '--gs': '380px', '--gx': '-160px', '--gy': '-200px' } as CSSProperties}
+            >
+              <p className="text-[13px] font-semibold text-fg-2">Across every evaluated paper</p>
+              <p className="mt-2">
+                <span className="figure text-[48px] lg:text-[56px]">{Math.round((got / max) * 100)}</span>
+                <span className="figure text-[22px] text-fg-2">%</span>
+              </p>
+              <p className="mt-1 text-[13px] text-fg-3 tnum">
+                {marks(got)} of {marks(max)} marks over {scored.length} paper{scored.length === 1 ? '' : 's'}
+              </p>
+            </section>
+          )}
+          <div className="mt-10 flex flex-col gap-9">
+            {groups.map(([label, list]) => (
+              <section key={label} aria-label={label}>
+                <h2 className="h2 mb-3 text-[20px]">{label}</h2>
+                <ul className="grid items-start gap-2.5 md:grid-cols-2">
+                  {list.map((p, i) => (
+                    <Booklet key={`${p.courseCode}-${p.exam}-${i}`} paper={p} index={i} />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+
+      <Footnote>
+        From the ERP&rsquo;s In Sem Answer Scripts, read when you open this screen. A scan is read from the ERP when you open it;
+        evaluator names are left out.
+      </Footnote>
+    </div>
+  );
+}
+
+function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
+  const { active } = useStore();
+  const [open, setOpen] = useState(false);
+  const id = `booklet-${p.courseCode}-${index}`;
+  const scan =
+    p.hasScan && active
+      ? api(
+          `/api/erp/booklet?${new URLSearchParams({ account: active, code: p.courseCode, exam: p.exam, ay: p.academicYear, sem: p.semester }).toString()}`,
+        )
+      : null;
+  return (
+    <li className="card rise p-4 sm:p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties}>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
+        <div className="min-w-0">
+          <p className="mono text-[12px] text-fg-3">{p.courseCode}</p>
+          <h3 className="mt-1 line-clamp-2 text-[16px] font-semibold leading-snug pretty">{nameCase(p.courseName)}</h3>
+          <p className="mt-0.5 truncate text-[12.5px] text-fg-2">{p.exam}</p>
+        </div>
+        <p className="text-right">
+          <span className="figure text-[28px]">{marks(p.got)}</span>
+          <span className="text-[13px] text-fg-3 tnum">/{marks(p.max)}</span>
+        </p>
+      </div>
+      <Meter value={p.got} max={p.max} className="mt-3" />
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={id}
+          disabled={p.questions.length === 0}
+          className="press inline-flex items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2 disabled:opacity-50 lg lg-btn"
+        >
+          {p.questions.length === 0 ? 'No question marks' : open ? 'Hide questions' : `${p.questions.length} questions`}
+          {p.questions.length > 0 && (
+            <span className="t-acc-chevron" aria-hidden>
+              <CaretDown size={12} weight="bold" />
+            </span>
+          )}
+        </button>
+        {scan ? (
+          <a href={scan} target="_blank" rel="noopener" className="btn btn-secondary btn-sm press lg lg-btn">
+            <FilePdf size={16} aria-hidden /> Open scan
+          </a>
+        ) : (
+          <span className="text-[12.5px] text-fg-3">No scan on the ERP</span>
+        )}
+      </div>
+      <div className="t-acc" data-open={open}>
+        <div className="t-acc-panel" id={id}>
+          <div className="t-acc-panel-inner">
+            {open && (
+              <div className="grid grid-cols-3 gap-1.5 pt-3.5 sm:grid-cols-4">
+                {p.questions.map((q) => (
+                  <span key={q.question} className="rounded-[10px] bg-white/[0.04] px-2.5 py-2 text-center hair">
+                    <span className="block text-[11.5px] text-fg-3">Q{q.question}</span>
+                    <span className="block text-[14px] font-semibold tnum">
+                      {marks(q.got)}
+                      <span className="font-normal text-fg-3">/{marks(q.max)}</span>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}

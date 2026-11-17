@@ -7,11 +7,11 @@ import { RECORD_MAX_AGE, readRecord, withErpSession, type RecordSet } from '@/li
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const SETS: RecordSet[] = ['marks', 'papers', 'profile', 'fees', 'circulars'];
+const SETS: RecordSet[] = ['marks', 'papers', 'profile', 'fees', 'circulars', 'courses'];
 const ID = /^\d{1,4}$/;
 
 /**
- * GET /api/erp/records?set=marks|papers|profile|fees|circulars&account=<id>[&ay=29&sem=2][&fresh=1]
+ * GET /api/erp/records?set=marks|papers|profile|fees|circulars|courses&account=<id>[&ay=29&sem=2][&fresh=1]
  *
  * One screen's ERP data. Served from the cache while it is younger than the set's
  * max age; otherwise read from the ERP (reusing the saved session) and cached.

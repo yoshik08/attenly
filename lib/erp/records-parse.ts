@@ -509,6 +509,8 @@ export interface Paper extends Omit<PaperRef, 'href'> {
   questions: PaperQuestion[];
   got: number | null;
   max: number | null;
+  /** The ERP has the scanned script (opened through /api/erp/booklet). */
+  hasScan: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -536,4 +538,61 @@ export function parseFormTerms(html: string): FormTerm[] {
   for (const y of years) for (const s of sems) out.push({ academicyear: y.id, yearLabel: y.label, semesterid: s.id, semester: s.label });
   const rank = (s: string) => (/odd/i.test(s) ? 1 : /even/i.test(s) ? 2 : 3);
   return out.sort((a, b) => b.yearLabel.localeCompare(a.yearLabel) || rank(b.semester) - rank(a.semester));
+}
+
+/* ------------------------------------------------------------------ */
+/* Courses (the profile's Courses tab)                                 */
+/* ------------------------------------------------------------------ */
+
+export interface CourseClass {
+  studyYear: string;
+  academicYear: string;
+  semester: string;
+  code: string;
+  title: string;
+  /** L, T, P or S. */
+  ltps: string;
+  section: string;
+  faculty: string;
+}
+
+/** One page of the Courses tab (a class per row: course × L/T/P/S), and the tab's total row count. */
+export function parseCourseClasses(html: string): { classes: CourseClass[]; total: number | null } {
+  const total = numOrNull(/of\s+([\d,]+)\s+items?/i.exec(html.replace(/<[^>]+>/g, ''))?.[1]);
+  const g = gridWith(html, ['coursecode', 'course code'], ['faculty']);
+  if (!g) return { classes: [], total };
+  const c = {
+    year: g.headers.findIndex((h) => lower(h) === 'year' || lower(h) === 'study year'),
+    ay: col(g, 'academicyear') >= 0 ? col(g, 'academicyear') : col(g, 'academic', 'year'),
+    sem: col(g, 'semester'),
+    code: g.headers.findIndex((h) => /course\s*code/i.test(h)),
+    title: g.headers.findIndex((h) => /course\s*(desc|name|title)/i.test(h)),
+    ltps: col(g, 'ltps'),
+    section: col(g, 'section'),
+    faculty: col(g, 'faculty'),
+  };
+  const classes = g.rows
+    .map((r) => ({
+      studyYear: at(r, c.year),
+      academicYear: at(r, c.ay),
+      semester: at(r, c.sem),
+      code: at(r, c.code),
+      title: at(r, c.title),
+      ltps: at(r, c.ltps).toUpperCase(),
+      section: at(r, c.section),
+      faculty: at(r, c.faculty),
+    }))
+    .filter((x) => x.code);
+  return { classes, total };
+}
+
+/* ------------------------------------------------------------------ */
+/* A booklet's scanned answer script                                   */
+/* ------------------------------------------------------------------ */
+
+/** The scan's address on a booklet page (pdf.js loads it from `var url = "…download_script_frompath…"`). */
+export function paperScanHref(html: string): string | null {
+  const m = /(?:var\s+url\s*=\s*|["'])(\/?index\.php\?r=studentinfo(?:\/|%2F)studentendexamresult(?:\/|%2F)download_script_frompath&(?:amp;)?id=[^"'\s]+)/.exec(html);
+  if (!m) return null;
+  return m[1].replace(/&amp;/g, '&').replace(/^index/, '/index');
 }

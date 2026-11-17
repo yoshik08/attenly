@@ -647,3 +647,28 @@ export async function erpDocument(session: AuthedSession, href: string): Promise
   }
   throw new Error('Too many redirects talking to the ERP');
 }
+
+/**
+ * A large ERP file (a scanned answer script, several MB), streamed rather than held in
+ * memory. Same-origin links only; the caller checks what came back.
+ */
+export async function erpStream(session: AuthedSession, href: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; length: number | null }> {
+  const url = new URL(sameOriginPath(href), ERP_BASE).toString();
+  const res = await fetchWithin(
+    url,
+    {
+      headers: {
+        Cookie: jarHeader(session.jar),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        Referer: new URL('/index.php', ERP_BASE).toString(),
+      },
+      redirect: 'manual',
+    },
+    45_000,
+  );
+  if (res.status === 429) throw new ErpRateLimited();
+  if (res.status >= 300 && res.status < 400) throw expired(); // the ERP sends a lapsed session to its login page
+  if (!res.ok || !res.body) throw new Error(`ERP answered HTTP ${res.status}`);
+  const length = Number(res.headers.get('content-length'));
+  return { body: res.body, contentType: res.headers.get('content-type') ?? '', length: Number.isFinite(length) && length > 0 ? length : null };
+}

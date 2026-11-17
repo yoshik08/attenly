@@ -12,6 +12,7 @@ import {
   parseCirculars,
   parseComponentMarks,
   parseCounselling,
+  parseCourseClasses,
   parseDues,
   parseFeeLedger,
   parseFormTerms,
@@ -21,6 +22,7 @@ import {
   parseProfile,
   parseReceiptList,
   parseSeating,
+  paperScanHref,
 } from '../lib/erp/records-parse';
 
 const grid = (headers: string[], rows: (string | number)[][]) =>
@@ -164,4 +166,38 @@ test('a search form\'s terms, newest first', () => {
     parseFormTerms(html).map((t) => `${t.academicyear}:${t.semesterid}`),
     ['29:2', '29:1', '19:2', '19:1'],
   );
+});
+
+test('courses tab: a class per row with faculty, the total from the summary', () => {
+  const head = ['#', 'Year', 'AcademicYear', 'Semester', 'Coursecode', 'Coursedesc', 'LTPS', 'Section', 'FacultyName'];
+  const html = `<div class="summary">Showing <b>1-2</b> of <b>58</b> items.</div>${grid(head, [
+    [1, 2, '2026-2027', 'Odd Sem', '25CS1302E', 'DATABASE SYSTEMS', 'l', 'S-9', 'Asha Rani'],
+    [2, 1, '2025-2026', 'Term3', '25CS1201E', 'FRONT END DEVELOPMENT', 'P', 'S-10', 'Ravi K'],
+  ])}`;
+  const { classes, total } = parseCourseClasses(html);
+  assert.equal(total, 58);
+  assert.equal(classes.length, 2);
+  assert.deepEqual(classes[0], {
+    studyYear: '2',
+    academicYear: '2026-2027',
+    semester: 'Odd Sem',
+    code: '25CS1302E',
+    title: 'DATABASE SYSTEMS',
+    ltps: 'L',
+    section: 'S-9',
+    faculty: 'Asha Rani',
+  });
+  assert.equal(classes[1].semester, 'Term3');
+  assert.deepEqual(parseCourseClasses(grid(head, [])).classes, []);
+});
+
+test('a booklet scan address, from the pdf.js loader', () => {
+  const page = `<script>var url ="index.php?r=studentinfo/studentendexamresult/download_script_frompath&id=OTY1Mzl8eA==";
+ var pdfjsLib = window['pdfjs-dist/build/pdf'];</script>`;
+  assert.equal(paperScanHref(page), '/index.php?r=studentinfo/studentendexamresult/download_script_frompath&id=OTY1Mzl8eA==');
+  assert.equal(
+    paperScanHref('<a href="/index.php?r=studentinfo%2Fstudentendexamresult%2Fdownload_script_frompath&amp;id=abc">scan</a>'),
+    '/index.php?r=studentinfo%2Fstudentendexamresult%2Fdownload_script_frompath&id=abc',
+  );
+  assert.equal(paperScanHref('<div id="marktable"></div>'), null);
 });

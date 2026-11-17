@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
-import { Exam, MapPin, Notebook } from '@phosphor-icons/react';
+import { useState, type CSSProperties } from 'react';
+import Link from 'next/link';
+import { ArrowRight, Exam, MapPin, Notebook } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
@@ -9,7 +10,6 @@ import { useRecord } from '@/components/records';
 import { Meter, RecordLine, RecordProblem, RecordSkeleton, SelectField, fmtDate, marks, nameCase } from '@/components/record-ui';
 import { cn } from '@/components/cn';
 import type { InternalCourse } from '@/lib/erp/records-parse';
-import type { Paper } from '@/lib/erp/records-parse';
 
 export default function MarksPage() {
   return (
@@ -83,7 +83,19 @@ function Marks() {
         )}
       </section>
 
-      <Papers />
+      <Link
+        href="/booklets"
+        className="card press mt-10 flex items-center gap-4 p-5 hover:bg-raised lg lg-card lg-frost lg-press"
+      >
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-raised hair">
+          <Exam size={22} className="text-fg" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold">Mid-term booklets</span>
+          <span className="block text-[13px] text-fg-2">Your scanned answer scripts, marked question by question</span>
+        </span>
+        <ArrowRight size={18} className="shrink-0 text-fg-2" aria-hidden />
+      </Link>
 
       <Footnote>
         Read from the ERP when you open this screen, at most every 20 minutes. Weighted marks are what count toward the internal
@@ -164,106 +176,3 @@ function ExamRooms({ seating }: { seating: { date: string; examType: string; slo
   );
 }
 
-function Papers() {
-  const rec = useRecord('papers');
-  const papers = useMemo(() => rec.data?.papers ?? [], [rec.data]);
-  const [open, setOpen] = useState<string | null>(null);
-
-  // Newest term first; inside a term, as the ERP lists them.
-  const groups = useMemo(() => {
-    const by = new Map<string, Paper[]>();
-    for (const p of papers) {
-      const k = `${p.semester} ${p.academicYear}`;
-      by.set(k, [...(by.get(k) ?? []), p]);
-    }
-    return [...by.entries()].sort((a, b) => {
-      const ya = a[1][0].academicYear;
-      const yb = b[1][0].academicYear;
-      return yb.localeCompare(ya) || (/even/i.test(a[0]) ? -1 : 1);
-    });
-  }, [papers]);
-
-  return (
-    <section aria-label="Mid-term papers" className="mt-12">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="h2">
-          Mid-term papers{' '}
-          {papers.length > 0 && <span className="font-sans text-[15px] font-medium tracking-normal text-fg-3 tnum">{papers.length}</span>}
-        </h2>
-        {rec.data && (
-          <button type="button" onClick={rec.refresh} disabled={rec.loading} className="link text-[13px] lg-press disabled:opacity-50">
-            {rec.loading ? 'Reading…' : 'Refresh'}
-          </button>
-        )}
-      </div>
-      {!rec.data && rec.loading ? (
-        <RecordSkeleton cards={2} />
-      ) : !rec.data && rec.error ? (
-        <RecordProblem error={rec.error} code={rec.code} hasData={false} />
-      ) : papers.length === 0 ? (
-        rec.data && (
-          <Empty icon={Exam} title="No evaluated papers on the ERP yet." className="mt-0">
-            Once a mid-term is evaluated, each question&rsquo;s marks show up here.
-          </Empty>
-        )
-      ) : (
-        <div className="flex flex-col gap-8">
-          {groups.map(([label, list]) => (
-            <div key={label}>
-              <p className="mb-2.5 text-[13px] font-semibold text-fg-2">{label}</p>
-              <ul className="grid items-start gap-2.5 md:grid-cols-2">
-                {list.map((p, i) => {
-                  const id = `${p.courseCode}-${p.exam}-${p.academicYear}-${p.semester}-${i}`;
-                  const isOpen = open === id;
-                  return (
-                    <li key={id} className="card p-4 lg lg-card lg-frost">
-                      <button
-                        type="button"
-                        onClick={() => setOpen(isOpen ? null : id)}
-                        aria-expanded={isOpen}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 text-left"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-[15px] font-semibold">{nameCase(p.courseName)}</span>
-                          <span className="mt-0.5 block truncate text-[12.5px] text-fg-3">{p.exam}</span>
-                        </span>
-                        <span className="text-right">
-                          <span className="figure text-[24px]">{marks(p.got)}</span>
-                          <span className="text-[13px] text-fg-3 tnum">/{marks(p.max)}</span>
-                        </span>
-                      </button>
-                      <Meter value={p.got} max={p.max} className="mt-3" />
-                      <div className="t-acc" data-open={isOpen}>
-                        <div className="t-acc-panel">
-                          <div className="t-acc-panel-inner">
-                            {isOpen && (
-                              <div className="grid grid-cols-3 gap-1.5 pt-3.5 sm:grid-cols-4" inert={!isOpen}>
-                                {p.questions.length === 0 ? (
-                                  <p className="col-span-full text-[13px] text-fg-3">The ERP shows no question-wise marks for this paper.</p>
-                                ) : (
-                                  p.questions.map((q) => (
-                                    <span key={q.question} className="rounded-[10px] bg-white/[0.04] px-2.5 py-2 text-center hair">
-                                      <span className="block text-[11.5px] text-fg-3">Q{q.question}</span>
-                                      <span className="block text-[14px] font-semibold tnum">
-                                        {marks(q.got)}
-                                        <span className="font-normal text-fg-3">/{marks(q.max)}</span>
-                                      </span>
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}

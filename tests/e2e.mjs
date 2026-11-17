@@ -78,7 +78,7 @@ before(async () => {
   mongo = await MongoClient.connect(st.mongoUri);
   browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   // Warm the dev server so the first assertions don't race compilation.
-  for (const p of ['/', '/timetable', '/cgpa', '/marks', '/profile', '/circulars', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
+  for (const p of ['/', '/timetable', '/cgpa', '/marks', '/booklets', '/courses', '/profile', '/circulars', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
 });
 
 after(async () => {
@@ -515,11 +515,54 @@ test('marks: internals by component, the exam room, and mid-term papers question
   // Another semester has no internals.
   await page.getByLabel('Semester').selectOption({ label: 'Odd Sem 2026-2027' });
   await page.getByText('No internal marks on the ERP for Odd Sem 2026-2027 yet.').waitFor();
-  const papers = page.getByRole('region', { name: 'Mid-term papers' });
-  const paper = papers.getByRole('button', { name: /Design and Analysis of Algorithms/ });
-  await paper.click();
-  assert.equal(await paper.getAttribute('aria-expanded'), 'true');
-  await papers.getByText('Q1.A').waitFor();
+  // Mid-term papers live on their own screen now.
+  await page.getByRole('link', { name: /Mid-term booklets/ }).waitFor();
+  await ctx.close();
+});
+
+test('booklets: marks question by question, and the scan read from the ERP', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/booklets`);
+  await page.getByRole('heading', { name: 'Booklets', exact: true }).waitFor();
+  const card = (name) => page.getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  const daa = card('Design and Analysis of Algorithms');
+  await daa.getByText('18', { exact: true }).waitFor();
+  await daa.getByText('/24', { exact: true }).waitFor();
+  await daa.getByRole('button', { name: '4 questions' }).click();
+  // The button now reads "Hide questions" and says it is expanded.
+  assert.equal(await daa.getByRole('button', { name: 'Hide questions' }).getAttribute('aria-expanded'), 'true');
+  await daa.getByText('Q1.A').waitFor();
+  // The scan streams through Attenly as a PDF, although the ERP labels it text/html.
+  const href = await daa.getByRole('link', { name: 'Open scan' }).getAttribute('href');
+  const res = await page.request.get(new URL(href, st.app).toString());
+  assert.equal(res.status(), 200);
+  assert.equal(res.headers()['content-type'], 'application/pdf');
+  assert.equal((await res.body()).subarray(0, 4).toString(), '%PDF');
+  // A paper the ERP has no scan for says so.
+  await card('Operating Systems').getByText('No scan on the ERP').waitFor();
+  await ctx.close();
+});
+
+test('courses: by year and term, with faculty', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/courses`);
+  await page.getByRole('heading', { name: 'Courses', exact: true }).waitFor();
+  // The synced term (Year 2, Even Sem 2026-2027) is shown first.
+  const year = page.getByRole('tablist', { name: 'Year' });
+  assert.equal(await year.getByRole('tab', { name: /^Year 2/ }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('tablist', { name: 'Term' }).getByRole('tab', { name: /Even/ }).getAttribute('aria-selected'), 'true');
+  const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
+  await daa.waitFor();
+  await daa.getByText('Ravi Kumar').first().waitFor();
+  await daa.getByText('Sita Lakshmi').waitFor();
+  await daa.getByText('Lecture').first().waitFor();
+  await daa.getByText('Practical').first().waitFor();
+  await page.getByRole('article', { name: 'Technical Skills for Engineers' }).getByText('Skilling').first().waitFor();
+  // Year 1 has older courses (spread over later pages of the ERP's tab).
+  await year.getByRole('tab', { name: /^Year 1/ }).click();
+  await page.getByRole('article', { name: /Problem Solving with C/i }).waitFor();
+  await page.getByRole('article', { name: /Linear Algebra and Calculus/i }).getByText('Suresh Naidu').first().waitFor();
+  assert.equal(await page.getByRole('article', { name: 'Design and Analysis of Algorithms' }).count(), 0);
   await ctx.close();
 });
 
@@ -773,7 +816,7 @@ test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', a
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
     const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
-    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/marks', '/profile', '/circulars', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/marks', '/booklets', '/courses', '/profile', '/circulars', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
       await page.goto(st.app + path, { waitUntil: 'networkidle' });
       await page.waitForTimeout(500);
       const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();

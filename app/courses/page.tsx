@@ -1,0 +1,190 @@
+'use client';
+
+import { useMemo, useState, type CSSProperties } from 'react';
+import { Books } from '@phosphor-icons/react';
+import { useStore } from '@/components/store';
+import { DataGate } from '@/components/states';
+import { Empty, Footnote, PageHeader } from '@/components/page';
+import { Segmented } from '@/components/segmented';
+import { useRecord } from '@/components/records';
+import { RecordLine, RecordProblem, RecordSkeleton, nameCase } from '@/components/record-ui';
+import type { CourseClass } from '@/lib/erp/records-parse';
+
+export default function CoursesPage() {
+  return (
+    <DataGate title="Courses">
+      <Courses />
+    </DataGate>
+  );
+}
+
+const TYPE_ORDER = ['L', 'T', 'P', 'S'];
+const TYPE_LABEL: Record<string, string> = { L: 'Lecture', T: 'Tutorial', P: 'Practical', S: 'Skilling' };
+
+/** Odd, then Even, then Term 3 / summer / anything else. */
+function termRank(semester: string): number {
+  if (/odd/i.test(semester)) return 1;
+  if (/even/i.test(semester)) return 2;
+  return 3;
+}
+
+interface CourseGroup {
+  code: string;
+  title: string;
+  classes: CourseClass[];
+}
+
+function Courses() {
+  const { snapshot } = useStore();
+  const rec = useRecord('courses');
+  const classes = useMemo(() => rec.data?.classes ?? [], [rec.data]);
+
+  // Study years with their academic year, ascending; each with its terms in Odd → Even → Term 3 order.
+  const years = useMemo(() => {
+    const by = new Map<string, { academicYear: string; terms: Set<string> }>();
+    for (const c of classes) {
+      if (!c.studyYear) continue;
+      const y = by.get(c.studyYear) ?? { academicYear: c.academicYear, terms: new Set<string>() };
+      if (c.semester) y.terms.add(c.semester);
+      by.set(c.studyYear, y);
+    }
+    return [...by.entries()]
+      .map(([studyYear, y]) => ({
+        studyYear,
+        academicYear: y.academicYear,
+        terms: [...y.terms].sort((a, b) => termRank(a) - termRank(b) || a.localeCompare(b)),
+      }))
+      .sort((a, b) => Number(a.studyYear) - Number(b.studyYear) || a.studyYear.localeCompare(b.studyYear));
+  }, [classes]);
+
+  // The synced term when the data has it, else the newest.
+  const fallback = useMemo(() => {
+    const t = snapshot?.term;
+    const label = t?.yearLabel || snapshot?.termOptions?.years.find((y) => y.id === t?.academicyear)?.label || '';
+    if (t && label) {
+      const y = years.find((x) => x.academicYear === label && x.terms.includes(t.semester));
+      if (y) return { year: y.studyYear, term: t.semester };
+    }
+    const newest = years[years.length - 1];
+    return newest ? { year: newest.studyYear, term: newest.terms[newest.terms.length - 1] ?? '' } : null;
+  }, [snapshot, years]);
+
+  const [picked, setPicked] = useState<{ year: string; term: string } | null>(null);
+  const valid = picked && years.some((y) => y.studyYear === picked.year && y.terms.includes(picked.term)) ? picked : null;
+  const sel = valid ?? fallback;
+  const yearInfo = years.find((y) => y.studyYear === sel?.year) ?? null;
+
+  const groups = useMemo<CourseGroup[]>(() => {
+    if (!sel) return [];
+    const by = new Map<string, CourseGroup>();
+    for (const c of classes) {
+      if (c.studyYear !== sel.year || c.semester !== sel.term) continue;
+      const g = by.get(c.code) ?? { code: c.code, title: c.title, classes: [] };
+      g.classes.push(c);
+      by.set(c.code, g);
+    }
+    for (const g of by.values()) {
+      g.classes.sort((a, b) => {
+        const ia = TYPE_ORDER.indexOf(a.ltps);
+        const ib = TYPE_ORDER.indexOf(b.ltps);
+        return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || a.section.localeCompare(b.section);
+      });
+    }
+    return [...by.values()];
+  }, [classes, sel]);
+
+  const pickYear = (year: string) => {
+    const y = years.find((x) => x.studyYear === year);
+    if (!y) return;
+    const term = sel && y.terms.includes(sel.term) ? sel.term : (y.terms[y.terms.length - 1] ?? '');
+    setPicked({ year, term });
+  };
+
+  return (
+    <div className="page-in">
+      <PageHeader
+        title="Courses"
+        sub={
+          <RecordLine fetchedAt={rec.fetchedAt} loading={rec.loading} onRefresh={rec.refresh}>
+            {rec.data && sel && (
+              <span className="tnum">
+                {groups.length} course{groups.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </RecordLine>
+        }
+      />
+      <RecordProblem error={rec.error} code={rec.code} hasData={Boolean(rec.data)} />
+
+      {years.length > 0 && sel && (
+        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <Segmented
+            label="Year"
+            value={sel.year}
+            onChange={pickYear}
+            options={years.map((y) => ({ value: y.studyYear, label: `Year ${y.studyYear}`, hint: y.academicYear }))}
+          />
+          {yearInfo && yearInfo.terms.length > 0 && (
+            <Segmented
+              label="Term"
+              value={sel.term}
+              onChange={(term) => setPicked({ year: sel.year, term })}
+              options={yearInfo.terms.map((t) => ({ value: t, label: t }))}
+            />
+          )}
+        </div>
+      )}
+
+      {!rec.data && rec.loading ? (
+        <RecordSkeleton cards={4} />
+      ) : !rec.data ? null : classes.length === 0 ? (
+        <Empty icon={Books} title="No courses on the ERP yet.">
+          Your courses, with their sections and faculty, show up here once the ERP maps them to you.
+        </Empty>
+      ) : groups.length === 0 ? (
+        <Empty icon={Books} title="No courses on the ERP for this term." />
+      ) : (
+        <>
+          {yearInfo && sel && (
+            <p className="mt-7 text-[13px] font-semibold text-fg-2">
+              {sel.term} <span className="text-fg-3 tnum">{yearInfo.academicYear}</span>
+            </p>
+          )}
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)] items-start gap-3 md:grid-cols-2 lg:gap-4">
+            {groups.map((g, i) => (
+              <CourseCard key={g.code} group={g} index={i} />
+            ))}
+          </div>
+        </>
+      )}
+
+      <Footnote>From the Courses tab of your ERP profile, read when you open this screen.</Footnote>
+    </div>
+  );
+}
+
+function CourseCard({ group, index }: { group: CourseGroup; index: number }) {
+  const title = nameCase(group.title);
+  return (
+    <article className="card rise min-w-0 p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties} aria-label={title}>
+      <p className="mono text-[12px] text-fg-3">{group.code}</p>
+      <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] pretty">{title}</h3>
+      <ul className="mt-4 flex flex-col gap-1" aria-label={`${title}: classes`}>
+        {group.classes.map((c, i) => (
+          <li
+            key={`${c.ltps}-${c.section}-${i}`}
+            className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-baseline gap-x-3 rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px] lg lg-card lg-frost"
+          >
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="font-semibold text-fg">{TYPE_LABEL[c.ltps] ?? c.ltps}</span>
+              {c.section && <span className="mono truncate text-[12px] text-fg-3">{c.section}</span>}
+            </span>
+            <span className="min-w-0 truncate text-right text-fg-2" title={c.faculty || undefined}>
+              {c.faculty ? nameCase(c.faculty) : '—'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}

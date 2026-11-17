@@ -93,9 +93,46 @@ function bookletPage(code) {
     ['2.A', 5, 2.5],
     ['2.B', 7, 5],
   ];
-  return `<div id="marktable"><table class="table"><thead><tr><th>Question No's</th><th>Max. Marks</th><th>Obtained Marks</th><th>Remarks Marks</th><th>Evaluator Name</th><th>Evaluator Uniid</th></tr></thead><tbody>${q
+  // The real page loads the scan with pdf.js from this address; a paper without a scan has none.
+  const scan =
+    code === '24CS2201'
+      ? `<script>var url ="index.php?r=studentinfo/studentendexamresult/download_script_frompath&id=${Buffer.from(`mock|question_paper/${code}/scan.pdf`).toString('base64')}";</script>`
+      : '';
+  return `${scan}<div id="marktable"><table class="table"><thead><tr><th>Question No's</th><th>Max. Marks</th><th>Obtained Marks</th><th>Remarks Marks</th><th>Evaluator Name</th><th>Evaluator Uniid</th></tr></thead><tbody>${q
     .map(([n, m, g]) => `<tr><td>${n}</td><td>${m}</td><td>${g}</td><td></td><td>EVALUATOR</td><td>1000</td></tr>`)
     .join('')}</tbody></table></div>`;
+}
+
+/** The profile's Courses tab: a class per row (course × L/T/P/S), Title Case faculty, CAPS titles. */
+const COURSE_CLASSES = [
+  // Year 2 · 2026-2027 · Even Sem (the synced term)
+  [2, '2026-2027', 'Even Sem', '24CS2201', 'DESIGN AND ANALYSIS OF ALGORITHMS', 'L', 'S-12', 'Ravi Kumar'],
+  [2, '2026-2027', 'Even Sem', '24CS2201', 'DESIGN AND ANALYSIS OF ALGORITHMS', 'T', 'S-12', 'Ravi Kumar'],
+  [2, '2026-2027', 'Even Sem', '24CS2201', 'DESIGN AND ANALYSIS OF ALGORITHMS', 'P', 'S-12-A', 'Sita Lakshmi'],
+  [2, '2026-2027', 'Even Sem', '24CS2202', 'DATABASE MANAGEMENT SYSTEMS', 'L', 'S-12', 'Anil Varma'],
+  [2, '2026-2027', 'Even Sem', '24CS2202', 'DATABASE MANAGEMENT SYSTEMS', 'P', 'S-12-B', 'Anil Varma'],
+  [2, '2026-2027', 'Even Sem', '24CS2203', 'OPERATING SYSTEMS', 'L', 'S-12', 'Meena Rao'],
+  [2, '2026-2027', 'Even Sem', '24CS2203', 'OPERATING SYSTEMS', 'T', 'S-12', 'Meena Rao'],
+  [2, '2026-2027', 'Even Sem', '24UC2203', 'TECHNICAL SKILLS FOR ENGINEERS', 'S', 'S-12', 'Kiran Babu'],
+  // Year 1 · 2025-2026 · Odd Sem
+  [1, '2025-2026', 'Odd Sem', '24CS1101', 'PROBLEM SOLVING WITH C', 'L', 'S-30', 'Lakshmi Prasad'],
+  [1, '2025-2026', 'Odd Sem', '24CS1101', 'PROBLEM SOLVING WITH C', 'P', 'S-30-A', 'Lakshmi Prasad'],
+  [1, '2025-2026', 'Odd Sem', '24MT1001', 'LINEAR ALGEBRA AND CALCULUS', 'L', 'S-30', 'Suresh Naidu'],
+  [1, '2025-2026', 'Odd Sem', '24MT1001', 'LINEAR ALGEBRA AND CALCULUS', 'T', 'S-30', 'Suresh Naidu'],
+  [1, '2025-2026', 'Odd Sem', '24EC1101', 'DIGITAL LOGIC DESIGN', 'L', 'S-30', 'Padma Devi'],
+];
+
+/** Yii pagination: `page` (1-based) and `per-page`, capped at 5 here so readCourses walks several pages. */
+function coursesTab(url) {
+  const size = Math.min(5, Math.max(1, Number(url.searchParams.get('per-page')) || 20));
+  const pageNo = Math.max(1, Number(url.searchParams.get('page')) || 1);
+  const from = (pageNo - 1) * size;
+  const slice = COURSE_CLASSES.slice(from, from + size);
+  const rows = slice.map((r, i) => [from + i + 1, ...r]);
+  const head = ['#', 'Year', 'AcademicYear', 'Semester', 'Coursecode', 'Coursedesc', 'LTPS', 'Section', 'FacultyName'];
+  const table = grid(head, rows).replace(/<div class="summary">.*?<\/div>/, '');
+  const summary = `<div class="summary">Showing <b>${slice.length ? from + 1 : 0}-${from + slice.length}</b> of <b>${COURSE_CLASSES.length}</b> items.</div>`;
+  return summary + table;
 }
 
 function profilePage() {
@@ -195,6 +232,11 @@ export async function handleRecords({ r, req, url, s, user, st, readBody, send, 
   }
   if (r === 'studentinfo/studentendexamresult/view_my_answer_scripts') return ok(paperList());
   if (r === 'studentinfo/studentendexamresult/view_my_booklet') return send(200, bookletPage(url.searchParams.get('id'))), true;
+  if (r === 'studentinfo/studentendexamresult/download_script_frompath') {
+    // The real ERP labels scanned scripts text/html.
+    return send(200, PDF, { 'Content-Type': 'text/html; charset=UTF-8' }), true;
+  }
+  if (r === 'studentinfo/studentcoursemappingmasterinfoview/tab_index_personal') return ok(coursesTab(url));
   if (r === 'studentinfo/studentprofileinfo/viewprofileindi') return ok(profilePage());
   if (r === 'transport/transport-bus-occupancy-info/student-bus-seat-info') return ok(busPage(user));
   if (r === 'studentinfo/studentcouncellingdairy/counselling_diary_stuview') return ok(counsellingPage(user));
