@@ -1,5 +1,5 @@
 /**
- * Local test stack: in-memory MongoDB + mock ERP/solver + Next.js, wired
+ * Local test stack: in-memory MongoDB + mock ERP + Next.js, wired
  * together with throwaway secrets. Nothing here touches production.
  *
  *   node tests/stack.mjs [--prod]     (--prod serves `next build` output)
@@ -35,7 +35,6 @@ const env = {
   ...secrets,
   MONGODB_URI: mongoUri,
   ERP_BASE: `http://localhost:${MOCK_PORT}`,
-  SOLVER_URL: `http://localhost:${MOCK_PORT}`,
   NEXTAUTH_URL: `http://localhost:${APP_PORT}/attenly/api/auth`,
   GOOGLE_CLIENT_ID: 'local-test-client.apps.googleusercontent.com',
   GOOGLE_CLIENT_SECRET: 'local-test-secret',

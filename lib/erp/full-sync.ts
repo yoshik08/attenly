@@ -98,17 +98,16 @@ export async function interactiveLogin(
   return sessionFrom(res, pre.csrf);
 }
 
-/** Headless login for background syncs: solves the captcha via SOLVER_URL, retrying misreads. */
-export async function autoLogin(
-  universityId: string,
-  password: string,
-  opts: { solverBudgetMs?: number } = {},
-): Promise<AuthedSession> {
-  // A manual sync has seconds, not a minute: one attempt, then say what happened.
-  const attempts = opts.solverBudgetMs ? 1 : CAPTCHA_ATTEMPTS;
+/**
+ * Headless login for syncs: reads the captcha in-process (lib/erp/solve.ts). When the
+ * ERP says the captcha was wrong, it tries again with a fresh one, up to
+ * CAPTCHA_ATTEMPTS; any other rejection (a wrong password) fails at once.
+ */
+export async function autoLogin(universityId: string, password: string): Promise<AuthedSession> {
+  const attempts = CAPTCHA_ATTEMPTS;
   let lastError = '';
   for (let attempt = 0; attempt < attempts; attempt++) {
-    const { preSession, solution } = await fetchSolvedCaptcha(opts.solverBudgetMs);
+    const { preSession, solution } = await fetchSolvedCaptcha();
     const res = await performLogin(preSession, universityId.trim(), password, solution);
     if (res.ok && res.jar) return sessionFrom(res, preSession.csrf);
     lastError = res.error ?? 'The ERP did not accept the login.';

@@ -315,7 +315,7 @@ function syncMeaning(code: string | null): { text: string; tone: 'condonation' |
     case 'offline':
       return { text: 'You’re offline', tone: 'condonation' };
     case 'solver_unavailable':
-      return { text: 'Captcha reader down', tone: 'detained' };
+      return { text: 'Captcha reader failed', tone: 'detained' };
     case 'bad_captcha':
       return { text: 'ERP captcha unreadable', tone: 'detained' };
     case 'erp_unreachable':

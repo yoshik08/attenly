@@ -6,9 +6,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * GET /api/erp/auto-captcha — a fresh ERP captcha already read by the CRNN
- * solver: { image, solution, sessionToken }. 501 when no solver is
- * configured, 502 when it fails; the form then falls back to typing it.
+ * GET /api/erp/auto-captcha — a fresh ERP captcha already read in-process by the
+ * CRNN model (lib/erp/solve.ts): { image, solution, sessionToken }. 502 when the
+ * reading fails; the form then falls back to typing it.
  */
 export async function GET() {
   if (!(await getGoogleUser())) return unauthorized();
@@ -16,10 +16,6 @@ export async function GET() {
     const { captchaImage, sessionToken, solution } = await fetchSolvedCaptcha();
     return Response.json({ image: captchaImage, solution, sessionToken });
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    if (code === 'no_solver') {
-      return Response.json({ error: 'Auto-decode is not configured.', code: 'no_solver' }, { status: 501 });
-    }
     if (e instanceof ErpRateLimited) {
       return Response.json({ error: e.message, code: 'rate_limited' }, { status: 429 });
     }

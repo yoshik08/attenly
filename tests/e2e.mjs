@@ -1,6 +1,6 @@
 /**
  * End-to-end: drives the real UI in headless Chromium against the local stack
- * (in-memory MongoDB, mock ERP + solver, synthetic Google sessions).
+ * (in-memory MongoDB, mock ERP serving real captchas, synthetic Google sessions).
  *
  *   npm run test:e2e              starts its own stack (next dev)
  *   E2E_PROD=1 npm run test:e2e   against `next build` output (run the build first)
@@ -26,7 +26,7 @@ async function control(body) {
   return r.json();
 }
 async function resetMock() {
-  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, attendanceDbDown: false } });
+  await control({ knobs: { rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, attendanceDbDown: false } });
 }
 
 async function ctxFor(user, opts = {}) {
@@ -95,7 +95,7 @@ test('the bare deployment URL redirects into the app', async () => {
   assert.equal(r.headers.get('location'), '/attenly');
 });
 
-test('health check reports the database and solver without any data', async () => {
+test('health check reports the database and the built-in captcha reader without any data', async () => {
   const r = await fetch(st.app + '/api/health');
   const d = await r.json();
   assert.equal(r.status, 200);
@@ -278,7 +278,7 @@ test('force sync from the status pill finishes fast, reusing the ERP session', a
   // The saved ERP session is reused: no second captcha solve or login.
   const after = await control({});
   assert.equal(after.counters.logins, before.counters.logins, 'no new ERP login');
-  assert.equal(after.counters.solves, before.counters.solves, 'no new captcha solve');
+  assert.equal(after.counters.captchas, before.counters.captchas, 'no new captcha read');
   await page.keyboard.press('Escape');
   const db = page.getByRole('article', { name: 'Database Management Systems' });
   await db.getByText('+1 lecture attended since you last looked').waitFor();
