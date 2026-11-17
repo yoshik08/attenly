@@ -1,7 +1,7 @@
 # Attenly
 
 Your KL University attendance without the ERP. Attenly signs into `newerp.kluniversity.in` for you (the captcha is
-read by a CRNN model), keeps attendance, timetable and CGPA synced, and shows how many classes of each type you can
+read by a CRNN model that runs inside the app, `lib/erp/solve.ts`, so there is no separate service to host), keeps attendance, timetable and CGPA synced, and shows how many classes of each type you can
 still skip before 85% (or must attend to get back above it).
 
 > Unofficial student project, not affiliated with KL University.
@@ -16,7 +16,7 @@ Live at [yoshik.xyz/attenly](https://yoshik.xyz/attenly) (canonical) and [attenl
   `erpUid` / `erpPass` for the primary account and `accounts[].erpPass` for each — in MongoDB `skipwise.users`.
 - **Sync:** one routine (`lib/sync.ts`) behind the sync button, the app's own refresh (whenever the cloud copy is older
   than ~5.5 minutes and the app is open) and the GitHub Actions job. A rejected password pauses that account instead of
-  retrying; a misread captcha is retried with a fresh one; a failing ERP page keeps the previous data.
+  retrying; a misread captcha is retried with a fresh one (up to three); a failing ERP page keeps the previous data.
 - **Maths:** weighted LTPS (lecture 100, tutorial 100, practical 50, skilling 25), rounded up like the ERP; 85% cruise
   line, 75% floor. Every "spare" or "attend N" figure is derived from the same rounded number the app shows.
 
@@ -29,7 +29,7 @@ See `.env.example`.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Next dev server (needs a real `.env.local`) |
-| `npm run stack` | Local stack with no real secrets: in-memory MongoDB, mock ERP + solver, Next dev on :3100 |
+| `npm run stack` | Local stack with no real secrets: in-memory MongoDB, mock ERP (real captcha images), Next dev on :3100 |
 | `npm run typecheck` / `npm run lint` | TypeScript and ESLint |
 | `npm test` | Parser, maths, insight and sync-integration tests |
 | `npm run test:e2e` | Browser tests of every screen (headless Chromium, its own stack; `E2E_PROD=1` after `next build`) |

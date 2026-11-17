@@ -10,7 +10,7 @@ type Captcha = { image: string; token: string; auto: boolean };
 
 /**
  * Link an ERP account: University ID, password, and the ERP captcha (read by
- * the solver and shown for a glance, or typed by hand when it is down).
+ * the solver and shown for a glance, or typed by hand when it can't be read).
  *   first  — the first account, on the home screen
  *   add    — another account, from the account menu
  *   repair — re-enter the password of an account whose sync is paused

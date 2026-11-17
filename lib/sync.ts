@@ -15,8 +15,6 @@ const LOCK_MS = 150_000;
  * instead of leaving the button spinning.
  */
 export const MANUAL_BUDGET_MS = 4_500;
-/** The captcha solver gets this much of a manual sync (a cold free-tier wake is longer). */
-const MANUAL_SOLVER_MS = 3_500;
 
 export type SyncCode =
   | 'synced'
@@ -45,7 +43,7 @@ const MESSAGES: Record<Exclude<SyncCode, 'synced' | 'fresh'>, string> = {
   bad_credentials: 'The ERP rejected the saved password. Enter your current ERP password.',
   bad_captcha: 'The captcha solver misread the ERP captcha. Try again in a moment.',
   rate_limited: 'The ERP is rate-limiting logins. Try again in a minute.',
-  solver_unavailable: 'The captcha solver did not answer. Try again in a moment.',
+  solver_unavailable: 'Attenly could not read the ERP captcha. Try again in a moment.',
   erp_slow: 'The ERP is slow right now. Attenly kept the numbers it has and will try again on the next sync.',
   erp_unreachable: 'Attenly could not reach the ERP. Try again in a moment.',
   no_account: 'No ERP account is linked yet.',
@@ -60,7 +58,7 @@ function classify(e: unknown): Exclude<SyncCode, 'synced' | 'fresh' | 'busy' | '
   if (code === 'bad_captcha') return 'bad_captcha';
   if (code === 'rate_limited') return 'rate_limited';
   if (code === 'erp_slow') return 'erp_slow';
-  if (code === 'no_solver' || code === 'solve_failed') return 'solver_unavailable';
+  if (code === 'solve_failed') return 'solver_unavailable';
   if (code === 'erp_unreachable') return 'erp_unreachable';
   if (isSessionExpiredError(e)) return 'failed';
   // fetch() network failures surface as TypeError("fetch failed") or AbortError.
@@ -146,7 +144,7 @@ export async function syncAccount(opts: {
       // A saved ERP session skips the captcha solve and the login entirely;
       // that is the difference between a five-second sync and a twenty-second one.
       const login = async (): Promise<AuthedSession> =>
-        autoLogin(universityId, creds.password, opts.manual ? { solverBudgetMs: MANUAL_SOLVER_MS } : {});
+        autoLogin(universityId, creds.password);
       // The button reuses the saved ERP session, so a click skips the captcha
       // solve and the login. Background syncs keep logging in: that is what
       // notices a password changed on the ERP and pauses the account.

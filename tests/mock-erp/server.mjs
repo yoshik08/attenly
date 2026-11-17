@@ -1,6 +1,5 @@
 /**
- * A local stand-in for newerp.kluniversity.in and the captcha solver, for
- * tests only. It mirrors the real login flow (302 to /index.php, Yii2 form
+ * A local stand-in for newerp.kluniversity.in, for tests only. It mirrors the real login flow (302 to /index.php, Yii2 form
  * with per-field .help-block errors, CSRF + PHPSESSID cookies, session-bound
  * captcha) and serves the attendance / timetable / internals / results /
  * CGPA pages in the shapes Attenly's parsers read.
@@ -9,17 +8,19 @@
  *
  *   node tests/mock-erp/server.mjs [port]
  *   POST /__mock/control  { ...knobs }   adjust behaviour from tests
- *   POST /solve           { image }      the "solver": reads the SVG captcha
+ *
+ * Captchas are real ERP captchas (tests/fixtures/captchas/<answer>.png), so the
+ * app reads them with its own built-in reader, end to end.
  */
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { handleRecords } from './records.mjs';
 
 const PORT = Number(process.argv[2] ?? process.env.MOCK_ERP_PORT ?? 4100);
 
 const knobs = {
-  solverWrong: 0, // next N solves return a wrong answer
-  solverDown: false,
   rateLimitLogins: false,
   failDatasets: [], // e.g. ['timetable']
   loginDelayMs: 0,
@@ -38,7 +39,7 @@ const students = new Map(
 );
 
 const sessions = new Map(); // PHPSESSID -> { csrf, captcha, user }
-const counters = { logins: 0, captchas: 0, solves: 0 };
+const counters = { logins: 0, captchas: 0 };
 
 // Academic years use internal ids like the real ERP ("30" = 2026-2027), listed oldest first.
 const YEARS = [
@@ -143,9 +144,13 @@ function loginPage(s, errors = {}) {
 <button type="submit" name="login-button">Login</button></form></div>`);
 }
 
-function captchaSvg(text) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="50" data-answer="${text}"><text x="10" y="34" font-family="Georgia" font-size="28" font-weight="700" fill="#ea4c89" letter-spacing="2">${text}</text></svg>`;
-}
+/** Real ERP captchas, named by their answer; served in turn. */
+const CAPTCHA_DIR = fileURLToPath(new URL('../fixtures/captchas/', import.meta.url));
+const CAPTCHAS = readdirSync(CAPTCHA_DIR)
+  .filter((f) => f.endsWith('.png'))
+  .sort()
+  .map((f) => ({ answer: f.replace(/\.png$/, ''), png: readFileSync(CAPTCHA_DIR + f) }));
+let nextCaptcha = 0;
 
 function cookies(req) {
   const out = {};
@@ -368,23 +373,6 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ knobs, counters }));
   }
 
-  // ---- the "solver" --------------------------------------------------
-  if (url.pathname === '/solve' && req.method === 'POST') {
-    counters.solves++;
-    if (knobs.solverDown) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      return res.end('{"detail":"model not loaded"}');
-    }
-    const { image } = JSON.parse(await body(req));
-    const svg = Buffer.from(String(image).split(',')[1] ?? '', 'base64').toString('utf8');
-    let text = svg.match(/data-answer="([a-z]+)"/)?.[1] ?? '';
-    if (knobs.solverWrong > 0) {
-      knobs.solverWrong--;
-      text = text.split('').reverse().join('') + 'x';
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ text }));
-  }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('{"ok":true}');
@@ -403,9 +391,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (r === 'site/captcha') {
     counters.captchas++;
-    s.captcha = randomBytes(4).toString('hex').replace(/[0-9]/g, (d) => 'abcdefghij'[d]).slice(0, 6);
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
-    return res.end(captchaSvg(s.captcha));
+    const c = CAPTCHAS[nextCaptcha++ % CAPTCHAS.length];
+    s.captcha = c.answer;
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    return res.end(c.png);
   }
   if (r === 'site/login' && req.method === 'POST') {
     counters.logins++;
@@ -509,4 +498,4 @@ const server = http.createServer(async (req, res) => {
   return send(res, 404, page('<p>Page not found.</p>'));
 });
 
-server.listen(PORT, () => console.log(`mock ERP + solver on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`mock ERP on http://localhost:${PORT}`));

@@ -1,6 +1,8 @@
 /**
- * Sync integration: the real sync code against the mock ERP + solver and an
- * in-memory MongoDB. No network beyond localhost.
+ * Sync integration: the real sync code against the mock ERP and an in-memory
+ * MongoDB. The mock serves real ERP captchas, which the built-in reader
+ * (lib/erp/solve.ts) reads; tests that need a misread swap the reader.
+ * No network beyond localhost.
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,6 +26,9 @@ let snapshots: typeof import('../lib/db/snapshots');
 let sync: typeof import('../lib/sync');
 let erp: typeof import('../lib/erp/client');
 let cron: typeof import('../app/api/cron/sync/route');
+let captcha: typeof import('../lib/erp/autocaptcha');
+let fullSync: typeof import('../lib/erp/full-sync');
+let realRead: (image: string) => Promise<string>;
 
 const G = 'google-sync-test';
 const A = '9900000001';
@@ -31,11 +36,17 @@ const B = '9900000002';
 
 async function control(body: unknown) {
   const r = await fetch(`${MOCK}/__mock/control`, { method: 'POST', body: JSON.stringify(body) });
-  return (await r.json()) as { counters: { logins: number; captchas: number; solves: number; courselists?: number } };
+  return (await r.json()) as { counters: { logins: number; captchas: number; courselists?: number } };
 }
 const counters = async () => (await control({})).counters;
 async function resetKnobs() {
-  await control({ knobs: { solverWrong: 0, solverDown: false, rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false, attendanceDbDown: false } });
+  await control({ knobs: { rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false, attendanceDbDown: false } });
+  captcha.captchaReader.read = realRead;
+}
+/** The next `n` readings come back as `text` (a plausible misread unless given); then the real reader again. */
+function misread(n: number, text = 'zzzzzz') {
+  let left = n;
+  captcha.captchaReader.read = async (image) => (left-- > 0 ? text : realRead(image));
 }
 const userDoc = () => db.collection('users').findOne({ googleId: G });
 const latest = (id: string) => snapshots.getLatestSnapshot(G, id);
@@ -45,7 +56,6 @@ before(async () => {
   mongo = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongo.getUri();
   process.env.ERP_BASE = MOCK;
-  process.env.SOLVER_URL = MOCK;
   process.env.SESSION_SECRET = 'b'.repeat(64);
   process.env.CRON_SECRET = 'cron-test-secret';
   mock = spawn(process.execPath, [join(root, 'tests/mock-erp/server.mjs'), String(PORT)], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -55,6 +65,9 @@ before(async () => {
   sync = await import('../lib/sync');
   erp = await import('../lib/erp/client');
   cron = await import('../app/api/cron/sync/route');
+  captcha = await import('../lib/erp/autocaptcha');
+  fullSync = await import('../lib/erp/full-sync');
+  realRead = captcha.captchaReader.read;
   client = await MongoClient.connect(mongo.getUri());
   db = client.db('skipwise');
 });
@@ -205,12 +218,52 @@ test('a password the ERP rejects pauses the account; the backend sync then leave
 });
 
 test('captcha misreads are retried; three in a row is a captcha failure, not a password problem', async () => {
-  await control({ knobs: { solverWrong: 2 } });
+  misread(2);
   const ok = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
   assert.equal(ok.code, 'synced');
-  await control({ knobs: { solverWrong: 3 } });
+  misread(3);
   const bad = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
   assert.equal(bad.code, 'bad_captcha');
+  assert.equal(users.viewAccounts((await users.getUser(G))!)[0].needsPassword, false);
+  await resetKnobs();
+});
+
+test('a wrong captcha is retried with a fresh captcha each time', async () => {
+  misread(1);
+  const before = await counters();
+  await fullSync.autoLogin(A, 'kl-test-pass');
+  const after = await counters();
+  assert.equal(after.logins - before.logins, 2, 'the misread login, then the right one');
+  assert.equal(after.captchas - before.captchas, 2, 'a fresh captcha for the second attempt');
+  await resetKnobs();
+});
+
+test('a wrong password fails at once: no retry, one captcha, one login', async () => {
+  const before = await counters();
+  await assert.rejects(fullSync.autoLogin(A, 'not-the-password'), (e: { code?: string }) => e.code === 'bad_credentials');
+  const after = await counters();
+  assert.equal(after.logins - before.logins, 1);
+  assert.equal(after.captchas - before.captchas, 1);
+});
+
+test('an implausible reading gets a fresh captcha before any login is spent on it', async () => {
+  misread(1, 'ab');
+  const before = await counters();
+  await fullSync.autoLogin(A, 'kl-test-pass');
+  const after = await counters();
+  assert.equal(after.captchas - before.captchas, 2);
+  assert.equal(after.logins - before.logins, 1, 'only the plausible reading is submitted');
+  await resetKnobs();
+});
+
+test('a reader that fails is reported as such, without a login', async () => {
+  captcha.captchaReader.read = async () => {
+    throw new Error('model missing');
+  };
+  const before = await counters();
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(r.code, 'solver_unavailable');
+  assert.equal((await counters()).logins, before.logins);
   assert.equal(users.viewAccounts((await users.getUser(G))!)[0].needsPassword, false);
   await resetKnobs();
 });
@@ -287,7 +340,7 @@ test('a manual sync reuses the saved ERP session: the second click logs in again
   assert.equal(again.snapshot?.attendance.length, 6);
   const after = await counters();
   assert.equal(after.logins, before.logins, 'no second ERP login');
-  assert.equal(after.solves, before.solves, 'no second captcha solve');
+  assert.equal(after.captchas, before.captchas, 'no second captcha read');
   // The session is sealed at rest: no raw cookie ever lands in the database.
   const doc = await db.collection('erpSessions').findOne({ universityId: A });
   assert.equal(typeof doc?.sealed, 'string');

@@ -1,5 +1,6 @@
 import { startLoginSession, unsealSession, type CaptchaSession } from './client';
 import { coded } from './errors';
+import { solveCaptcha } from './solve';
 
 export interface SolvedCaptcha {
   captchaImage: string;
@@ -8,41 +9,38 @@ export interface SolvedCaptcha {
   preSession: CaptchaSession;
 }
 
-/** The Render free tier can take ~30 s to wake the solver. */
-const SOLVER_TIMEOUT_MS = 45_000;
+/**
+ * What a real ERP captcha reads as: 6 or 7 lowercase letters (every sample seen; the
+ * model's alphabet is a–z). Anything else is a misread not worth spending a login on.
+ */
+const PLAUSIBLE = /^[a-z]{6,7}$/;
+
+/** Fresh captchas to try when the reading is implausible, before giving up. */
+const READ_ATTEMPTS = 3;
+
+/** The reader fetchSolvedCaptcha uses (lib/erp/solve.ts); tests swap it to simulate misreads. */
+export const captchaReader = { read: solveCaptcha };
 
 /**
- * Fetch a fresh ERP captcha and read it with the CRNN solver at SOLVER_URL.
- * Server-side only. Coded errors: 'no_solver' | 'captcha_expired' |
- * 'solve_failed'; ErpRateLimited and ERP network errors propagate as-is.
- *
- * `budgetMs` caps how long the solver may take (a manual sync asks for one and
- * gives up in seconds rather than waiting out a cold start).
+ * Fetch a fresh ERP captcha and read it in-process with the CRNN model.
+ * Server-side only. Coded errors: 'captcha_expired' | 'solve_failed';
+ * ErpRateLimited and ERP network errors propagate as-is.
  */
-export async function fetchSolvedCaptcha(budgetMs = SOLVER_TIMEOUT_MS): Promise<SolvedCaptcha> {
-  const solverUrl = process.env.SOLVER_URL;
-  if (!solverUrl) throw coded('Auto-decode is not configured.', 'no_solver');
+export async function fetchSolvedCaptcha(): Promise<SolvedCaptcha> {
+  let last = '';
+  for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+    const { captchaImage, sessionToken } = await startLoginSession();
+    const preSession = unsealSession<CaptchaSession>(sessionToken);
+    if (!preSession) throw coded('Captcha session expired.', 'captcha_expired');
 
-  const { captchaImage, sessionToken } = await startLoginSession();
-  const preSession = unsealSession<CaptchaSession>(sessionToken);
-  if (!preSession) throw coded('Captcha session expired.', 'captcha_expired');
-
-  let res: Response;
-  try {
-    res = await fetch(new URL('/solve', solverUrl).toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: captchaImage }),
-      signal: AbortSignal.timeout(Math.max(1000, Math.min(SOLVER_TIMEOUT_MS, budgetMs))),
-    });
-  } catch (e) {
-    throw coded(`Solver unreachable: ${e instanceof Error ? e.message : String(e)}`, 'solve_failed');
+    let solution: string;
+    try {
+      solution = (await captchaReader.read(captchaImage)).trim();
+    } catch (e) {
+      throw coded(e instanceof Error ? e.message : String(e), 'solve_failed');
+    }
+    if (PLAUSIBLE.test(solution)) return { captchaImage, sessionToken, solution, preSession };
+    last = solution;
   }
-  if (!res.ok) throw coded(`Solver HTTP ${res.status}`, 'solve_failed');
-
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  const solution = String(data.solution ?? data.text ?? data.captcha ?? '').trim();
-  if (!solution) throw coded('Solver returned no text.', 'solve_failed');
-
-  return { captchaImage, sessionToken, solution, preSession };
+  throw coded(`The captcha reader gave ${READ_ATTEMPTS} implausible readings in a row (last: "${last}").`, 'solve_failed');
 }
