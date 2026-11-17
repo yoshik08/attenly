@@ -109,6 +109,10 @@ export function CourseRow({
   index?: number;
 }) {
   const [open, setOpen] = useState(false);
+  // The plan (bubble sheets, steppers) is most of a card's DOM and stays closed on most visits:
+  // build it the first time it opens, then keep it, so closing still animates and keeps the plan.
+  const [built, setBuilt] = useState(false);
+  if (open && !built) setBuilt(true);
   const [plan, setPlan] = useState<SandboxPlan>(emptyPlan);
   const ref = useRef<HTMLElement>(null);
   const tcbr = courseTcbr(subject.code, settings.tcbr);
@@ -255,6 +259,7 @@ export function CourseRow({
       <div className="t-acc" data-open={open}>
         <div className="t-acc-panel" id={detailId}>
           <div className="t-acc-panel-inner">
+            {(open || built) && (
             <div className="pt-4" inert={!open}>
               <ul className="mb-3 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-fg-3" aria-label="How to read the bubbles">
                 <li className="inline-flex items-center gap-1.5">
@@ -340,6 +345,7 @@ export function CourseRow({
               </div>
               {planning && <p className="mt-2 text-[12px] text-fg-3">A projection only: recorded attendance is untouched.</p>}
             </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { signOut as nextAuthSignOut } from 'next-auth/react';
 import { api, BASE_PATH } from '@/lib/api';
 import {
@@ -137,9 +137,33 @@ interface CacheShape {
   lastInstructionDay?: string | null;
 }
 
+/** What /api/data answered: the body is the route's JSON, read field by field below. */
+type Loaded = { ok: boolean; d: Awaited<ReturnType<Response['json']>> };
+
+declare global {
+  interface Window {
+    /** Set by the inline script in app/layout.tsx: /api/data, requested before hydration. */
+    __attenlyEarly?: { account: string | null; at: number; res: Promise<Loaded> };
+  }
+}
+
+/**
+ * The /api/data response the page started fetching while it parsed, if it is for this
+ * account and recent. Taken once: every later load goes to the network.
+ */
+function takeEarlyData(account: string | null): Promise<Loaded> | null {
+  if (typeof window === 'undefined') return null;
+  const early = window.__attenlyEarly;
+  window.__attenlyEarly = undefined;
+  if (!early || early.account !== account || Date.now() - early.at > 15_000) return null;
+  return early.res;
+}
+
 const IDLE_SYNC: SyncState = { running: false, mode: null, code: null, message: null, at: null };
 
 const StoreContext = createContext<StoreValue | null>(null);
+
+const useIso = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StoreState>({
@@ -196,16 +220,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (account?: string | null) => {
       const wanted = account ?? readActive() ?? null;
       try {
-        const res = await fetch(api(`/api/data${wanted ? `?account=${encodeURIComponent(wanted)}` : ''}`), {
-          cache: 'no-store',
-        });
-        const d = await res.json();
+        // The response started before hydration if it is there; a failed early request is
+        // simply made again.
+        const early = takeEarlyData(wanted);
+        let got: Loaded | null = early ? await early.catch(() => null) : null;
+        if (!got) {
+          const r = await fetch(api(`/api/data${wanted ? `?account=${encodeURIComponent(wanted)}` : ''}`), { cache: 'no-store' });
+          got = { ok: r.ok, d: await r.json() };
+        }
+        const { ok, d } = got;
         if (!d.signedIn) {
           write(CACHE_KEY, null);
           setState((s) => ({ ...s, phase: 'signed-out', googleConfigured: d.googleConfigured !== false, user: null, accounts: [], active: null, snapshot: null, loadError: null }));
           return;
         }
-        if (!res.ok) {
+        if (!ok) {
           setState((s) => ({ ...s, phase: s.snapshot ? 'ready' : 'error', loadError: d.error ?? 'Attenly can’t load your data right now.' }));
           return;
         }
@@ -237,11 +266,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [ensureSeen],
   );
 
-  // Boot: settings, cached data for an instant first paint, then the network.
-  useEffect(() => {
+  // Boot: settings, cached data for an instant first paint, then the network. A layout
+  // effect, so the cached screen replaces the skeleton before the browser paints again.
+  useIso(() => {
     // localStorage only exists after hydration; reading it during render would
     // make the first client render differ from the server HTML.
-    /* eslint-disable react-hooks/set-state-in-effect */
     setSettings(loadSettings());
     const seenStored = read<Record<string, SeenCounts>>(SEEN_KEY) ?? {};
     setSeenAll(seenStored);
@@ -260,7 +289,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         lastInstructionDay: cache.lastInstructionDay ?? null,
       }));
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
     void load(active);
   }, [load, ensureSeen]);
 
@@ -491,25 +519,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await nextAuthSignOut({ callbackUrl: `${BASE_PATH}` });
   }, []);
 
-  const value: StoreValue = {
-    ...state,
-    settings,
-    activeAccount,
-    seen,
-    stale: state.snapshot ? clockNow + state.skew - new Date(state.snapshot.syncedAt).getTime() >= state.freshMs : true,
-    refresh: () => load(stateRef.current.active),
-    forceSync,
-    switchAccount,
-    onLinked,
-    removeAccount,
-    makePrimary,
-    setTerm,
-    updateSettings,
-    setLastInstructionDay,
-    markSeen,
-    clearDevice,
-    signOut,
-  };
+  const refresh = useCallback(() => load(stateRef.current.active), [load]);
+  const stale = state.snapshot ? clockNow + state.skew - new Date(state.snapshot.syncedAt).getTime() >= state.freshMs : true;
+
+  // One object per real change. The 30-second clock only matters when it flips `stale`,
+  // so its ticks no longer re-render every screen that reads the store.
+  const value = useMemo<StoreValue>(
+    () => ({
+      ...state,
+      settings,
+      activeAccount,
+      seen,
+      stale,
+      refresh,
+      forceSync,
+      switchAccount,
+      onLinked,
+      removeAccount,
+      makePrimary,
+      setTerm,
+      updateSettings,
+      setLastInstructionDay,
+      markSeen,
+      clearDevice,
+      signOut,
+    }),
+    [state, settings, activeAccount, seen, stale, refresh, forceSync, switchAccount, onLinked, removeAccount, makePrimary, setTerm, updateSettings, setLastInstructionDay, markSeen, clearDevice, signOut],
+  );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

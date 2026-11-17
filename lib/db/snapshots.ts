@@ -62,7 +62,19 @@ export function termKey(term: { academicyear?: string; semesterid?: string; seme
   return [term.academicyear ?? '', term.semesterid ?? '', term.semester ?? ''].join('::');
 }
 
-const snapshots = async () => (await getDb()).collection<SnapshotDoc>('snapshots');
+let indexed = false;
+const snapshots = async () => {
+  const col = (await getDb()).collection<SnapshotDoc>('snapshots');
+  if (!indexed) {
+    indexed = true;
+    // "Latest snapshot of this account" is the app's hottest query; never let it scan.
+    // Fire and forget: creating an existing index is a no-op, and a failure only costs speed.
+    col.createIndex({ googleId: 1, universityId: 1, syncedAt: -1 }).catch(() => {
+      indexed = false;
+    });
+  }
+  return col;
+};
 
 export function toClientSnapshot(doc: Omit<SnapshotDoc, 'creds'>): ClientSnapshot {
   const options = doc.termOptions ?? null;

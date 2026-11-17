@@ -45,9 +45,9 @@
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
 
-  --digit-dur: 420ms;
+  --digit-dur: 320ms;
   --digit-distance: 8px;
-  --digit-stagger: 40ms;
+  --digit-stagger: 30ms;
   --digit-blur: 2px;
 
   --bar-h: 56px;
@@ -77,6 +77,8 @@
 
 html {
   background: #000;
+  /* Taps fire at once: no double-tap-to-zoom wait on phones (pinch zoom still works). */
+  touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   scroll-padding-top: calc(var(--bar-h) + var(--safe-t) + 16px);
 }
@@ -266,7 +268,7 @@ button:disabled {
 
 .topbar {
   padding-top: var(--safe-t);
-  transition: box-shadow 250ms ease;
+  transition: box-shadow 180ms ease;
 }
 .topbar[data-scrolled="true"] {
   box-shadow: inset 0 -1px 0 var(--color-line);
@@ -321,7 +323,7 @@ button:disabled {
   width: 0;
   border-radius: 26px;
   background: rgba(255, 255, 255, 0.1);
-  transition: transform 480ms var(--ease-spring), width 480ms var(--ease-spring);
+  transition: transform 380ms var(--ease-spring), width 380ms var(--ease-spring);
   pointer-events: none;
 }
 .dock-fade {
@@ -576,7 +578,7 @@ button:disabled {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
-  transition: color 250ms var(--ease-smooth);
+  transition: color 180ms var(--ease-smooth);
   -webkit-tap-highlight-color: transparent;
 }
 .t-tab:hover,
@@ -592,7 +594,7 @@ button:disabled {
   border-radius: 10px;
   background: #3a3a3f;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition: transform 340ms var(--ease-smooth), width 340ms var(--ease-smooth);
+  transition: transform 260ms var(--ease-smooth), width 260ms var(--ease-smooth);
   pointer-events: none;
   z-index: 0;
 }
@@ -669,7 +671,7 @@ button:disabled {
 /* ------------------------------------------------------------------ */
 
 .ring-arc {
-  transition: stroke-dashoffset 1000ms var(--ease-smooth);
+  transition: stroke-dashoffset 800ms var(--ease-smooth);
   filter: drop-shadow(0 0 5px color-mix(in oklab, var(--tone) 55%, transparent));
 }
 .ring-arc[data-small="true"] {
@@ -685,7 +687,7 @@ button:disabled {
   transform: scale(0.96) translateY(-4px);
   opacity: 0;
   pointer-events: none;
-  transition: transform 260ms var(--ease-smooth), opacity 200ms var(--ease-smooth);
+  transition: transform 200ms var(--ease-smooth), opacity 150ms var(--ease-smooth);
 }
 .t-dropdown[data-side="up"] {
   transform-origin: bottom left;
@@ -699,26 +701,26 @@ button:disabled {
 .t-dropdown.is-closing {
   opacity: 0;
   pointer-events: none;
-  transition: transform 150ms var(--ease-smooth), opacity 150ms var(--ease-smooth);
+  transition: transform 120ms var(--ease-smooth), opacity 120ms var(--ease-smooth);
 }
 
 /* Bottom sheet on phones: rises from the edge. Centred panel on desktop. */
 .t-modal {
   transform: translateY(105%);
-  transition: transform 460ms var(--ease-drawer);
+  transition: transform 380ms var(--ease-drawer);
 }
 .t-modal.is-open {
   transform: none;
 }
 .t-modal.is-closing {
   transform: translateY(105%);
-  transition: transform 220ms var(--ease-smooth);
+  transition: transform 180ms var(--ease-smooth);
 }
 @media (min-width: 1024px) {
   .t-modal {
     transform: scale(0.96);
     opacity: 0;
-    transition: transform 280ms var(--ease-smooth), opacity 220ms var(--ease-smooth);
+    transition: transform 220ms var(--ease-smooth), opacity 170ms var(--ease-smooth);
   }
   .t-modal.is-open {
     transform: none;
@@ -727,17 +729,17 @@ button:disabled {
   .t-modal.is-closing {
     transform: scale(0.97);
     opacity: 0;
-    transition: transform 160ms var(--ease-smooth), opacity 160ms var(--ease-smooth);
+    transition: transform 130ms var(--ease-smooth), opacity 130ms var(--ease-smooth);
   }
 }
 .scrim {
   background: rgba(0, 0, 0, 0.62);
   opacity: 0;
-  transition: opacity 220ms ease;
+  transition: opacity 180ms ease;
 }
 .scrim.is-open {
   opacity: 1;
-  transition: opacity 320ms ease;
+  transition: opacity 240ms ease;
 }
 .grabber {
   width: 38px;
@@ -807,24 +809,24 @@ button:disabled {
 .t-acc-panel {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 220ms var(--ease-smooth);
+  transition: grid-template-rows 180ms var(--ease-smooth);
 }
 .t-acc[data-open="true"] .t-acc-panel {
   grid-template-rows: 1fr;
-  transition: grid-template-rows 340ms var(--ease-smooth);
+  transition: grid-template-rows 260ms var(--ease-smooth);
 }
 .t-acc-panel-inner {
   overflow: hidden;
   opacity: 0;
-  transition: opacity 180ms var(--ease-smooth);
+  transition: opacity 140ms var(--ease-smooth);
 }
 .t-acc[data-open="true"] .t-acc-panel-inner {
   opacity: 1;
-  transition: opacity 320ms var(--ease-smooth) 60ms;
+  transition: opacity 220ms var(--ease-smooth) 30ms;
 }
 .t-acc-chevron {
   display: inline-flex;
-  transition: transform 280ms var(--ease-smooth);
+  transition: transform 220ms var(--ease-smooth);
 }
 .t-acc[data-open="true"] .t-acc-chevron,
 [aria-expanded="true"] > .t-acc-chevron {
@@ -836,7 +838,7 @@ button:disabled {
 /* ------------------------------------------------------------------ */
 
 .page-in {
-  animation: page-in 320ms var(--ease-out) both;
+  animation: page-in 200ms var(--ease-out) both;
 }
 @keyframes page-in {
   from {
@@ -850,13 +852,13 @@ button:disabled {
 }
 /* Siblings arriving one after another (capped, so a long list never waits). */
 .rise {
-  animation: rise 460ms var(--ease-out) both;
-  animation-delay: calc(min(var(--i, 0), 8) * 45ms);
+  animation: rise 300ms var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 24ms);
 }
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -1140,10 +1142,10 @@ button:disabled {
   transition-duration: 220ms, 220ms, 220ms, 0.25s;
 }
 .t-tab.lg-press {
-  transition: color 250ms var(--ease-smooth), scale 0.45s var(--lg-spring);
+  transition: color 180ms var(--ease-smooth), scale 0.45s var(--lg-spring);
 }
 .t-tab.lg-press.is-pressed {
-  transition-duration: 250ms, 0.25s;
+  transition-duration: 180ms, 0.25s;
 }
 /* The phone's top bar is clear at the scroll edge and turns to material once content runs
    beneath it, so at rest it never sits on the backdrop as a dark band. */
