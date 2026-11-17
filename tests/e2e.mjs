@@ -345,13 +345,24 @@ test('plan the day: the strip answers each period as it is planned', async () =>
   await ctx.close();
 });
 
-test('CGPA: latest semester first with its grades', async () => {
+test('CGPA: one SGPA per semester, each from its own courses; the CGPA over all', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/cgpa`);
+  // Odd 98/11 = 8.91, Even 89/11 = 8.09, CGPA 187/22 = 8.50; Term3 has only a 0-credit course.
   await page.getByText('8.50').first().waitFor();
-  await page.getByRole('heading', { name: /Even Sem/ }).waitFor();
-  await page.getByRole('button', { name: /Odd Sem/ }).click();
-  await page.getByRole('cell', { name: /Problem Solving with C/ }).waitFor();
+  await page.getByText('22 credits over 2 semesters').waitFor();
+  const odd = page.getByRole('region', { name: 'Odd Sem 2024-2025' });
+  const even = page.getByRole('region', { name: 'Even Sem 2024-2025' });
+  const term3 = page.getByRole('region', { name: 'Term3 2024-2025' });
+  await odd.getByText('SGPA 8.91 · 11 credits · 3 courses').waitFor();
+  await even.getByText('SGPA 8.09 · 11 credits · 3 courses').waitFor();
+  await term3.getByText('SGPA — · 0 credits · 0 courses').waitFor();
+  await odd.getByRole('cell', { name: /Problem Solving with C/ }).waitFor();
+  await odd.getByText('· 0 credits, not counted').waitFor();
+  assert.equal(await even.getByRole('cell', { name: /Problem Solving with C/ }).count(), 0, 'a course counts in exactly one semester');
+  // Newest first.
+  const order = await page.locator('section[id^="sem-"]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  assert.deepEqual(order, ['Term3 2024-2025', 'Even Sem 2024-2025', 'Odd Sem 2024-2025']);
   await ctx.close();
 });
 
@@ -505,15 +516,25 @@ test('marks: internals by component, the exam room, and mid-term papers question
   await page.getByRole('heading', { name: 'Marks', exact: true }).waitFor();
   const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
   await daa.waitFor();
-  // Mid-term 74/100 → 14.8 of 20; practical 95/100 → 14.3 of 15; MOOCs not marked yet.
-  await daa.getByText('29.1', { exact: true }).waitFor();
+  // Mid-term 24/45 → 10.667 of 20; practical 93/100 → 13.95 of 15; MOOCs not marked yet.
+  await daa.getByText('24.62', { exact: true }).waitFor();
   await daa.getByText('of 35 so far').waitFor();
   await daa.getByText('2 of 3 components marked').waitFor();
   await daa.getByText('Not marked yet').waitFor();
+  // Question-wise marks: "1 C" scored 0, "3 B" (a negative mark on the ERP) was not written.
+  const midTerm = daa.getByRole('button', { name: /Mid-Term Examination/ });
+  await midTerm.click();
+  assert.equal(await midTerm.getAttribute('aria-expanded'), 'true');
+  const q = (label) => daa.getByText(label, { exact: true }).locator('..');
+  await q('Q1.C').getByText('0', { exact: true }).waitFor();
+  await q('Q3.B').getByText('Not written').waitFor();
+  await daa.getByText('1 not written; counted as 0 in the total, as on the ERP.').waitFor();
   const rooms = page.getByRole('region', { name: 'Exam rooms' });
   await rooms.getByText('C-204').waitFor();
   // Another semester has no internals.
-  await page.getByLabel('Semester').selectOption({ label: 'Odd Sem 2026-2027' });
+  // Year and semester are separate segmented pickers; the synced year (2026–27) is already chosen.
+  assert.equal(await page.getByRole('tablist', { name: 'Year' }).getByRole('tab', { name: /2026–27/ }).getAttribute('aria-selected'), 'true');
+  await page.getByRole('tablist', { name: 'Semester' }).getByRole('tab', { name: 'Odd Sem' }).click();
   await page.getByText('No internal marks on the ERP for Odd Sem 2026-2027 yet.').waitFor();
   // Mid-term papers live on their own screen now.
   await page.getByRole('link', { name: /Mid-term booklets/ }).waitFor();
@@ -538,8 +559,12 @@ test('booklets: marks question by question, and the scan read from the ERP', asy
   assert.equal(res.status(), 200);
   assert.equal(res.headers()['content-type'], 'application/pdf');
   assert.equal((await res.body()).subarray(0, 4).toString(), '%PDF');
-  // A paper the ERP has no scan for says so.
-  await card('Operating Systems').getByText('No scan on the ERP').waitFor();
+  // A paper the ERP has no scan for says so. Its unwritten 2.B counts as 0 in the total.
+  const os = card('Operating Systems');
+  await os.getByText('No scan on the ERP').waitFor();
+  await os.getByText('12', { exact: true }).waitFor();
+  await os.getByRole('button', { name: '4 questions' }).click();
+  await os.getByText('Not written').waitFor();
   await ctx.close();
 });
 

@@ -16,7 +16,7 @@ import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import type { ComponentKey, ComponentMap, SubjectAttendance } from '../math';
 import { COMPONENT_ORDER } from '../math';
-import { compareTerms } from '../terms';
+import { computeCGPA, groupBySemester } from '../gpa';
 
 function norm(s: string): string {
   return s.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -627,7 +627,8 @@ export function parseCgpa(html: string): CgpaRow[] {
     let credIdx = find('credit');
     let statusIdx = headers.findIndex((h) => h.includes('status') || h.includes('result') || h === 'p');
     let yearIdx = find('academic', 'year');
-    let semIdx = headers.findIndex((h) => h.includes('semester') && !h.includes('year'));
+    // The ERP heads these "Reg Academic Year" and "Reg Sem".
+    let semIdx = headers.findIndex((h) => /\bsem(ester)?\b/.test(h) && !h.includes('year'));
     if (codeIdx < 0 || gradeIdx < 0) {
       // Positional fallback (matches the observed ERP layout).
       codeIdx = 3; nameIdx = 4; gradeIdx = 5; pointIdx = 6; credIdx = 7; statusIdx = 8; yearIdx = 9; semIdx = 10;
@@ -786,36 +787,16 @@ export function parseBookletMarks(html: string): BookletMarks {
   }
 }
 
-/** Compute CGPA/SGPA from parsed CGPA rows. */
+/** CGPA and one SGPA per (academic year, semester), by the rules in lib/gpa.ts. */
 export function computeGpa(rows: CgpaRow[]): {
   cgpa: number | null;
   terms: { key: string; academicYear: string; semester: string; sgpa: number | null; credits: number }[];
 } {
-  let totP = 0;
-  let totC = 0;
-  const byTerm = new Map<string, { academicYear: string; semester: string; p: number; c: number }>();
-  for (const r of rows) {
-    if (r.credits <= 0 || r.gradePoint <= 0) continue;
-    if (/fail|f\b/i.test(r.status) && r.grade.toUpperCase() === 'F') continue;
-    totP += r.gradePoint * r.credits;
-    totC += r.credits;
-    const key = `${r.academicYear}::${r.semester}`;
-    const t = byTerm.get(key) ?? { academicYear: r.academicYear, semester: r.semester, p: 0, c: 0 };
-    t.p += r.gradePoint * r.credits;
-    t.c += r.credits;
-    byTerm.set(key, t);
-  }
-  const terms = [...byTerm.entries()].map(([key, t]) => ({
-    key,
-    academicYear: t.academicYear,
-    semester: t.semester,
-    sgpa: t.c > 0 ? Math.round((t.p / t.c) * 100) / 100 : null,
-    credits: t.c,
-  }));
-  // Chronological: academic year, then odd (Jul–Dec) before even (Jan–Jun)
-  // before summer. Alphabetical order would put "Even Sem" first.
-  terms.sort(compareTerms);
-  return { cgpa: totC > 0 ? Math.round((totP / totC) * 100) / 100 : null, terms };
+  const { semesters } = groupBySemester(rows);
+  return {
+    cgpa: computeCGPA(rows).gpa,
+    terms: semesters.map((t) => ({ key: t.key, academicYear: t.academicYear, semester: t.semester, sgpa: t.gpa, credits: t.credits })),
+  };
 }
 
 /* --------------------------------------------------------------------------- */
