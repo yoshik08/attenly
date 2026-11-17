@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Exam, MapPin, Notebook } from '@phosphor-icons/react';
+import { ArrowRight, CaretDown, Exam, MapPin, Notebook } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { useRecord } from '@/components/records';
-import { Meter, RecordLine, RecordProblem, RecordSkeleton, SelectField, fmtDate, marks, nameCase } from '@/components/record-ui';
+import { Meter, QuestionChip, RecordLine, RecordProblem, RecordSkeleton, fmtDate, marks, nameCase } from '@/components/record-ui';
+import { Segmented } from '@/components/segmented';
 import { cn } from '@/components/cn';
-import type { InternalCourse } from '@/lib/erp/records-parse';
+import type { InternalComponent, InternalCourse } from '@/lib/erp/records-parse';
 
 export default function MarksPage() {
   return (
@@ -21,15 +22,39 @@ export default function MarksPage() {
 
 const termLabel = (t: { semester: string; yearLabel: string }) => `${t.semester} ${t.yearLabel}`;
 
+/** "2026-2027" → "2026–27". */
+const shortYear = (label: string) => label.replace(/^(\d{4})\s*[-–]\s*\d{2}(\d{2})$/, '$1–$2');
+
+/** Odd, then Even, then Term 3 / summer. */
+const semRank = (s: string) => (/odd/i.test(s) ? 1 : /even/i.test(s) ? 2 : 3);
+
 function Marks() {
   const { snapshot } = useStore();
   // The synced term first; the ERP's own list of this student's terms once it is read.
   const [picked, setPicked] = useState<{ ay: string; sem: string } | null>(null);
   const want = picked ?? (snapshot?.term ? { ay: snapshot.term.academicyear, sem: snapshot.term.semesterid } : {});
   const rec = useRecord('marks', want);
-  const terms = rec.data?.terms ?? [];
+  const terms = useMemo(() => rec.data?.terms ?? [], [rec.data]);
   const term = rec.data?.term ?? null;
-  const value = term ? `${term.academicyear}:${term.semesterid}` : '';
+
+  // Year and semester are picked separately: the student's academic years (oldest first),
+  // then the semesters the ERP offers in the chosen year.
+  const years = useMemo(() => {
+    const by = new Map<string, string>();
+    for (const t of terms) by.set(t.academicyear, t.yearLabel);
+    return [...by.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [terms]);
+  const selAy = picked?.ay ?? term?.academicyear ?? '';
+  const selSem = picked?.sem ?? term?.semesterid ?? '';
+  const semesters = terms.filter((t) => t.academicyear === selAy).sort((a, b) => semRank(a.semester) - semRank(b.semester));
+  const pickYear = (ay: string) => {
+    const inYear = terms.filter((t) => t.academicyear === ay).sort((a, b) => semRank(a.semester) - semRank(b.semester));
+    const current = terms.find((t) => t.academicyear === selAy && t.semesterid === selSem);
+    const same = inYear.find((t) => current && t.semester === current.semester);
+    const fallback = [...inYear].reverse().find((t) => semRank(t.semester) < 3) ?? inYear[0];
+    const next = same ?? fallback;
+    if (next) setPicked({ ay, sem: next.semesterid });
+  };
 
   const courses = rec.data?.courses ?? [];
   const seating = rec.data?.seating ?? [];
@@ -39,23 +64,25 @@ function Marks() {
       <PageHeader
         title="Marks"
         sub={<RecordLine fetchedAt={rec.fetchedAt} loading={rec.loading} onRefresh={rec.refresh} />}
-        actions={
-          terms.length > 1 && (
-            <SelectField
-              id="marks-term"
-              label="Semester"
-              className="w-[210px]"
-              value={value}
-              disabled={rec.loading}
-              onChange={(v) => {
-                const [ay, sem] = v.split(':');
-                setPicked({ ay, sem });
-              }}
-              options={terms.map((t) => ({ id: `${t.academicyear}:${t.semesterid}`, label: termLabel(t) }))}
-            />
-          )
-        }
       />
+      {years.length > 0 && selAy && (
+        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <Segmented
+            label="Year"
+            value={selAy}
+            onChange={pickYear}
+            options={years.map((y) => ({ value: y.id, label: shortYear(y.label), hint: y.label }))}
+          />
+          {semesters.length > 0 && (
+            <Segmented
+              label="Semester"
+              value={selSem}
+              onChange={(sem) => setPicked({ ay: selAy, sem })}
+              options={semesters.map((t) => ({ value: t.semesterid, label: t.semester }))}
+            />
+          )}
+        </div>
+      )}
       <RecordProblem error={rec.error} code={rec.code} hasData={Boolean(rec.data)} />
 
       {seating.length > 0 && <ExamRooms seating={seating} />}
@@ -126,30 +153,82 @@ function InternalCard({ course, index }: { course: InternalCourse; index: number
       </div>
       <ul className="mt-4 flex flex-col gap-1" aria-label={`${nameCase(course.title)}: components`}>
         {course.components.map((c, i) => (
-          <li key={`${c.name}-${i}`} className="rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px] lg lg-card lg-frost">
-            <div className="flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-fg-2" title={c.name}>
-                {c.name}
-              </span>
-              {c.marked ? (
-                <span className="flex shrink-0 items-baseline gap-2.5 tnum">
-                  <span className="text-[12px] text-fg-3">
-                    {marks(c.total)}/{marks(c.max)}
-                  </span>
-                  <span className="font-semibold">
-                    {marks(c.weighted)}
-                    <span className="font-normal text-fg-3">/{marks(c.weight)}</span>
-                  </span>
-                </span>
-              ) : (
-                <span className="shrink-0 text-[12px] text-fg-3">Not marked yet</span>
-              )}
-            </div>
-            {c.marked && <Meter value={c.total} max={c.max} className="mt-1.5" />}
-          </li>
+          <ComponentRow key={`${c.name}-${i}`} c={c} id={`${course.code}-c${i}`} />
         ))}
       </ul>
     </article>
+  );
+}
+
+/** One evaluation component; when the ERP gives question-wise (or outcome-wise) marks, it opens to show them. */
+function ComponentRow({ c, id }: { c: InternalComponent; id: string }) {
+  const [open, setOpen] = useState(false);
+  const parts = c.marked ? (c.parts ?? []) : [];
+  const unwritten = parts.filter((p) => p.notWritten).length;
+  const head = (
+    <>
+      <span className="min-w-0 truncate text-fg-2" title={c.name}>
+        {c.name}
+      </span>
+      {c.marked ? (
+        <span className="flex shrink-0 items-baseline gap-2.5 tnum">
+          <span className="text-[12px] text-fg-3">
+            {marks(c.total)}/{marks(c.max)}
+          </span>
+          <span className="font-semibold">
+            {marks(c.weighted)}
+            <span className="font-normal text-fg-3">/{marks(c.weight)}</span>
+          </span>
+          {parts.length > 0 && (
+            <span className="t-acc-chevron self-center text-fg-3" aria-hidden>
+              <CaretDown size={11} weight="bold" />
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="shrink-0 text-[12px] text-fg-3">Not marked yet</span>
+      )}
+    </>
+  );
+  return (
+    <li className="rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px] lg lg-card lg-frost">
+      {parts.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={id}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="flex items-center justify-between gap-3">{head}</div>
+      )}
+      {c.marked && <Meter value={c.total} max={c.max} className="mt-1.5" />}
+      {parts.length > 0 && (
+        <div className="t-acc" data-open={open}>
+          <div className="t-acc-panel" id={id}>
+            <div className="t-acc-panel-inner">
+              {open && (
+                <div className="pt-2.5">
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                    {parts.map((p) => (
+                      <QuestionChip key={p.label} label={p.label} got={p.marks} notWritten={p.notWritten} />
+                    ))}
+                  </div>
+                  {unwritten > 0 && (
+                    <p className="mt-2 text-[12px] text-fg-3">
+                      {unwritten} not written; counted as 0 in the total, as on the ERP.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
