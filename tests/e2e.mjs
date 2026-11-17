@@ -78,7 +78,7 @@ before(async () => {
   mongo = await MongoClient.connect(st.mongoUri);
   browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   // Warm the dev server so the first assertions don't race compilation.
-  for (const p of ['/', '/timetable', '/cgpa', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
+  for (const p of ['/', '/timetable', '/cgpa', '/marks', '/profile', '/circulars', '/calculator', '/settings', '/privacy']) await fetch(st.app + p).catch(() => undefined);
 });
 
 after(async () => {
@@ -476,7 +476,7 @@ test('sync pill: a fast stop says what happened and offers a retry', async () =>
 test('payments: every fee order, and its receipt read from the ERP', async () => {
   const { ctx, page } = await ctxFor('main');
   await page.goto(`${st.app}/payments`);
-  await page.getByRole('heading', { name: 'Payments' }).waitFor();
+  await page.getByRole('heading', { name: 'Payments', exact: true }).waitFor();
   await page.getByText('SBI:P-96539:T-1793586750').waitFor();
   await page.getByText('Semester-2 Tuition Fee').first().waitFor();
   await page.getByText('HDF:P-96539:T-1791714022').waitFor();
@@ -488,6 +488,70 @@ test('payments: every fee order, and its receipt read from the ERP', async () =>
   await sheet.getByText('TUITION FEE-Semester-2 Tuition Fee').waitFor();
   await sheet.getByText('*** TEST AMOUNT RUPEES ONLY ***.').waitFor();
   await sheet.getByRole('button', { name: 'Print' }).waitFor();
+  await page.keyboard.press('Escape');
+  // The semester ledger and what is still owed, read from the ERP's fee structure.
+  await page.getByText('₹45,000 due on the ERP').waitFor();
+  const ledger = page.getByRole('region', { name: 'Semester fees' });
+  await ledger.getByText('Year 2 · Even').waitFor();
+  await ledger.getByText('₹45,000 due').waitFor();
+  await ledger.getByText('Settled').waitFor();
+  await ledger.getByText('HDF:P-96539:T-1793500002').waitFor();
+  await ctx.close();
+});
+
+test('marks: internals by component, the exam room, and mid-term papers question by question', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/marks`);
+  await page.getByRole('heading', { name: 'Marks', exact: true }).waitFor();
+  const daa = page.getByRole('article', { name: 'Design and Analysis of Algorithms' });
+  await daa.waitFor();
+  // Mid-term 74/100 → 14.8 of 20; practical 95/100 → 14.3 of 15; MOOCs not marked yet.
+  await daa.getByText('29.1', { exact: true }).waitFor();
+  await daa.getByText('of 35 so far').waitFor();
+  await daa.getByText('2 of 3 components marked').waitFor();
+  await daa.getByText('Not marked yet').waitFor();
+  const rooms = page.getByRole('region', { name: 'Exam rooms' });
+  await rooms.getByText('C-204').waitFor();
+  // Another semester has no internals.
+  await page.getByLabel('Semester').selectOption({ label: 'Odd Sem 2026-2027' });
+  await page.getByText('No internal marks on the ERP for Odd Sem 2026-2027 yet.').waitFor();
+  const papers = page.getByRole('region', { name: 'Mid-term papers' });
+  const paper = papers.getByRole('button', { name: /Design and Analysis of Algorithms/ });
+  await paper.click();
+  assert.equal(await paper.getAttribute('aria-expanded'), 'true');
+  await papers.getByText('Q1.A').waitFor();
+  await ctx.close();
+});
+
+test('profile: academic details, the bus seat and the counselling diary', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/profile`);
+  await page.getByRole('heading', { name: 'Test Student One' }).waitFor();
+  await page.getByRole('region', { name: 'Academic' }).getByText('R24').waitFor();
+  const bus = page.getByRole('region', { name: 'Bus' });
+  await bus.getByText('214', { exact: true }).waitFor();
+  await bus.getByText('22', { exact: true }).waitFor();
+  const diary = page.getByRole('region', { name: 'Counselling diary' });
+  await diary.getByText('Called a parent about attendance in Computer Networks.').waitFor();
+  await diary.getByText('Spoke to parent').waitFor();
+  // Personal details are not shown.
+  assert.equal(await page.getByText('01-01-2006').count(), 0);
+  await ctx.close();
+});
+
+test('circulars: newest first, documents read from the ERP', async () => {
+  const { ctx, page } = await ctxFor('main');
+  await page.goto(`${st.app}/circulars`);
+  await page.getByRole('heading', { name: 'Circulars' }).waitFor();
+  const first = page.getByRole('link', { name: /Mid-term examination schedule/ });
+  await first.waitFor();
+  // A circular without a document is not a link.
+  await page.getByText('Campus closed on account of a public holiday').waitFor();
+  assert.equal(await page.getByRole('link', { name: /Campus closed/ }).count(), 0);
+  const href = await first.getAttribute('href');
+  const res = await page.request.get(new URL(href, st.app).toString());
+  assert.equal(res.status(), 200);
+  assert.equal(res.headers()['content-type'], 'application/pdf');
   await ctx.close();
 });
 
@@ -626,6 +690,9 @@ test('tab bar navigates on phones; the rest live under More; desktop shows every
   await tabs.getByRole('button', { name: 'More' }).click();
   await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'CGPA' }).click();
   await page.waitForURL(/\/cgpa$/);
+  await tabs.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Marks' }).click();
+  await page.waitForURL(/\/marks$/);
   assert.equal(await tabs.getByRole('button', { name: 'More' }).getAttribute('aria-expanded'), 'false');
   await ctx.close();
   const desk = await ctxFor('main', { viewport: { width: 1440, height: 900 } });
@@ -706,7 +773,7 @@ test('accessibility: no serious or critical WCAG 2.2 AA issues on any screen', a
   const problems = [];
   for (const [who, viewport] of [[null, { width: 390, height: 844 }], ['main', { width: 390, height: 844 }], ['main', { width: 1440, height: 900 }]]) {
     const { ctx, page } = await ctxFor(who, { viewport, reducedMotion: 'reduce' });
-    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
+    for (const path of who ? ['/', '/timetable', '/plan', '/forecast', '/history', '/payments', '/cgpa', '/marks', '/profile', '/circulars', '/calculator', '/settings', '/privacy'] : ['/', '/privacy']) {
       await page.goto(st.app + path, { waitUntil: 'networkidle' });
       await page.waitForTimeout(500);
       const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();

@@ -13,6 +13,9 @@ import {
   ChartLineUp,
   Check,
   ClockCounterClockwise,
+  Exam,
+  IdentificationCard,
+  Megaphone,
   DotsThreeCircle,
   GearSix,
   GraduationCap,
@@ -48,15 +51,18 @@ const MAIN: Section[] = [
   { href: '/history', label: 'History', Icon: ClockCounterClockwise, blurb: 'Every class, day by day' },
 ];
 const RECORDS: Section[] = [
+  { href: '/marks', label: 'Marks', Icon: Exam, blurb: 'Internals and mid-term papers' },
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap, blurb: 'Grades and SGPA by semester' },
-  { href: '/payments', label: 'Payments', Icon: Receipt, blurb: 'Fee orders and receipts' },
+  { href: '/payments', label: 'Payments', Icon: Receipt, blurb: 'Semester fees and receipts' },
+  { href: '/circulars', label: 'Circulars', Icon: Megaphone, blurb: 'From the registrar' },
   { href: '/calculator', label: 'Calculator', Icon: Calculator, blurb: 'Numbers you have in your head' },
 ];
+const PROFILE: Section = { href: '/profile', label: 'Profile', Icon: IdentificationCard, blurb: 'Bus, counselling diary' };
 const SETTINGS: Section = { href: '/settings', label: 'Settings', Icon: GearSix, blurb: 'Accounts, semester, target' };
 
 /** Four sections keep a slot in the phone dock; the rest live under More. */
 const DOCK = MAIN.slice(0, 4);
-const MORE = [MAIN[4], ...RECORDS, SETTINGS];
+const MORE = [MAIN[4], ...RECORDS, PROFILE, SETTINGS];
 
 function isActive(pathname: string, href: string) {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -124,6 +130,7 @@ function Sidebar() {
           <SideLink key={s.href} s={s} pathname={pathname} />
         ))}
         <div className="mx-3 my-3 h-px bg-line" aria-hidden />
+        <SideLink s={PROFILE} pathname={pathname} />
         <SideLink s={SETTINGS} pathname={pathname} />
       </nav>
       <div className="mt-auto flex flex-col gap-1.5 pt-6">

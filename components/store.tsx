@@ -106,6 +106,18 @@ function write(key: string, value: unknown) {
   }
 }
 
+/** On-demand ERP sets this device keeps (components/records.tsx): dropped with the rest of the device's data. */
+function clearRecordCopies() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('attenly:rec:')) localStorage.removeItem(k);
+    }
+  } catch {
+    /* storage blocked: nothing was kept */
+  }
+}
+
 function loadSettings(): Settings {
   // v2 stored a safeAt / condonationFrom pair; carry it over as the one target.
   const s =
@@ -509,6 +521,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clearDevice = useCallback(() => {
     for (const k of [CACHE_KEY, SEEN_KEY, SETTINGS_KEY, LEGACY_KEY, ACTIVE_KEY, 'attenly:calc-drafts', 'attenly:painted']) write(k, null);
+    clearRecordCopies();
     setSettings(DEFAULT_SETTINGS);
     setSeenAll({});
   }, []);
@@ -516,6 +529,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     write(CACHE_KEY, null);
     write(ACTIVE_KEY, null);
+    clearRecordCopies();
     await nextAuthSignOut({ callbackUrl: `${BASE_PATH}` });
   }, []);
 

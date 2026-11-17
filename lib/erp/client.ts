@@ -570,3 +570,80 @@ export async function fetchFeeOrdersHtml(session: AuthedSession): Promise<{ html
   }
   return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
 }
+
+// ---------------------------------------------------------------------------
+// On-demand pages (lib/erp/records.ts): marks, profile, fees, circulars.
+// ---------------------------------------------------------------------------
+
+function expired(): Error & { expired: boolean } {
+  return Object.assign(new Error('ERP session expired'), { expired: true });
+}
+
+/** GET an ERP page by route ("studentinfo/…/viewprofileindi") or by a same-origin link the ERP gave us. */
+export async function erpPage(session: AuthedSession, routeOrHref: string): Promise<{ html: string; jar: CookieJar }> {
+  const path = routeOrHref.includes('index.php') ? sameOriginPath(routeOrHref) : `/index.php?r=${encodeURIComponent(routeOrHref)}`;
+  const res = await erpFetch(path, { method: 'GET' }, session.jar);
+  if (detectLoginForm(res.text)) throw expired();
+  return { html: res.text, jar: res.jar };
+}
+
+/**
+ * A search form posted back to its own page (year and semester filters). The form's
+ * CSRF token comes from `formHtml` (the page as just loaded), else the session's.
+ */
+export async function erpSearch(
+  session: AuthedSession,
+  route: string,
+  fields: Record<string, string>,
+  formHtml?: string,
+): Promise<{ html: string; jar: CookieJar }> {
+  const path = `/index.php?r=${encodeURIComponent(route)}`;
+  const csrf = (formHtml && extractCsrf(formHtml)) || session.csrf;
+  const res = await erpFetch(
+    path,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: new URL(ERP_BASE).origin, Referer: new URL(path, ERP_BASE).toString() },
+      body: formBody({ _csrf: csrf, ...fields }),
+    },
+    session.jar,
+  );
+  if (detectLoginForm(res.text)) throw expired();
+  return { html: res.text, jar: res.jar };
+}
+
+/** A document the ERP serves (a circular's PDF), as bytes. Same-origin links only. */
+export async function erpDocument(session: AuthedSession, href: string): Promise<{ bytes: Buffer; contentType: string; filename: string | null }> {
+  let url = new URL(sameOriginPath(href), ERP_BASE).toString();
+  for (let i = 0; i < 6; i++) {
+    const res = await fetchWithin(
+      url,
+      {
+        headers: {
+          Cookie: jarHeader(session.jar),
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+          Referer: new URL('/index.php', ERP_BASE).toString(),
+        },
+        redirect: 'manual',
+      },
+      20_000,
+    );
+    if ([301, 302, 303].includes(res.status)) {
+      const loc = res.headers.get('location');
+      if (!loc) break;
+      const next = new URL(loc, url);
+      if (next.origin !== new URL(ERP_BASE).origin) throw new Error('ERP redirected off-origin; refusing to follow');
+      url = next.toString();
+      continue;
+    }
+    if (res.status === 429) throw new ErpRateLimited();
+    if (!res.ok) throw new Error(`ERP answered HTTP ${res.status}`);
+    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (contentType.includes('text/html') && detectLoginForm(bytes.toString('utf8'))) throw expired();
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const filename = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1] ?? null;
+    return { bytes, contentType, filename };
+  }
+  throw new Error('Too many redirects talking to the ERP');
+}
