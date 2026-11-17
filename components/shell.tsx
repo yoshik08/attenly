@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowsClockwise,
+  BookOpenText,
+  Books,
   UserCircle,
   Calculator,
   CalendarBlank,
@@ -13,6 +15,9 @@ import {
   ChartLineUp,
   Check,
   ClockCounterClockwise,
+  Exam,
+  IdentificationCard,
+  Megaphone,
   DotsThreeCircle,
   GearSix,
   GraduationCap,
@@ -48,15 +53,20 @@ const MAIN: Section[] = [
   { href: '/history', label: 'History', Icon: ClockCounterClockwise, blurb: 'Every class, day by day' },
 ];
 const RECORDS: Section[] = [
+  { href: '/marks', label: 'Marks', Icon: Exam, blurb: 'Internals and exam rooms' },
+  { href: '/booklets', label: 'Booklets', Icon: BookOpenText, blurb: 'Scanned answer scripts' },
+  { href: '/courses', label: 'Courses', Icon: Books, blurb: 'Faculty and sections by term' },
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap, blurb: 'Grades and SGPA by semester' },
-  { href: '/payments', label: 'Payments', Icon: Receipt, blurb: 'Fee orders and receipts' },
+  { href: '/payments', label: 'Payments', Icon: Receipt, blurb: 'Semester fees and receipts' },
+  { href: '/circulars', label: 'Circulars', Icon: Megaphone, blurb: 'From the registrar' },
   { href: '/calculator', label: 'Calculator', Icon: Calculator, blurb: 'Numbers you have in your head' },
 ];
+const PROFILE: Section = { href: '/profile', label: 'Profile', Icon: IdentificationCard, blurb: 'Bus, counselling diary' };
 const SETTINGS: Section = { href: '/settings', label: 'Settings', Icon: GearSix, blurb: 'Accounts, semester, target' };
 
 /** Four sections keep a slot in the phone dock; the rest live under More. */
 const DOCK = MAIN.slice(0, 4);
-const MORE = [MAIN[4], ...RECORDS, SETTINGS];
+const MORE = [MAIN[4], ...RECORDS, PROFILE, SETTINGS];
 
 function isActive(pathname: string, href: string) {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -111,11 +121,11 @@ function Sidebar() {
           menu's sheet and popovers live in here, and a backdrop-filter ancestor would trap them.
           Tall, so frosted only. */}
       <span aria-hidden className="lg lg-card lg-frost pointer-events-none absolute inset-0 -z-1 rounded-none shadow-none" />
-      <Link href="/" className="press lg-press mx-2 mb-7 flex items-center gap-2.5 self-start rounded-lg px-1 py-1" aria-label="Attenly home">
+      <Link href="/" className="press lg-press mx-2 mb-7 flex shrink-0 items-center gap-2.5 self-start rounded-lg px-1 py-1" aria-label="Attenly home">
         <Logo />
         <span className="wordmark">Attenly</span>
       </Link>
-      <nav aria-label="Sections" className="flex flex-col gap-0.5">
+      <nav aria-label="Sections" className="no-bar -mx-1 flex min-h-0 flex-col gap-0.5 overflow-y-auto px-1">
         {MAIN.map((s) => (
           <SideLink key={s.href} s={s} pathname={pathname} />
         ))}
@@ -124,9 +134,10 @@ function Sidebar() {
           <SideLink key={s.href} s={s} pathname={pathname} />
         ))}
         <div className="mx-3 my-3 h-px bg-line" aria-hidden />
+        <SideLink s={PROFILE} pathname={pathname} />
         <SideLink s={SETTINGS} pathname={pathname} />
       </nav>
-      <div className="mt-auto flex flex-col gap-1.5 pt-6">
+      <div className="mt-auto flex shrink-0 flex-col gap-1.5 pt-6">
         {hasAccount && <SyncButton variant="side" />}
         <AccountMenu variant="side" />
       </div>

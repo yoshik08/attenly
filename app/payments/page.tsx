@@ -8,6 +8,11 @@ import { Sheet } from '@/components/overlay';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { api } from '@/lib/api';
 import type { FeeOrder, FeeReceipt } from '@/lib/erp/parsers';
+import type { LedgerRow } from '@/lib/erp/records-parse';
+import { useRecord } from '@/components/records';
+import { Notice } from '@/components/page';
+import { RecordLine, fmtDate } from '@/components/record-ui';
+import { cn } from '@/components/cn';
 
 const money = (n: number) => `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n)}`;
 
@@ -31,6 +36,9 @@ export default function PaymentsPage() {
 function Payments() {
   const { snapshot, activeAccount } = useStore();
   const orders = useMemo(() => snapshot?.feeOrders ?? [], [snapshot]);
+  const fees = useRecord('fees');
+  const ledger = fees.data?.ledger ?? [];
+  const dues = fees.data?.dues ?? [];
   const [open, setOpen] = useState<FeeOrder | null>(null);
   const [state, setState] = useState<{ loading: boolean; receipt: FeeReceipt | null; error: string | null }>({
     loading: false,
@@ -63,22 +71,38 @@ function Payments() {
     }
   };
 
-  if (orders.length === 0) {
-    return (
-      <section className="page-in">
-        <PageHeader title="Payments" />
-        <Empty icon={Receipt} title="No fee orders in the ERP yet.">
-          Payments come from the ERP&rsquo;s online fee orders and are read on every sync.
-        </Empty>
-      </section>
-    );
-  }
+  const owed = dues.reduce((n, d) => n + d.amount, 0);
 
   return (
     <div className="page-in max-w-[900px]">
-      <PageHeader title="Payments" sub={`${orders.length} fee order${orders.length === 1 ? '' : 's'} from the ERP`} />
+      <PageHeader
+        title="Payments"
+        sub={
+          <RecordLine fetchedAt={fees.fetchedAt} loading={fees.loading} onRefresh={fees.refresh}>
+            <span className="tnum">
+              {orders.length} online order{orders.length === 1 ? '' : 's'}
+            </span>
+          </RecordLine>
+        }
+      />
 
-      <div data-tone="safe" className="card glow mt-7 p-5 lg:p-7 lg lg-card" style={{ '--gs': '420px', '--gx': '-160px', '--gy': '-220px' } as React.CSSProperties}>
+      {owed > 0 && (
+        <Notice className="mt-6" title={`${money(owed)} due on the ERP`}>
+          {dues.map((d) => `${d.label} ${money(d.amount)}`).join(' · ')}
+        </Notice>
+      )}
+
+      {ledger.length > 0 && <FeeLedger ledger={ledger} />}
+
+      {orders.length === 0 ? (
+        <Empty icon={Receipt} title="No online fee orders in the ERP yet.">
+          Online payments come from the ERP&rsquo;s fee orders and are read on every sync.
+        </Empty>
+      ) : (
+      <>
+      <h2 className="h2 mt-12">Online payments</h2>
+
+      <div data-tone="safe" className="card glow mt-4 p-5 lg:p-7 lg lg-card" style={{ '--gs': '420px', '--gx': '-160px', '--gy': '-220px' } as React.CSSProperties}>
         <p className="text-[13px] font-semibold text-fg-2">Paid online</p>
         <p className="figure mt-2 text-[44px] lg:text-[56px]">{money(total)}</p>
         <p className="mt-2 text-[13px] text-fg-3 tnum">
@@ -120,7 +144,13 @@ function Payments() {
         })}
       </ul>
 
-      <Footnote>From the ERP&rsquo;s online fee orders. A receipt is read from the ERP when you open it.</Footnote>
+      </>
+      )}
+
+      <Footnote>
+        Semester fees come from the ERP&rsquo;s fee structure, read when you open this screen. Online payments come from its fee
+        orders, read on every sync; a receipt is read when you open it.
+      </Footnote>
 
       <Sheet open={open !== null} onClose={() => setOpen(null)} title="Online payment receipt" wide bare>
         {open && (
@@ -194,5 +224,69 @@ function Payments() {
         )}
       </Sheet>
     </div>
+  );
+}
+
+const semName = (s: string) => (s === '1' ? 'Odd' : s === '2' ? 'Even' : /^\d+$/.test(s) ? `Term ${s}` : s);
+
+/** What each semester asked, what was paid, and what is left (the ERP's "My SEM Fee Structure"). */
+function FeeLedger({ ledger }: { ledger: LedgerRow[] }) {
+  const rows = [...ledger].sort((a, b) => b.academicYear.localeCompare(a.academicYear) || b.semester.localeCompare(a.semester));
+  return (
+    <section aria-label="Semester fees" className="mt-7">
+      <h2 className="h2 mb-4">Semester fees</h2>
+      <ul className="grid items-start gap-2.5 md:grid-cols-2">
+        {rows.map((r, i) => {
+          const due = r.due ?? 0;
+          const tone = due > 0 ? 'condonation' : due < 0 ? 'none' : 'safe';
+          const label = due > 0 ? `${money(due)} due` : due < 0 ? `${money(-due)} extra paid` : 'Settled';
+          return (
+            <li key={`${r.academicYear}-${r.semester}`} className="card rise p-4 sm:p-5 lg lg-card lg-frost" style={{ '--i': i } as React.CSSProperties}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[15px] font-semibold">
+                    Year {r.studyYear} · {semName(r.semester)}
+                  </p>
+                  <p className="mt-0.5 text-[12.5px] text-fg-3 tnum">{r.academicYear}</p>
+                </div>
+                <span data-tone={tone} className="chip lg lg-pill">
+                  <span className="dot" aria-hidden />
+                  {label}
+                </span>
+              </div>
+              <dl className="mt-3.5 grid grid-cols-3 gap-2 text-[12px]">
+                {(
+                  [
+                    ['Fee', r.gross],
+                    ['Concession', r.concession],
+                    ['Paid', r.paid],
+                  ] as const
+                ).map(([k, v]) => (
+                  <div key={k} className="rounded-[12px] bg-white/[0.035] px-2.5 py-2 hair">
+                    <dt className="text-fg-3">{k}</dt>
+                    <dd className={cn('mt-0.5 text-[14px] font-semibold tnum', k === 'Concession' && 'text-fg-2')}>
+                      {v == null ? '—' : `${k === 'Concession' && v > 0 ? '−' : ''}${money(v)}`}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {r.receipts.length > 0 && (
+                <ul className="mt-3 flex flex-col gap-1 hair-t pt-3 text-[12px] text-fg-2">
+                  {r.receipts.map((x, j) => (
+                    <li key={`${x.date}-${j}`} className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        <span className="tnum">{fmtDate(x.date)}</span>
+                        {x.receiptNo && <span className="mono ml-2 text-fg-3">{x.receiptNo}</span>}
+                      </span>
+                      <span className="shrink-0 font-semibold text-fg tnum">{x.amount != null ? money(x.amount) : '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

@@ -13,6 +13,7 @@
  */
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { handleRecords } from './records.mjs';
 
 const PORT = Number(process.argv[2] ?? process.env.MOCK_ERP_PORT ?? 4100);
 
@@ -272,13 +273,6 @@ function cgpaTable(st) {
   return `<table class="table"><thead><tr><th>#</th><th>University</th><th>Program</th><th>Course Code</th><th>Course Name</th><th>Grade</th><th>Grade Point</th><th>Credits</th><th>Status</th><th>Academic Year</th><th>Semester</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function internalsTable(term) {
-  if (!term) return '<table class="table"><tbody></tbody></table>';
-  const rows = term.courses
-    .map((c, i) => `<tr><td>${i + 1}</td><td>2026-2027</td><td>Odd Sem</td><td>${c.code}</td><td>${c.title}</td><td>${18 + (i % 5)}</td><td>${8 + (i % 3)}</td></tr>`)
-    .join('');
-  return `<table class="table"><thead><tr><th>#</th><th>Academic Year</th><th>Semester</th><th>Course Code</th><th>Course Name</th><th>Mid Term</th><th>Assignment</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
 
 /** Synthetic online fee orders, in the ERP's column order. */
 const FEE_ORDERS = [
@@ -474,10 +468,23 @@ const server = http.createServer(async (req, res) => {
     const key = `${url.searchParams.get('UniversityMasterAcademicTimetableView[academicyear]')}:${url.searchParams.get('UniversityMasterAcademicTimetableView[semesterid]')}`;
     return send(res, 200, page(timetableTable(st.terms[key])));
   }
-  if (r === 'studentinfo/studentendexamresult/getstudentinternalmarks') {
-    if (failing('internals')) return send(res, 500, 'Internal Server Error');
-    const form = new URLSearchParams(await body(req));
-    return send(res, 200, internalsTable(st.terms[`${form.get('DynamicModel[academicyear]')}:${form.get('DynamicModel[semester]')}`]));
+  // Internals, marks, papers, profile, bus, counselling, fees, circulars (tests/mock-erp/records.mjs).
+  if (
+    await handleRecords({
+      r,
+      req,
+      url,
+      s,
+      user: s.user,
+      st,
+      readBody: () => body(req),
+      send: (status, payload, headers) => send(res, status, payload, headers),
+      failing,
+      years: YEARS,
+      semesters: SEMESTERS,
+    })
+  ) {
+    return;
   }
   if (r === 'studentinfo/studentendexamresult/semendresult') {
     if (failing('results')) return send(res, 500, 'Internal Server Error');

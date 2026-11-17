@@ -2,6 +2,7 @@ import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { getUser, makePrimary, removeAccount, setAccountTerm, viewAccounts } from '@/lib/db/users';
 import { deleteSnapshots } from '@/lib/db/snapshots';
 import { clearErpSessions } from '@/lib/db/erp-session';
+import { deleteRecords } from '@/lib/db/records';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,5 +62,6 @@ export async function DELETE(req: Request) {
   if (!removed) return Response.json({ ok: false, error: 'That account isn’t linked.' }, { status: 404 });
   await deleteSnapshots(me.googleId, universityId);
   await clearErpSessions(universityId);
+  await deleteRecords(me.googleId, universityId);
   return Response.json({ ok: true, accounts: await list(me.googleId) });
 }
