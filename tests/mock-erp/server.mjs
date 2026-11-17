@@ -101,6 +101,9 @@ function gradesA() {
       ['2024-2025', 'Even Sem', '24CS1202', 'Data Structures', 'A', 8, 4],
       ['2024-2025', 'Even Sem', '24CS1203', 'Object Oriented Programming', 'A+', 9, 4],
       ['2024-2025', 'Even Sem', '24MT1102', 'Discrete Mathematics', 'B+', 7, 3],
+      // 0-credit practicums, like the real ERP's: printed points that never count.
+      ['2024-2025', 'Odd Sem', '24UC0001', 'Global Logic Building Contest Practicum', 'P', 10, 0],
+      ['2024-2025', 'Term3', '24UC0002', 'Global Logic Building Contest Practicum', 'P', 8, 0],
   ];
 }
 
@@ -275,7 +278,7 @@ function cgpaTable(st) {
   const rows = st.grades
     .map((g, i) => `<tr><td>${i + 1}</td><td>KLU</td><td>B.Tech</td><td>${g[2]}</td><td>${g[3]}</td><td>${g[4]}</td><td>${g[5]}</td><td>${g[6]}</td><td>P</td><td>${g[0]}</td><td>${g[1]}</td></tr>`)
     .join('');
-  return `<table class="table"><thead><tr><th>#</th><th>University</th><th>Program</th><th>Course Code</th><th>Course Name</th><th>Grade</th><th>Grade Point</th><th>Credits</th><th>Status</th><th>Academic Year</th><th>Semester</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="table"><thead><tr><th>#</th><th>University</th><th>Program</th><th>Course Code</th><th>Course Name</th><th>Grade</th><th>Grade Point</th><th>Credits</th><th>Promotion</th><th>Reg Academic Year</th><th>Reg Sem</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 

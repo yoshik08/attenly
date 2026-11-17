@@ -6,7 +6,7 @@ import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { useRecord } from '@/components/records';
-import { Meter, RecordLine, RecordProblem, RecordSkeleton, marks, nameCase } from '@/components/record-ui';
+import { Meter, QuestionChip, RecordLine, RecordProblem, RecordSkeleton, marks, nameCase } from '@/components/record-ui';
 import { api } from '@/lib/api';
 import type { Paper } from '@/lib/erp/records-parse';
 
@@ -39,10 +39,6 @@ function Booklets() {
     return out;
   }, [papers]);
 
-  const scored = papers.filter((p) => p.got != null && p.max);
-  const got = scored.reduce((n, p) => n + (p.got ?? 0), 0);
-  const max = scored.reduce((n, p) => n + (p.max ?? 0), 0);
-
   return (
     <div className="page-in">
       <PageHeader
@@ -69,24 +65,7 @@ function Booklets() {
         )
       ) : (
         <>
-          {max > 0 && (
-            <section
-              data-tone="mark"
-              className="card glow mt-7 p-5 lg:p-6 lg lg-card"
-              aria-label="All papers"
-              style={{ '--gs': '380px', '--gx': '-160px', '--gy': '-200px' } as CSSProperties}
-            >
-              <p className="text-[13px] font-semibold text-fg-2">Across every evaluated paper</p>
-              <p className="mt-2">
-                <span className="figure text-[48px] lg:text-[56px]">{Math.round((got / max) * 100)}</span>
-                <span className="figure text-[22px] text-fg-2">%</span>
-              </p>
-              <p className="mt-1 text-[13px] text-fg-3 tnum">
-                {marks(got)} of {marks(max)} marks over {scored.length} paper{scored.length === 1 ? '' : 's'}
-              </p>
-            </section>
-          )}
-          <div className="mt-10 flex flex-col gap-9">
+          <div className="mt-8 flex flex-col gap-9">
             {groups.map(([label, list]) => (
               <section key={label} aria-label={label}>
                 <h2 className="h2 mb-3 text-[20px]">{label}</h2>
@@ -163,13 +142,7 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
             {open && (
               <div className="grid grid-cols-3 gap-1.5 pt-3.5 sm:grid-cols-4">
                 {p.questions.map((q) => (
-                  <span key={q.question} className="rounded-[10px] bg-white/[0.04] px-2.5 py-2 text-center hair">
-                    <span className="block text-[11.5px] text-fg-3">Q{q.question}</span>
-                    <span className="block text-[14px] font-semibold tnum">
-                      {marks(q.got)}
-                      <span className="font-normal text-fg-3">/{marks(q.max)}</span>
-                    </span>
-                  </span>
+                  <QuestionChip key={q.question} label={q.question} got={q.got} max={q.max} notWritten={q.notWritten} />
                 ))}
               </div>
             )}

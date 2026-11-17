@@ -26,10 +26,14 @@ function grid(headers, rows) {
 const NAMES = { '9900000001': 'TEST STUDENT ONE', '9900000002': 'TEST STUDENT TWO' };
 
 /** Components per course: [name, kind, marks out of 100 or null for "not marked yet"]. */
+/**
+ * Components per course: [name, kind, column labels, marks per column (null = not marked yet), max, weight].
+ * Like the real ERP, a negative mark means the question wasn't written; 0 is a scored 0.
+ */
 const COMPONENTS = [
-  ['Mid-Term Examination (Descriptive)', 'summative', [12, 14, 9, 13, 15, 11]],
-  ['Practical Continuous Evaluation', 'formative', [15, 16, 14, 17, 15, 16]],
-  ['MOOCs Evaluation (Certificate + Test)', 'summative', null],
+  ['Mid-Term Examination (Descriptive)', 'summative', ['1 A', '1 B', '1 C', '2 A', '2 B', '2 C', '3 A', '3 B', '3 C'], [4, 5, 0, 3, 2, 1, 5, -2, 4], 45, 20],
+  ['Practical Continuous Evaluation', 'formative', ['Co1', 'Co2', 'Co3', 'Co4', 'Co5', 'Co6'], [15, 16, 14, 17, 15, 16], 100, 15],
+  ['MOOCs Evaluation (Certificate + Test)', 'summative', ['1', '2', '3', '4', '5', '6'], null, 100, 20],
 ];
 
 function internalsForm(csrf, years, semesters) {
@@ -55,14 +59,13 @@ function internalsList(term, yearLabel, semLabel) {
 
 function componentPage(id, user) {
   const [code, k] = String(id).split('~');
-  const [name, kind, parts] = COMPONENTS[Number(k)] ?? COMPONENTS[0];
-  const labels = parts ? parts.map((_, i) => (kind === 'formative' ? `Co${i + 1}` : String(i + 1))) : ['1', '2', '3', '4', '5', '6'];
+  const [name, kind, labels, parts, max, weight] = COMPONENTS[Number(k)] ?? COMPONENTS[0];
   const headers = ['Sno', 'Coursecode', 'Coursedesc', 'Remarks', 'Student Uniid', ...labels, 'Max Marks', 'Weight', 'Total Marks', 'Weighted Marks'];
   const title = `<h4>Student ${name} ${kind === 'summative' ? 'Qp Wise' : ''} Marks</h4>`;
   if (!parts) return title + grid(headers, []);
-  const total = parts.reduce((a, b) => a + b, 0) + 2 * Number(k);
-  const weight = kind === 'summative' ? 20 : 15;
-  return title + grid(headers, [[1, code, 'COURSE', '', user, ...parts, 100, weight, total, ((total * weight) / 100).toFixed(1)]]);
+  // The ERP's total counts an unwritten (negative) question as 0.
+  const total = parts.reduce((a, b) => a + Math.max(0, b), 0);
+  return title + grid(headers, [[1, code, 'COURSE', '', user, ...parts, max, weight, total, ((total / max) * weight).toFixed(3)]]);
 }
 
 const PAPERS = [
@@ -91,7 +94,8 @@ function bookletPage(code) {
     ['1.A', 5, code === '24CS2201' ? 4 : 3],
     ['1.B', 7, 6.5],
     ['2.A', 5, 2.5],
-    ['2.B', 7, 5],
+    // Operating Systems: 2.B not written (the ERP's negative mark).
+    ['2.B', 7, code === '24CS2203' ? -2 : 5],
   ];
   // The real page loads the scan with pdf.js from this address; a paper without a scan has none.
   const scan =

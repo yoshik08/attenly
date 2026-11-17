@@ -6,6 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  partLabel,
+  partMarks,
   circularDocumentHref,
   feeLedgerHref,
   parseBusSeats,
@@ -146,7 +148,7 @@ test('internals: component links per course, then each component\'s marks', () =
 
   const head = (parts: string[]) => ['Sno', 'Coursecode', 'Coursedesc', 'Remarks', 'Student Uniid', ...parts, 'Max Marks', 'Weight', 'Total Marks', 'Weighted Marks'];
   const summative = parseComponentMarks(grid(head(['1', '2']), [[1, 'x', 'y', '', 'z', 12, 13, 100, 20, 82, 16.4]]));
-  assert.deepEqual(summative, { total: 82, max: 100, weight: 20, weighted: 16.4, parts: [{ label: '1', marks: 12 }, { label: '2', marks: 13 }], remarks: '' });
+  assert.deepEqual(summative, { total: 82, max: 100, weight: 20, weighted: 16.4, parts: [{ label: '1', marks: 12, notWritten: false }, { label: '2', marks: 13, notWritten: false }], remarks: '' });
   const formative = parseComponentMarks(grid(head(['Co1']), [[1, 'x', 'y', '', 'z', 13, 100, 20, 84, 16.8]]));
   assert.equal(formative?.parts[0].label, 'CO1');
   assert.equal(parseComponentMarks(grid(head(['1']), [])), null);
@@ -200,4 +202,40 @@ test('a booklet scan address, from the pdf.js loader', () => {
     '/index.php?r=studentinfo%2Fstudentendexamresult%2Fdownload_script_frompath&id=abc',
   );
   assert.equal(paperScanHref('<div id="marktable"></div>'), null);
+});
+
+test('question columns: "1 A", "1A", "1.A", "2", "Co1" — and nothing else', () => {
+  assert.equal(partLabel('1 A'), '1.A');
+  assert.equal(partLabel('1A'), '1.A');
+  assert.equal(partLabel('1.a'), '1.A');
+  assert.equal(partLabel('2'), '2');
+  assert.equal(partLabel('Co1'), 'CO1');
+  assert.equal(partLabel('CO 2'), 'CO2');
+  for (const h of ['Max Marks', 'Weight', 'Total Marks', 'Student Uniid', 'Sno', '#', '1 AB']) assert.equal(partLabel(h), null, h);
+});
+
+test('a negative mark means not written; 0 is a scored 0', () => {
+  assert.deepEqual(partMarks('-2'), { marks: null, notWritten: true });
+  assert.deepEqual(partMarks('0'), { marks: 0, notWritten: false });
+  assert.deepEqual(partMarks('2.5'), { marks: 2.5, notWritten: false });
+  assert.deepEqual(partMarks(''), { marks: null, notWritten: false });
+});
+
+test('component marks with lettered questions and an unwritten one (as the ERP totals them)', () => {
+  const head = ['Sno', 'Coursecode', 'Coursedesc', 'Remarks', 'Student Uniid', '1 A', '1 B', '1 C', '2 A', '2 B', '2 C', '3 A', '3 B', '3 C', 'Max Marks', 'Weight', 'Total Marks', 'Weighted Marks'];
+  const m = parseComponentMarks(grid(head, [[1, 'x', 'y', '', 'z', 2, 3, 2, 3, 1, 1, 2, -2, 1, 45, 20, 15, 6.667]]));
+  assert.equal(m?.parts.length, 9);
+  assert.deepEqual(m?.parts[7], { label: '3.B', marks: null, notWritten: true });
+  assert.deepEqual(m?.parts[0], { label: '1.A', marks: 2, notWritten: false });
+  assert.equal(m?.total, 15);
+  assert.equal(m?.max, 45);
+  assert.equal(m?.weighted, 6.667);
+});
+
+test('a booklet question marked negative is not written', () => {
+  const html = `<table><thead><tr><th>Question No's</th><th>Max. Marks</th><th>Obtained Marks</th></tr></thead><tbody><tr><td>1.A</td><td>5</td><td>0</td></tr><tr><td>1.B</td><td>7</td><td>-2</td></tr></tbody></table>`;
+  assert.deepEqual(parsePaperQuestions(html), [
+    { question: '1.A', max: 5, got: 0, notWritten: false },
+    { question: '1.B', max: 7, got: null, notWritten: true },
+  ]);
 });

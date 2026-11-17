@@ -158,7 +158,8 @@ test('CGPA grid and GPA maths; semesters ordered odd before even', () => {
   const rows = parseCgpa(html);
   assert.equal(rows.length, 3);
   const { cgpa, terms } = computeGpa(rows);
-  assert.equal(cgpa, Math.round(((9 * 4 + 7 * 3) / 7) * 100) / 100);
+  // An F earns 0 points but its 3 credits count: (36 + 21 + 0) / 10.
+  assert.equal(cgpa, 5.7);
   assert.deepEqual(
     terms.map((t) => t.semester),
     ['Odd Sem', 'Even Sem'],

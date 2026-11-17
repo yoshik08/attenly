@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowsClockwise, CaretDown } from '@phosphor-icons/react';
+import { ArrowsClockwise } from '@phosphor-icons/react';
 import { Notice } from './page';
 import { cn } from './cn';
 import { ago, useNow } from '@/lib/time';
@@ -118,45 +118,30 @@ export function Meter({ value, max, className }: { value: number | null | undefi
   );
 }
 
-/** A labelled select in the app's field style. */
-export function SelectField({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-  disabled,
-  className,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { id: string; label: string }[];
-  disabled?: boolean;
-  className?: string;
-}) {
+/** "1.A" → "Q1.A"; outcome labels ("CO2") stay as they are. */
+export const questionLabel = (label: string) => (/^co/i.test(label) ? label.toUpperCase() : `Q${label}`);
+
+/**
+ * One question's (or outcome's) marks. A question the student didn't write is shown as
+ * such, dashed and dim, so it never reads as a scored 0.
+ */
+export function QuestionChip({ label, got, max, notWritten }: { label: string; got: number | null; max?: number | null; notWritten: boolean }) {
   return (
-    <div className={className}>
-      <label className="sr-only" htmlFor={id}>
-        {label}
-      </label>
-      <div className="relative">
-        <select
-          id={id}
-          className="field h-10 appearance-none py-0 pr-10 text-[14px] lg lg-input"
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {options.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <CaretDown size={15} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-2" aria-hidden />
-      </div>
-    </div>
+    <span
+      className={cn(
+        'rounded-[10px] px-2.5 py-2 text-center',
+        notWritten ? 'border border-dashed border-white/15' : 'bg-white/[0.04] hair',
+      )}
+    >
+      <span className="block text-[11.5px] text-fg-3">{questionLabel(label)}</span>
+      {notWritten ? (
+        <span className="block whitespace-nowrap text-[12px] font-medium leading-[21px] text-fg-3">Not written</span>
+      ) : (
+        <span className="block text-[14px] font-semibold tnum">
+          {marks(got)}
+          {max != null && <span className="font-normal text-fg-3">/{marks(max)}</span>}
+        </span>
+      )}
+    </span>
   );
 }

@@ -419,14 +419,42 @@ export function parseInternalLinks(html: string): InternalCourseLinks[] {
     .filter((c) => c.code);
 }
 
+export interface ComponentPart {
+  /** "1.A", "2", "CO3". */
+  label: string;
+  /** Marks scored; null when the question wasn't written (or the cell is blank). 0 is a real 0. */
+  marks: number | null;
+  /** The ERP marks an unattempted question with a negative number. */
+  notWritten: boolean;
+}
+
 export interface ComponentMarks {
   total: number | null;
   max: number | null;
   weight: number | null;
   weighted: number | null;
-  /** Question-wise ("1", "2") or outcome-wise ("Co1") marks, as the ERP labels them. */
-  parts: { label: string; marks: number | null }[];
+  /** Question-wise ("1 A", "2") or outcome-wise ("Co1") marks, as the ERP labels them. */
+  parts: ComponentPart[];
   remarks: string;
+}
+
+/**
+ * A question or outcome column: "1", "1 A", "1A", "1.A", "Co1", "CO 2". Returns the
+ * label as Attenly shows it ("1.A", "CO2"), or null for any other column.
+ */
+export function partLabel(header: string): string | null {
+  const h = clean(header);
+  const co = /^co\s*(\d+)$/i.exec(h);
+  if (co) return `CO${co[1]}`;
+  const q = /^(\d+)\s*[.\-]?\s*([a-z])?$/i.exec(h);
+  if (!q) return null;
+  return q[2] ? `${q[1]}.${q[2].toUpperCase()}` : q[1];
+}
+
+/** A question's cell: a negative number means not written; anything else is the score. */
+export function partMarks(cell: string): { marks: number | null; notWritten: boolean } {
+  const n = numOrNull(cell);
+  return n != null && n < 0 ? { marks: null, notWritten: true } : { marks: n, notWritten: false };
 }
 
 /** One component's marks page (summative "Qp Wise" or formative "Co wise"): a single row. */
@@ -436,7 +464,8 @@ export function parseComponentMarks(html: string): ComponentMarks | null {
   const r = g.rows[0];
   const parts: ComponentMarks['parts'] = [];
   g.headers.forEach((h, i) => {
-    if (/^(co\s*)?\d+$/i.test(clean(h))) parts.push({ label: clean(h).replace(/^co\s*/i, 'CO'), marks: numOrNull(at(r, i)) });
+    const label = partLabel(h);
+    if (label) parts.push({ label, ...partMarks(at(r, i)) });
   });
   return {
     total: numOrNull(at(r, col(g, 'total marks'))),
@@ -488,7 +517,10 @@ export function parsePaperList(html: string): PaperRef[] {
 export interface PaperQuestion {
   question: string;
   max: number | null;
+  /** Marks scored; null when not written. 0 is a real 0. */
   got: number | null;
+  /** The ERP marks an unattempted question with a negative number. */
+  notWritten: boolean;
 }
 
 /** One booklet: question-wise maximum and obtained marks. Evaluator names are left out. */
@@ -500,7 +532,10 @@ export function parsePaperQuestions(html: string): PaperQuestion[] {
   const got = hs.findIndex((h) => h.includes('obtained'));
   if (q < 0 || got < 0) return [];
   return b.rows
-    .map((r) => ({ question: r[q] ?? '', max: numOrNull(r[max]), got: numOrNull(r[got]) }))
+    .map((r) => {
+      const { marks, notWritten } = partMarks(r[got] ?? '');
+      return { question: r[q] ?? '', max: numOrNull(r[max]), got: marks, notWritten };
+    })
     .filter((x) => x.question)
     .sort((a, b) => a.question.localeCompare(b.question, 'en', { numeric: true }));
 }
