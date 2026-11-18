@@ -4,7 +4,6 @@ import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
 import { StoreProvider } from '@/components/store';
 import { AppShell } from '@/components/shell';
-import { LiquidGlass } from '@/components/liquid-glass';
 import { BASE_PATH } from '@/lib/api';
 
 /**
@@ -46,8 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: EARLY_DATA }} />
       </head>
-      <body className="lg-bg">
-        <LiquidGlass />
+      <body>
         <AuthProvider>
           <StoreProvider>
             <AppShell>{children}</AppShell>

@@ -166,14 +166,14 @@ function Courses() {
 function CourseCard({ group, index }: { group: CourseGroup; index: number }) {
   const title = nameCase(group.title);
   return (
-    <article className="card rise min-w-0 p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties} aria-label={title}>
+    <article className="card rise min-w-0 p-5" style={{ '--i': index } as CSSProperties} aria-label={title}>
       <p className="mono text-[12px] text-fg-3">{group.code}</p>
       <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] pretty">{title}</h3>
       <ul className="mt-4 flex flex-col gap-1" aria-label={`${title}: classes`}>
         {group.classes.map((c, i) => (
           <li
             key={`${c.ltps}-${c.section}-${i}`}
-            className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-baseline gap-x-3 rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px] lg lg-card lg-frost"
+            className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-baseline gap-x-3 rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px]"
           >
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="font-semibold text-fg">{TYPE_LABEL[c.ltps] ?? c.ltps}</span>

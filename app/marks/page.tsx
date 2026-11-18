@@ -112,7 +112,7 @@ function Marks() {
 
       <Link
         href="/booklets"
-        className="card press mt-10 flex items-center gap-4 p-5 hover:bg-raised lg lg-card lg-frost lg-press"
+        className="card press mt-10 flex items-center gap-4 p-5 hover:bg-raised"
       >
         <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-raised hair">
           <Exam size={22} className="text-fg" aria-hidden />
@@ -137,7 +137,7 @@ function InternalCard({ course, index }: { course: InternalCourse; index: number
   const got = marked.reduce((n, c) => n + (c.weighted ?? 0), 0);
   const of = marked.reduce((n, c) => n + (c.weight ?? 0), 0);
   return (
-    <article className="card rise p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties} aria-label={nameCase(course.title)}>
+    <article className="card rise p-5" style={{ '--i': index } as CSSProperties} aria-label={nameCase(course.title)}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
         <div className="min-w-0">
           <p className="mono text-[12px] text-fg-3">{course.code}</p>
@@ -191,7 +191,7 @@ function ComponentRow({ c, id }: { c: InternalComponent; id: string }) {
     </>
   );
   return (
-    <li className="rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px] lg lg-card lg-frost">
+    <li className="rounded-[12px] bg-white/[0.035] px-3 py-2 text-[13px]">
       {parts.length > 0 ? (
         <button
           type="button"
@@ -235,7 +235,7 @@ function ComponentRow({ c, id }: { c: InternalComponent; id: string }) {
 function ExamRooms({ seating }: { seating: { date: string; examType: string; slot: string; courseCode: string; room: string }[] }) {
   return (
     <section aria-label="Exam rooms" className="mt-7">
-      <div data-tone="mark" className="card glow p-5 lg:p-6 lg lg-card" style={{ '--gs': '360px', '--gx': '-150px', '--gy': '-190px' } as CSSProperties}>
+      <div data-tone="mark" className="card glow p-5 lg:p-6" style={{ '--gs': '360px', '--gx': '-150px', '--gy': '-190px' } as CSSProperties}>
         <p className="flex items-center gap-2 text-[13px] font-semibold text-fg-2">
           <MapPin size={16} weight="fill" aria-hidden /> Exam rooms
         </p>

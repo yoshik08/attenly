@@ -83,7 +83,7 @@ function Attendance() {
             }
             action={
               !sync.running && (
-                <button type="button" className="btn btn-primary press lg lg-btn" onClick={() => void forceSync()}>
+                <button type="button" className="btn btn-primary press" onClick={() => void forceSync()}>
                   <ArrowsClockwise size={18} aria-hidden /> Sync now
                 </button>
               )
@@ -121,7 +121,7 @@ function Attendance() {
               icon={Books}
               title={`The ERP shows no attendance for ${termLabel || 'this term'}.`}
               action={
-                <Link href="/settings#semester" className="btn btn-secondary btn-sm press lg lg-btn">
+                <Link href="/settings#semester" className="btn btn-secondary btn-sm press">
                   Look at another semester
                 </Link>
               }
@@ -187,7 +187,7 @@ function RepairNotice({ message, onRepair }: { message?: string | null; onRepair
     <Notice
       title={message ?? 'Syncing is paused until you enter your ERP password again.'}
       action={
-        <button type="button" onClick={onRepair} className="btn btn-primary btn-sm press lg lg-btn">
+        <button type="button" onClick={onRepair} className="btn btn-primary btn-sm press">
           Enter password
         </button>
       }

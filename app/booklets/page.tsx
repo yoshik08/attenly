@@ -99,7 +99,7 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
         )
       : null;
   return (
-    <li className="card rise p-4 sm:p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties}>
+    <li className="card rise p-4 sm:p-5" style={{ '--i': index } as CSSProperties}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
         <div className="min-w-0">
           <p className="mono text-[12px] text-fg-3">{p.courseCode}</p>
@@ -119,7 +119,7 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
           aria-expanded={open}
           aria-controls={id}
           disabled={p.questions.length === 0}
-          className="press inline-flex items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2 disabled:opacity-50 lg lg-btn"
+          className="press inline-flex items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[13px] font-semibold text-fg hair hover:bg-raised-2 disabled:opacity-50"
         >
           {p.questions.length === 0 ? 'No question marks' : open ? 'Hide questions' : `${p.questions.length} questions`}
           {p.questions.length > 0 && (
@@ -129,7 +129,7 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
           )}
         </button>
         {scan ? (
-          <a href={scan} target="_blank" rel="noopener" className="btn btn-secondary btn-sm press lg lg-btn">
+          <a href={scan} target="_blank" rel="noopener" className="btn btn-secondary btn-sm press">
             <FilePdf size={16} aria-hidden /> Open scan
           </a>
         ) : (
