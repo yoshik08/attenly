@@ -227,7 +227,7 @@ function NumberField({
 
 function Settings() {
   const store = useStore();
-  const { settings, updateSettings, accounts, active, user, snapshot } = store;
+  const { settings, updateSettings, accounts, active, user, snapshot, local } = store;
   const { target, weights, tcbr } = settings;
   const now = useNow(30_000);
   const [repair, setRepair] = useState<string | null>(null);
@@ -249,7 +249,15 @@ function Settings() {
     <div className="page-in max-w-[780px]">
       <PageHeader title="Settings" />
 
-      <Section id="accounts" title="ERP accounts" note="Each linked account syncs on its own. The primary one opens first.">
+      <Section
+        id="accounts"
+        title={local ? 'ERP account' : 'ERP accounts'}
+        note={
+          local
+            ? 'Signed in without Google: this account and its data live in this browser only. Nothing syncs in the background; tap Sync when you want fresh numbers.'
+            : 'Each linked account syncs on its own. The primary one opens first.'
+        }
+      >
         {accounts.length === 0 ? (
           <p className="text-[14px] text-fg-2">No ERP account linked yet. Link one on the Attendance tab.</p>
         ) : (
@@ -263,8 +271,8 @@ function Settings() {
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-[16px] font-semibold">
                       {a.label ?? <span className="mono">{a.universityId}</span>}
-                      {a.primary && <span data-tone="none" className="chip !min-h-[22px] !text-[11px]">primary</span>}
-                      {a.universityId === active && <span data-tone="safe" className="chip !min-h-[22px] !text-[11px]">showing</span>}
+                      {!local && a.primary && <span data-tone="none" className="chip !min-h-[22px] !text-[11px]">primary</span>}
+                      {!local && a.universityId === active && <span data-tone="safe" className="chip !min-h-[22px] !text-[11px]">showing</span>}
                     </p>
                     {a.label && <p className="mono text-[12.5px] text-fg-3">{a.universityId}</p>}
                     <p className={cn('mt-1 text-[13px]', a.needsPassword ? 'text-cond' : a.lastError ? 'text-det' : 'text-fg-2')}>
@@ -285,7 +293,7 @@ function Settings() {
                         Show this account
                       </button>
                     )}
-                    {!a.primary && (
+                    {!local && !a.primary && (
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm press"
@@ -305,18 +313,20 @@ function Settings() {
                       {a.needsPassword ? 'Enter password' : 'Change password'}
                     </button>
                   </div>
-                  <ConfirmButton
-                    label="Remove"
-                    confirm="Remove it and its data"
-                    busy={busyId === `rm-${a.universityId}`}
-                    onConfirm={async () => {
-                      setBusyId(`rm-${a.universityId}`);
-                      setAccError(null);
-                      const r = await store.removeAccount(a.universityId);
-                      if (!r.ok) setAccError(r.error ?? null);
-                      setBusyId(null);
-                    }}
-                  />
+                  {!local && (
+                    <ConfirmButton
+                      label="Remove"
+                      confirm="Remove it and its data"
+                      busy={busyId === `rm-${a.universityId}`}
+                      onConfirm={async () => {
+                        setBusyId(`rm-${a.universityId}`);
+                        setAccError(null);
+                        const r = await store.removeAccount(a.universityId);
+                        if (!r.ok) setAccError(r.error ?? null);
+                        setBusyId(null);
+                      }}
+                    />
+                  )}
                 </div>
               </li>
             ))}
@@ -327,9 +337,11 @@ function Settings() {
             {accError}
           </p>
         )}
-        <button type="button" className="btn btn-secondary press mt-3" onClick={() => setAdding(true)}>
-          <Plus size={16} aria-hidden /> Link another ERP account
-        </button>
+        {!local && (
+          <button type="button" className="btn btn-secondary press mt-3" onClick={() => setAdding(true)}>
+            <Plus size={16} aria-hidden /> Link another ERP account
+          </button>
+        )}
       </Section>
 
       <SemesterSection key={activeAccountKey} />
@@ -416,32 +428,47 @@ function Settings() {
         </div>
       </Section>
 
-      <Section title="Google account">
-        <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold">{user?.name ?? 'Signed in'}</p>
-            {user?.email && <p className="truncate text-[13.5px] text-fg-2">{user.email}</p>}
+      {local ? (
+        <Section title="Signed in without Google" note="Your login and everything Attenly read from the ERP live in this browser only. Signing out forgets both.">
+          <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+            <p className="min-w-0 text-[15px] font-semibold">
+              <span className="mono">{active}</span>
+            </p>
+            <button type="button" className="btn btn-danger btn-sm press" onClick={() => void store.signOut()}>
+              <SignOut size={15} aria-hidden /> Sign out
+            </button>
           </div>
-          <button type="button" className="btn btn-danger btn-sm press" onClick={() => void store.signOut()}>
-            <SignOut size={15} aria-hidden /> Sign out of Google
-          </button>
-        </div>
-      </Section>
+        </Section>
+      ) : (
+        <>
+          <Section title="Google account">
+            <div className="card flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+              <div className="min-w-0">
+                <p className="truncate text-[15px] font-semibold">{user?.name ?? 'Signed in'}</p>
+                {user?.email && <p className="truncate text-[13.5px] text-fg-2">{user.email}</p>}
+              </div>
+              <button type="button" className="btn btn-danger btn-sm press" onClick={() => void store.signOut()}>
+                <SignOut size={15} aria-hidden /> Sign out of Google
+              </button>
+            </div>
+          </Section>
 
-      <Section title="This device" note="Attenly keeps a copy of your last sync, your settings and saved calculator results in this browser so the app opens instantly.">
-        {cleared ? (
-          <p className="text-[14px] text-safe">Cleared. The next load pulls everything from the cloud again.</p>
-        ) : (
-          <ConfirmButton
-            label="Forget data on this device"
-            confirm="Yes, forget it"
-            onConfirm={() => {
-              store.clearDevice();
-              setCleared(true);
-            }}
-          />
-        )}
-      </Section>
+          <Section title="This device" note="Attenly keeps a copy of your last sync, your settings and saved calculator results in this browser so the app opens instantly.">
+            {cleared ? (
+              <p className="text-[14px] text-safe">Cleared. The next load pulls everything from the cloud again.</p>
+            ) : (
+              <ConfirmButton
+                label="Forget data on this device"
+                confirm="Yes, forget it"
+                onConfirm={() => {
+                  store.clearDevice();
+                  setCleared(true);
+                }}
+              />
+            )}
+          </Section>
+        </>
+      )}
 
       <p className="pt-12 text-[12.5px] text-fg-3">
         Attenly is an unofficial student project, not affiliated with KL University.{' '}
@@ -455,9 +482,9 @@ function Settings() {
           <LinkForm
             mode="repair"
             universityId={repair}
-            onLinked={(id, snap) => {
+            onLinked={(linked) => {
               setRepair(null);
-              void store.onLinked(id, snap);
+              void store.onLinked(linked);
             }}
           />
         )}
@@ -466,9 +493,9 @@ function Settings() {
         {adding && (
           <LinkForm
             mode="add"
-            onLinked={(id, snap) => {
+            onLinked={(linked) => {
               setAdding(false);
-              void store.onLinked(id, snap);
+              void store.onLinked(linked);
             }}
           />
         )}

@@ -2,12 +2,12 @@ import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { findAccount, getUser } from '@/lib/db/users';
 import { getRecord, putRecord } from '@/lib/db/records';
 import { ErpRateLimited } from '@/lib/erp/full-sync';
-import { RECORD_MAX_AGE, readRecord, withErpSession, type RecordSet } from '@/lib/erp/records';
+import { withErpSession } from '@/lib/db/erp-session';
+import { RECORD_MAX_AGE, RECORD_SETS, readRecord, type RecordSet } from '@/lib/erp/records';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const SETS: RecordSet[] = ['marks', 'papers', 'profile', 'fees', 'circulars', 'courses'];
 const ID = /^\d{1,4}$/;
 
 /**
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   if (!me) return unauthorized();
   const url = new URL(req.url);
   const set = url.searchParams.get('set') as RecordSet;
-  if (!SETS.includes(set)) return Response.json({ ok: false, error: 'Unknown set.' }, { status: 400 });
+  if (!RECORD_SETS.includes(set)) return Response.json({ ok: false, error: 'Unknown set.' }, { status: 400 });
   const ay = url.searchParams.get('ay') ?? undefined;
   const sem = url.searchParams.get('sem') ?? undefined;
   if ((ay && !ID.test(ay)) || (sem && !ID.test(sem))) return Response.json({ ok: false, error: 'Bad term.' }, { status: 400 });

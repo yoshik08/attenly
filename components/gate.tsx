@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { ArrowsClockwise, Calculator, GoogleLogo, Key } from '@phosphor-icons/react';
+import { ArrowsClockwise, Calculator, GoogleLogo, IdentificationCard, Key } from '@phosphor-icons/react';
 import { BASE_PATH, CANONICAL_ORIGIN } from '@/lib/api';
 import { LinkForm } from './link-form';
+import { Sheet } from './overlay';
 import { useStore } from './store';
 import { reducedMotion } from './motion';
 import { cn } from './cn';
@@ -80,9 +81,11 @@ const POINTS = [
 ];
 
 export function SignIn() {
+  const { onLinked } = useStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offCanonical, setOffCanonical] = useState(false);
+  const [withoutGoogle, setWithoutGoogle] = useState(false);
   const started = useRef(false);
 
   useEffect(() => {
@@ -127,18 +130,29 @@ export function SignIn() {
             {error}
           </p>
         )}
-        {offCanonical ? (
-          // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
-          <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
-            <GoogleLogo size={19} weight="bold" aria-hidden />
-            Continue with Google
-          </a>
-        ) : (
-          <button type="button" onClick={start} disabled={busy} className="btn btn-primary btn-lg press mt-8 w-full sm:w-auto">
-            <GoogleLogo size={19} weight="bold" aria-hidden />
-            {busy ? 'Opening Google…' : 'Continue with Google'}
+        <div className="mt-8 flex flex-col gap-3 sm:max-w-[320px]">
+          {offCanonical ? (
+            // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
+            <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press w-full">
+              <GoogleLogo size={19} weight="bold" aria-hidden />
+              Continue with Google
+            </a>
+          ) : (
+            <button type="button" onClick={start} disabled={busy} className="btn btn-primary btn-lg press w-full">
+              <GoogleLogo size={19} weight="bold" aria-hidden />
+              {busy ? 'Opening Google…' : 'Continue with Google'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setWithoutGoogle(true)}
+            aria-haspopup="dialog"
+            className="btn btn-secondary btn-lg press w-full"
+          >
+            <IdentificationCard size={19} aria-hidden />
+            Sign in without Google
           </button>
-        )}
+        </div>
         <ul className="mt-10 grid gap-5 sm:grid-cols-3 sm:gap-4">
           {POINTS.map(({ Icon, title, body }) => (
             <li key={title} className="flex gap-3 sm:flex-col sm:gap-2.5">
@@ -159,6 +173,23 @@ export function SignIn() {
           </Link>
         </p>
       </div>
+      <Sheet open={withoutGoogle} onClose={() => setWithoutGoogle(false)} title="Sign in without Google">
+        {withoutGoogle && (
+          <>
+            <p className="mb-5 text-[14px] leading-relaxed text-fg-2 pretty">
+              Sign in with your ERP login alone. Your data stays in this browser: Attenly’s server keeps nothing, and nothing
+              syncs in the background. Tap Sync whenever you want fresh numbers.
+            </p>
+            <LinkForm
+              mode="local"
+              onLinked={(linked) => {
+                setWithoutGoogle(false);
+                void onLinked(linked);
+              }}
+            />
+          </>
+        )}
+      </Sheet>
     </section>
   );
 }
@@ -173,7 +204,7 @@ export function FirstLink() {
         Log in to the KL ERP here once. From then on Attenly signs in and syncs for you.
       </p>
       <div className="card mt-8 p-5 lg:p-6">
-        <LinkForm mode="first" onLinked={(id, snap) => void onLinked(id, snap)} />
+        <LinkForm mode="first" onLinked={(linked) => void onLinked(linked)} />
       </div>
     </section>
   );

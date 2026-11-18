@@ -1,5 +1,8 @@
 import { getDb } from './mongo';
-import { sealSession, unsealSession, type AuthedSession } from '../erp/client';
+import { resolvePassword, type ErpAccount } from './users';
+import { isSessionExpiredError, sealSession, unsealSession, type AuthedSession } from '../erp/client';
+import { autoLogin } from '../erp/full-sync';
+import { coded } from '../erp/errors';
 
 /**
  * A logged-in ERP session, kept between syncs so the manual sync button does
@@ -60,4 +63,28 @@ export async function clearErpSession(universityId: string): Promise<void> {
 export async function clearErpSessions(universityId: string): Promise<number> {
   const res = await (await collection()).deleteMany({ universityId });
   return res.deletedCount;
+}
+
+/**
+ * A logged-in ERP session for a linked `account`: the saved one when it still works,
+ * else one fresh login with the stored password. Saves whatever session it ends with.
+ */
+export async function withErpSession<T>(account: ErpAccount, fn: (session: AuthedSession) => Promise<T>): Promise<T> {
+  const creds = resolvePassword(account);
+  let session = await loadErpSession(account.universityId);
+  if (!session) {
+    if (!creds) throw coded('Enter your ERP password once to read this from the ERP.', 'needs_password');
+    session = await autoLogin(account.universityId, creds.password);
+  }
+  let result: T;
+  try {
+    result = await fn(session);
+  } catch (e) {
+    if (!isSessionExpiredError(e) || !creds) throw e;
+    await clearErpSession(account.universityId);
+    session = await autoLogin(account.universityId, creds.password);
+    result = await fn(session);
+  }
+  await saveErpSession(account.universityId, session).catch(() => undefined);
+  return result;
 }

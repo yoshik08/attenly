@@ -7,6 +7,7 @@ import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { useRecord } from '@/components/records';
 import { RecordLine, RecordProblem, RecordSkeleton, dateOf, fmtDate } from '@/components/record-ui';
+import { openLocalDocument } from '@/components/local';
 import { api } from '@/lib/api';
 import type { Circular } from '@/lib/erp/records-parse';
 
@@ -22,7 +23,7 @@ export default function CircularsPage() {
 const subjectOf = (s: string) => s.replace(/\s*[–-]?\s*Reg\.?,?\s*$/i, '').trim();
 
 function Circulars() {
-  const { active } = useStore();
+  const { active, local } = useStore();
   const rec = useRecord('circulars');
   const list = rec.data?.circulars ?? [];
   const total = rec.data?.total ?? null;
@@ -83,7 +84,16 @@ function Circulars() {
                   );
                   return (
                     <li key={c.id} className="rise" style={{ '--i': i } as CSSProperties}>
-                      {c.hasDocument && active ? (
+                      {c.hasDocument && local ? (
+                        // Without Google the document is a form post: the sealed login stays out of the address bar.
+                        <button
+                          type="button"
+                          onClick={() => openLocalDocument('/api/local/circular', { id: c.id })}
+                          className="press flex w-full items-start gap-4 px-4 py-3.5 text-left hover:bg-white/[0.035] sm:px-5"
+                        >
+                          {body}
+                        </button>
+                      ) : c.hasDocument && active ? (
                         <a
                           href={api(`/api/erp/circular?id=${encodeURIComponent(c.id)}&account=${encodeURIComponent(active)}`)}
                           target="_blank"

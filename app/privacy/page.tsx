@@ -23,6 +23,17 @@ export default function PrivacyPage() {
         <li>In your browser: a copy of the last sync, your settings and saved calculator results.</li>
       </ul>
 
+      <h2 className="h2 mt-12">Signing in without Google</h2>
+      <ul className="mt-3 flex list-disc flex-col gap-2 pl-5 text-[15px] leading-relaxed text-fg marker:text-fg-3">
+        <li>Attenly’s database stores nothing about you: no account, no password, no synced data.</li>
+        <li>
+          Your University ID and ERP password are kept in your browser, sealed by Attenly’s server so the browser can’t
+          read them back. The server opens them only to sign into the ERP when you tap Sync, and forgets them after.
+        </li>
+        <li>Everything Attenly reads from the ERP is kept in your browser too. Nothing syncs in the background.</li>
+        <li>Signing out forgets all of it on that device.</li>
+      </ul>
+
       <h2 className="h2 mt-12">What Attenly never does</h2>
       <ul className="mt-3 flex list-disc flex-col gap-2 pl-5 text-[15px] leading-relaxed text-fg marker:text-fg-3">
         <li>It never shows your password back to you or sends it anywhere except the KL ERP login.</li>

@@ -1,22 +1,10 @@
 import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { getUser } from '@/lib/db/users';
-import { syncAccount, type SyncCode } from '@/lib/sync';
+import { syncAccount } from '@/lib/sync';
+import { SYNC_STATUS } from '@/lib/sync-codes';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
-
-const STATUS: Partial<Record<SyncCode, number>> = {
-  busy: 409,
-  needs_password: 409,
-  bad_credentials: 409,
-  no_account: 404,
-  rate_limited: 429,
-  bad_captcha: 502,
-  solver_unavailable: 502,
-  erp_slow: 504,
-  erp_unreachable: 502,
-  failed: 502,
-};
 
 /**
  * POST /api/erp/hard-sync
@@ -43,7 +31,7 @@ export async function POST(req: Request) {
     const result = await syncAccount({ user, universityId, force, manual: force });
     return Response.json(
       { ok: result.ok, code: result.code, error: result.ok ? undefined : result.message, snapshot: result.snapshot },
-      { status: result.ok ? 200 : (STATUS[result.code] ?? 502) },
+      { status: result.ok ? 200 : (SYNC_STATUS[result.code] ?? 502) },
     );
   } catch (e) {
     console.error('[api/erp/hard-sync]', e instanceof Error ? e.message : e);

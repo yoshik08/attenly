@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import type { FeeOrder, FeeReceipt } from '@/lib/erp/parsers';
 import type { LedgerRow } from '@/lib/erp/records-parse';
 import { useRecord } from '@/components/records';
+import { localPost } from '@/components/local';
 import { Notice } from '@/components/page';
 import { RecordLine, fmtDate } from '@/components/record-ui';
 import { cn } from '@/components/cn';
@@ -34,7 +35,7 @@ export default function PaymentsPage() {
 }
 
 function Payments() {
-  const { snapshot, activeAccount } = useStore();
+  const { snapshot, activeAccount, local } = useStore();
   const orders = useMemo(() => snapshot?.feeOrders ?? [], [snapshot]);
   const fees = useRecord('fees');
   const ledger = fees.data?.ledger ?? [];
@@ -55,9 +56,16 @@ function Payments() {
     setOpen(order);
     setState({ loading: true, receipt: null, error: null });
     try {
+      if (local && !order.receiptHref) {
+        setState({ loading: false, receipt: null, error: 'The ERP has no receipt for that order yet.' });
+        return;
+      }
       const q = new URLSearchParams({ order: order.orderNo });
       if (activeAccount?.universityId) q.set('account', activeAccount.universityId);
-      const res = await fetch(api(`/api/erp/fee-receipt?${q.toString()}`));
+      // Without Google there is no stored snapshot to look the order up in: this device names the receipt.
+      const res = local
+        ? await localPost('/api/local/fee-receipt', { href: order.receiptHref })
+        : await fetch(api(`/api/erp/fee-receipt?${q.toString()}`));
       const d = (await res.json().catch(() => ({}))) as { receipt?: FeeReceipt; error?: string };
       if (mine !== seq.current) return; // another receipt was opened meanwhile
       if (!res.ok || !d.receipt) {
