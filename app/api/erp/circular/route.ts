@@ -1,6 +1,8 @@
 import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { findAccount, getUser } from '@/lib/db/users';
-import { readCircularDocument, withErpSession } from '@/lib/erp/records';
+import { withErpSession } from '@/lib/db/erp-session';
+import { readCircularDocument } from '@/lib/erp/records';
+import { circularResponse } from '@/lib/erp/serve';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -23,22 +25,7 @@ export async function GET(req: Request) {
   if (!account) return new Response('That account isn’t linked.', { status: 404 });
 
   try {
-    const doc = await withErpSession(account, (s) => readCircularDocument(s, id));
-    if (!doc) return new Response('That circular has no document on the ERP.', { status: 404 });
-    const type = doc.contentType.split(';')[0].trim().toLowerCase();
-    // Only documents pass through: an HTML answer from the ERP must never render on this origin.
-    if (!/^(application\/pdf|image\/(png|jpe?g|gif|webp))$/.test(type)) {
-      return new Response('The ERP didn’t hand over a readable document for that circular.', { status: 502 });
-    }
-    const filename = (doc.filename ?? `circular-${id}${type === 'application/pdf' ? '.pdf' : ''}`).replace(/[^\w.\- ]+/g, '_');
-    return new Response(new Uint8Array(doc.bytes), {
-      headers: {
-        'Content-Type': type,
-        'Content-Disposition': `inline; filename="${filename}"`,
-        'Cache-Control': 'private, max-age=3600',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
+    return circularResponse(await withErpSession(account, (s) => readCircularDocument(s, id)), id);
   } catch (e) {
     console.error('[api/erp/circular]', e instanceof Error ? e.message : e);
     return new Response('The ERP didn’t hand over that circular. Try again in a moment.', { status: 502 });

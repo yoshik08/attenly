@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowsClockwise, Books } from '@phosphor-icons/react';
-import { useStore } from '@/components/store';
+import { useStore, type Linked } from '@/components/store';
 import { SignIn, FirstLink } from '@/components/gate';
 import { CourseRow } from '@/components/course';
 import { UpNext } from '@/components/up-next';
@@ -15,7 +15,6 @@ import { Empty, Footnote, Notice, PageHeader, TermLine } from '@/components/page
 import { deltaOf, nextClassOf, summarize, type CourseSummary } from '@/lib/insights';
 import { ago, useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
-import type { ClientSnapshot } from '@/lib/db/snapshots';
 
 export default function AttendancePage() {
   const store = useStore();
@@ -205,7 +204,7 @@ function RepairSheet({
   open: boolean;
   onClose: () => void;
   universityId?: string;
-  onLinked: (id: string, snap: ClientSnapshot) => Promise<void>;
+  onLinked: (linked: Linked) => Promise<void>;
 }) {
   return (
     <Sheet open={open} onClose={onClose} title="Enter your ERP password">
@@ -213,9 +212,9 @@ function RepairSheet({
         <LinkForm
           mode="repair"
           universityId={universityId}
-          onLinked={(id, snap) => {
+          onLinked={(linked) => {
             onClose();
-            void onLinked(id, snap);
+            void onLinked(linked);
           }}
         />
       )}

@@ -26,7 +26,7 @@ const ORT_UNUSED = [
   `${ORT_DIST}/ort.min.{js,mjs}`,
 ];
 /** Routes that import the sync code (and so solve.ts) but never read a captcha themselves. */
-const ROUTES_THAT_NEVER_SOLVE = ['/api/data', '/api/erp/link-and-sync'];
+const ROUTES_THAT_NEVER_SOLVE = ['/api/data', '/api/erp/link-and-sync', '/api/local/login'];
 const ROUTES_THAT_LOG_IN = [
   '/api/cron/sync',
   '/api/erp/auto-captcha',
@@ -36,6 +36,12 @@ const ROUTES_THAT_LOG_IN = [
   '/api/erp/circular',
   '/api/erp/fee-receipt',
   '/api/health',
+  // Signed in without Google: each logs in again (reading the captcha) when the ERP session it is handed has expired.
+  '/api/local/sync',
+  '/api/local/records',
+  '/api/local/booklet',
+  '/api/local/circular',
+  '/api/local/fee-receipt',
 ];
 
 const nextConfig: NextConfig = {

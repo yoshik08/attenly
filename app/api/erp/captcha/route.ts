@@ -1,4 +1,3 @@
-import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { startLoginSession, ErpRateLimited } from '@/lib/erp/client';
 
 export const dynamic = 'force-dynamic';
@@ -7,9 +6,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/erp/captcha — a fresh ERP captcha to type by hand (the fallback
  * when auto-decode is unavailable). Returns the image as a data URL plus an
  * opaque, five-minute session token; the ERP cookies never leave the server.
+ * Open without Google: signing in without it (/api/local/login) needs one too.
  */
 export async function GET() {
-  if (!(await getGoogleUser())) return unauthorized();
   try {
     const { captchaImage, sessionToken } = await startLoginSession();
     return Response.json({ captchaImage, sessionToken });

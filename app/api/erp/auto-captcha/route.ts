@@ -1,4 +1,3 @@
-import { getGoogleUser, unauthorized } from '@/lib/auth';
 import { fetchSolvedCaptcha } from '@/lib/erp/autocaptcha';
 import { ErpRateLimited } from '@/lib/erp/client';
 
@@ -8,10 +7,10 @@ export const maxDuration = 60;
 /**
  * GET /api/erp/auto-captcha — a fresh ERP captcha already read in-process by the
  * CRNN model (lib/erp/solve.ts): { image, solution, sessionToken }. 502 when the
- * reading fails; the form then falls back to typing it.
+ * reading fails; the form then falls back to typing it. Open without Google:
+ * signing in without it (/api/local/login) reads its captcha here too.
  */
 export async function GET() {
-  if (!(await getGoogleUser())) return unauthorized();
   try {
     const { captchaImage, sessionToken, solution } = await fetchSolvedCaptcha();
     return Response.json({ image: captchaImage, solution, sessionToken });

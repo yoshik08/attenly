@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowClockwise, CircleNotch } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import type { ClientSnapshot } from '@/lib/db/snapshots';
+import { LOCAL_ERP_HEADER } from '@/lib/local-snapshot';
+import { readLocalAccount } from './local';
+import { useStore, type Linked } from './store';
 import { cn } from './cn';
 
 type Captcha = { image: string; token: string; auto: boolean };
@@ -14,16 +17,20 @@ type Captcha = { image: string; token: string; auto: boolean };
  *   first  — the first account, on the home screen
  *   add    — another account, from the account menu
  *   repair — re-enter the password of an account whose sync is paused
+ *   local  — sign in without Google: nothing is saved on the server, this browser keeps it
+ * A repair while signed in without Google signs in without Google again.
  */
 export function LinkForm({
   mode,
   universityId: fixedId,
   onLinked,
 }: {
-  mode: 'first' | 'add' | 'repair';
+  mode: 'first' | 'add' | 'repair' | 'local';
   universityId?: string;
-  onLinked: (universityId: string, snapshot: ClientSnapshot) => void;
+  onLinked: (linked: Linked) => void;
 }) {
+  const storeLocal = useStore().local;
+  const local = mode === 'local' || (mode === 'repair' && storeLocal);
   const [universityId, setUniversityId] = useState(fixedId ?? '');
   const [password, setPassword] = useState('');
   const [label, setLabel] = useState('');
@@ -100,15 +107,25 @@ export function LinkForm({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(api('/api/erp/link-and-sync'), {
+      // Without Google, re-entering the password keeps the semester this device picked.
+      const kept = local ? readLocalAccount() : null;
+      const res = await fetch(api(local ? '/api/local/login' : '/api/erp/link-and-sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ universityId: id, password, captchaText, sessionToken: captcha.token, label: label || undefined }),
+        body: JSON.stringify(
+          local
+            ? { universityId: id, password, captchaText, sessionToken: captcha.token, term: kept?.universityId === id ? kept.term : null }
+            : { universityId: id, password, captchaText, sessionToken: captcha.token, label: label || undefined },
+        ),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && d.ok && d.snapshot) {
+      if (res.ok && d.ok && d.snapshot && (!local || typeof d.key === 'string')) {
         setPassword('');
-        onLinked(id, d.snapshot as ClientSnapshot);
+        onLinked({
+          universityId: id,
+          snapshot: d.snapshot as ClientSnapshot,
+          ...(local ? { local: { key: d.key as string, erp: res.headers.get(LOCAL_ERP_HEADER), failed: Array.isArray(d.failed) ? d.failed : [] } } : {}),
+        });
         return;
       }
       const code: string = d.code ?? '';
@@ -252,17 +269,26 @@ export function LinkForm({
             <span>Signing in and syncing…</span>
           </>
         ) : mode === 'repair' ? (
-          'Save password and sync'
+          local ? 'Sign in and sync' : 'Save password and sync'
+        ) : local ? (
+          'Sign in'
         ) : (
           'Link and sync'
         )}
       </button>
       {busy && <p className="-mt-2 text-center text-[12.5px] text-fg-3">This takes about 20 seconds.</p>}
 
-      <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
-        Attenly keeps your University ID and ERP password with your Google account so it can sign in and sync for you.
-        They are stored as you typed them, not encrypted.
-      </p>
+      {local ? (
+        <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
+          Your University ID, password and data stay in this browser. The password is sealed so only Attenly’s server can
+          open it, and only when you tap Sync. Attenly’s database keeps nothing, and nothing syncs in the background.
+        </p>
+      ) : (
+        <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
+          Attenly keeps your University ID and ERP password with your Google account so it can sign in and sync for you.
+          They are stored as you typed them, not encrypted.
+        </p>
+      )}
     </form>
   );
 }

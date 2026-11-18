@@ -13,7 +13,20 @@ import {
 } from '@/lib/math';
 import type { ClientSnapshot } from '@/lib/db/snapshots';
 import type { AccountView } from '@/lib/db/users';
+import type { Dataset } from '@/lib/erp/full-sync';
 import { countsOf, type SeenCounts } from '@/lib/insights';
+import { keepFailed } from '@/lib/local-snapshot';
+import { localAccountView, localPost, patchLocalAccount, readLocalAccount, writeLocalAccount, type LocalAccount } from './local';
+
+/**
+ * A freshly linked account, from the link form. `local` is set when the person signed
+ * in without Google: their sealed login and ERP session, and the datasets that failed.
+ */
+export interface Linked {
+  universityId: string;
+  snapshot: ClientSnapshot;
+  local?: { key: string; erp: string | null; failed: Dataset[] };
+}
 
 export interface Settings {
   /** The one global target attendance (75 or 85). */
@@ -35,6 +48,11 @@ type Phase = 'boot' | 'signed-out' | 'ready' | 'error';
 
 interface StoreState {
   phase: Phase;
+  /**
+   * Signed in without Google: the account and its data live in this browser only
+   * (components/local.ts), and nothing syncs unless the person asks.
+   */
+  local: boolean;
   googleConfigured: boolean;
   user: { name: string | null; email: string | null; image: string | null } | null;
   accounts: AccountView[];
@@ -58,7 +76,7 @@ interface StoreValue extends StoreState {
   refresh: () => Promise<void>;
   forceSync: () => Promise<void>;
   switchAccount: (universityId: string) => Promise<void>;
-  onLinked: (universityId: string, snapshot: ClientSnapshot) => Promise<void>;
+  onLinked: (linked: Linked) => Promise<void>;
   removeAccount: (universityId: string) => Promise<{ ok: boolean; error?: string }>;
   makePrimary: (universityId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Sync a specific year and semester (ERP ids) for the shown account, or null for automatic. */
@@ -180,6 +198,7 @@ const useIso = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StoreState>({
     phase: 'boot',
+    local: false,
     googleConfigured: true,
     user: null,
     accounts: [],
@@ -228,8 +247,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     write(CACHE_KEY, cache);
   }, []);
 
+  /** Shows the account this browser signed in without Google; never asks the server. */
+  const enterLocal = useCallback(
+    (a: LocalAccount, sync?: SyncState) => {
+      ensureSeen(a.universityId, a.snapshot);
+      setState((s) => ({
+        ...s,
+        phase: 'ready',
+        local: true,
+        user: { name: null, email: null, image: null },
+        accounts: [localAccountView(a)],
+        active: a.universityId,
+        snapshot: a.snapshot,
+        lastInstructionDay: a.lastInstructionDay,
+        loadError: null,
+        sync: sync ?? s.sync,
+      }));
+    },
+    [ensureSeen],
+  );
+
   const load = useCallback(
     async (account?: string | null) => {
+      // Signed in without Google: this browser holds everything, so there is nothing to fetch.
+      const loc = readLocalAccount();
+      if (loc) {
+        enterLocal(loc);
+        return;
+      }
       const wanted = account ?? readActive() ?? null;
       try {
         // The response started before hydration if it is there; a failed early request is
@@ -243,7 +288,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { ok, d } = got;
         if (!d.signedIn) {
           write(CACHE_KEY, null);
-          setState((s) => ({ ...s, phase: 'signed-out', googleConfigured: d.googleConfigured !== false, user: null, accounts: [], active: null, snapshot: null, loadError: null }));
+          setState((s) => ({ ...s, phase: 'signed-out', local: false, googleConfigured: d.googleConfigured !== false, user: null, accounts: [], active: null, snapshot: null, loadError: null }));
           return;
         }
         if (!ok) {
@@ -262,6 +307,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((s) => ({
           ...s,
           phase: 'ready',
+          local: false,
           user: d.user,
           accounts: d.accounts ?? [],
           active,
@@ -275,7 +321,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((s) => ({ ...s, phase: s.snapshot ? 'ready' : 'error', loadError: 'You look offline. Showing what this device last saw.' }));
       }
     },
-    [ensureSeen],
+    [ensureSeen, enterLocal],
   );
 
   // Boot: settings, cached data for an instant first paint, then the network. A layout
@@ -286,6 +332,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSettings(loadSettings());
     const seenStored = read<Record<string, SeenCounts>>(SEEN_KEY) ?? {};
     setSeenAll(seenStored);
+    const loc = readLocalAccount();
+    if (loc) {
+      enterLocal(loc);
+      return;
+    }
     const cache = read<CacheShape>(CACHE_KEY);
     const active = readActive();
     const cachedId = active && cache?.snapshots[active] ? active : (cache?.accounts[0]?.universityId ?? null);
@@ -302,7 +353,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }));
     }
     void load(active);
-  }, [load, ensureSeen]);
+  }, [load, ensureSeen, enterLocal]);
+
+  /**
+   * A sync for the account signed in without Google: the server opens the sealed login,
+   * pulls from the ERP and keeps nothing; this browser keeps the result, carrying over
+   * whatever failed this time from its own last copy.
+   */
+  const runLocalSync = useCallback(async (mode: 'auto' | 'force') => {
+    const loc = readLocalAccount();
+    if (!loc) {
+      // The browser didn't keep the login (storage blocked or cleared): only signing in again helps.
+      const message = 'This browser didn’t keep your login. Sign out and sign in again.';
+      setState((p) => ({ ...p, sync: { running: false, mode, code: 'needs_password', message, at: Date.now() } }));
+      return;
+    }
+    const prev = loc.snapshot;
+    try {
+      const res = await localPost('/api/local/sync', {
+        term: loc.term,
+        reuse: prev && prev.attendance.length > 0 ? { academicyear: prev.term.academicyear, semesterid: prev.term.semesterid } : null,
+      });
+      const d = await res.json().catch(() => ({}));
+      const code: string = d.code ?? (res.ok ? 'synced' : 'failed');
+      if (stateRef.current.active !== loc.universityId) return; // signed out meanwhile
+      if (d.ok && d.snapshot) {
+        const snapshot = keepFailed(prev, d.snapshot as ClientSnapshot, Array.isArray(d.failed) ? d.failed : []);
+        const next = patchLocalAccount({ snapshot, needsPassword: false, lastError: null });
+        setState((p) => ({
+          ...p,
+          snapshot,
+          accounts: next ? [localAccountView(next)] : p.accounts,
+          sync: { running: false, mode, code, message: null, at: Date.now() },
+        }));
+        return;
+      }
+      const message: string = d.error ?? 'The sync didn’t finish. Try again.';
+      const lastError = { code, message, at: new Date().toISOString() };
+      const next = patchLocalAccount(code === 'needs_password' || code === 'bad_credentials' ? { needsPassword: true, lastError } : { lastError });
+      setState((p) => ({
+        ...p,
+        accounts: next ? [localAccountView(next)] : p.accounts,
+        sync: { running: false, mode, code, message, at: Date.now() },
+      }));
+    } catch {
+      setState((p) => ({ ...p, sync: { running: false, mode, code: 'offline', message: 'You look offline. Try again when you’re back online.', at: Date.now() } }));
+    }
+  }, []);
 
   const runSync = useCallback(
     async (mode: 'auto' | 'force') => {
@@ -311,6 +408,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!id || syncing.current) return;
       syncing.current = true;
       setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
+      if (s.local) {
+        try {
+          await runLocalSync(mode);
+        } finally {
+          syncing.current = false;
+        }
+        return;
+      }
       try {
         const res = await fetch(api('/api/erp/hard-sync'), {
           method: 'POST',
@@ -338,7 +443,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         syncing.current = false;
       }
     },
-    [persistSnapshot],
+    [persistSnapshot, runLocalSync],
   );
 
   const activeAccount = useMemo(
@@ -353,8 +458,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Auto-sync: whenever this tab is visible and the cloud data is older than
   // ~5.5 minutes, quietly ask the server to re-sync (it re-checks freshness).
+  // Signed in without Google, nothing syncs until the person asks.
   useEffect(() => {
-    if (state.phase !== 'ready' || !state.active) return;
+    if (state.phase !== 'ready' || !state.active || state.local) return;
     const tick = () => {
       const s = stateRef.current;
       const acc = s.accounts.find((a) => a.universityId === s.active);
@@ -375,12 +481,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.clearInterval(iv);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [state.phase, state.active, state.accounts, ageOf, runSync]);
+  }, [state.phase, state.active, state.local, state.accounts, ageOf, runSync]);
 
   const forceSync = useCallback(() => runSync('force'), [runSync]);
 
   const switchAccount = useCallback(
     async (universityId: string) => {
+      if (stateRef.current.local) return; // one account per device without Google
       write(ACTIVE_KEY, universityId);
       const cache = read<CacheShape>(CACHE_KEY);
       setState((s) => ({ ...s, active: universityId, snapshot: cache?.snapshots[universityId] ?? null, sync: IDLE_SYNC }));
@@ -390,18 +497,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const onLinked = useCallback(
-    async (universityId: string, snapshot: ClientSnapshot) => {
+    async ({ universityId, snapshot, local }: Linked) => {
+      const synced: SyncState = { ...IDLE_SYNC, code: 'synced', at: Date.now() };
+      if (local) {
+        // Signed in without Google. Re-entering the password keeps this device's
+        // semester pick and forecast date; someone else signing in here starts fresh.
+        const prev = readLocalAccount();
+        const same = prev?.universityId === universityId ? prev : null;
+        if (prev && !same) clearRecordCopies();
+        const account: LocalAccount = {
+          universityId,
+          key: local.key,
+          erp: local.erp,
+          term: same?.term ?? null,
+          snapshot: keepFailed(same?.snapshot ?? null, snapshot, local.failed),
+          lastInstructionDay: same?.lastInstructionDay ?? null,
+          needsPassword: false,
+          lastError: null,
+        };
+        writeLocalAccount(account);
+        enterLocal(account, synced);
+        return;
+      }
       write(ACTIVE_KEY, universityId);
       persistSnapshot(universityId, snapshot);
       ensureSeen(universityId, snapshot);
-      setState((s) => ({ ...s, active: universityId, snapshot, sync: { ...IDLE_SYNC, code: 'synced', at: Date.now() } }));
+      setState((s) => ({ ...s, active: universityId, snapshot, sync: synced }));
       await load(universityId);
     },
-    [load, persistSnapshot, ensureSeen],
+    [load, persistSnapshot, ensureSeen, enterLocal],
   );
+
+  /** Signing out without Google forgets everything this device kept for the account. */
+  const signOutLocal = useCallback(async () => {
+    writeLocalAccount(null);
+    clearRecordCopies();
+    setState((s) => ({ ...s, phase: 'signed-out', local: false, user: null, accounts: [], active: null, snapshot: null, lastInstructionDay: null, sync: IDLE_SYNC }));
+    // Still signed in with Google in this browser? Then that account shows instead.
+    await load(null);
+  }, [load]);
 
   const removeAccount = useCallback(
     async (universityId: string) => {
+      if (stateRef.current.local) {
+        await signOutLocal();
+        return { ok: true };
+      }
       try {
         const res = await fetch(api(`/api/erp/accounts?universityId=${encodeURIComponent(universityId)}`), { method: 'DELETE' });
         const d = await res.json().catch(() => ({}));
@@ -418,11 +559,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: 'You look offline. Try again.' };
       }
     },
-    [load, persistSnapshot],
+    [load, persistSnapshot, signOutLocal],
   );
 
   const makePrimary = useCallback(
     async (universityId: string) => {
+      if (stateRef.current.local) return { ok: true }; // the only account is the primary one
       try {
         const res = await fetch(api('/api/erp/accounts'), {
           method: 'PATCH',
@@ -444,6 +586,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (term: { academicyear: string; semesterid: string } | null) => {
       const id = stateRef.current.active;
       if (!id) return { ok: false, error: 'No ERP account is linked yet.' };
+      if (stateRef.current.local) {
+        const next = patchLocalAccount({ term });
+        if (!next) return { ok: false, error: 'This device couldn’t save that.' };
+        setState((p) => ({ ...p, accounts: [localAccountView(next)] }));
+        await runSync('force');
+        return { ok: true };
+      }
       try {
         const res = await fetch(api('/api/erp/accounts'), {
           method: 'PATCH',
@@ -473,11 +622,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /**
    * The Forecast window's end date. Written through to the user's document so it
    * survives reloads, sign-outs and other devices; the local copy is only the
-   * cached value for the first paint.
+   * cached value for the first paint. Without Google it lives on this device only.
    */
   const setLastInstructionDay = useCallback(async (day: string | null) => {
     const prev = stateRef.current.lastInstructionDay;
     setState((s) => ({ ...s, lastInstructionDay: day }));
+    if (stateRef.current.local) {
+      if (patchLocalAccount({ lastInstructionDay: day })) return { ok: true };
+      setState((s) => ({ ...s, lastInstructionDay: prev }));
+      return { ok: false, error: 'This device couldn’t save that date.' };
+    }
     try {
       const res = await fetch(api('/api/prefs'), {
         method: 'PATCH',
@@ -527,11 +681,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    if (stateRef.current.local) return signOutLocal();
     write(CACHE_KEY, null);
     write(ACTIVE_KEY, null);
     clearRecordCopies();
     await nextAuthSignOut({ callbackUrl: `${BASE_PATH}` });
-  }, []);
+  }, [signOutLocal]);
 
   const refresh = useCallback(() => load(stateRef.current.active), [load]);
   const stale = state.snapshot ? clockNow + state.skew - new Date(state.snapshot.syncedAt).getTime() >= state.freshMs : true;

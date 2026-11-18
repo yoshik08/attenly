@@ -7,6 +7,7 @@ import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { useRecord } from '@/components/records';
 import { Meter, QuestionChip, RecordLine, RecordProblem, RecordSkeleton, marks, nameCase } from '@/components/record-ui';
+import { openLocalDocument } from '@/components/local';
 import { api } from '@/lib/api';
 import type { Paper } from '@/lib/erp/records-parse';
 
@@ -89,15 +90,11 @@ function Booklets() {
 }
 
 function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
-  const { active } = useStore();
+  const { active, local } = useStore();
   const [open, setOpen] = useState(false);
   const id = `booklet-${p.courseCode}-${index}`;
-  const scan =
-    p.hasScan && active
-      ? api(
-          `/api/erp/booklet?${new URLSearchParams({ account: active, code: p.courseCode, exam: p.exam, ay: p.academicYear, sem: p.semester }).toString()}`,
-        )
-      : null;
+  const paper = { code: p.courseCode, exam: p.exam, ay: p.academicYear, sem: p.semester };
+  const scan = p.hasScan && active && !local ? api(`/api/erp/booklet?${new URLSearchParams({ account: active, ...paper }).toString()}`) : null;
   return (
     <li className="card rise p-4 sm:p-5" style={{ '--i': index } as CSSProperties}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
@@ -132,6 +129,11 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
           <a href={scan} target="_blank" rel="noopener" className="btn btn-secondary btn-sm press">
             <FilePdf size={16} aria-hidden /> Open scan
           </a>
+        ) : p.hasScan && local ? (
+          // Without Google the scan is a form post, so the sealed login stays out of the address bar.
+          <button type="button" onClick={() => openLocalDocument('/api/local/booklet', paper)} className="btn btn-secondary btn-sm press">
+            <FilePdf size={16} aria-hidden /> Open scan
+          </button>
         ) : (
           <span className="text-[12.5px] text-fg-3">No scan on the ERP</span>
         )}

@@ -392,7 +392,7 @@ function SyncButton({ variant }: { variant: 'bar' | 'side' }) {
 }
 
 function SyncPanel({ v, onDone }: { v: ReturnType<typeof useSyncView>; onDone: () => void }) {
-  const { snapshot, sync, failed, needsPassword, meaning, now, freshMs, activeAccount, forceSync } = v;
+  const { snapshot, sync, failed, needsPassword, meaning, now, freshMs, activeAccount, forceSync, local } = v;
   const minutes = Math.round((freshMs / 60000) * 2) / 2;
   return (
     <div className="p-4">
@@ -412,10 +412,17 @@ function SyncPanel({ v, onDone }: { v: ReturnType<typeof useSyncView>; onDone: (
           </p>
         </div>
       </div>
-      <p className="mt-3 text-[13px] leading-relaxed text-fg-2 pretty">
-        Attenly signs into the ERP for you whenever your data is older than {minutes} minutes and this app is open, and on
-        its own in the background.
-      </p>
+      {local ? (
+        <p className="mt-3 text-[13px] leading-relaxed text-fg-2 pretty">
+          Signed in without Google, so nothing syncs on its own and Attenly’s server keeps nothing. Sync now pulls fresh
+          numbers from the ERP straight to this browser.
+        </p>
+      ) : (
+        <p className="mt-3 text-[13px] leading-relaxed text-fg-2 pretty">
+          Attenly signs into the ERP for you whenever your data is older than {minutes} minutes and this app is open, and on
+          its own in the background.
+        </p>
+      )}
       {failed && !needsPassword && (
         <div data-tone={meaning.tone} className="mt-3 rounded-[14px] bg-tone/10 p-3">
           <p className="flex gap-2 text-[13px] font-semibold text-tone">
@@ -467,12 +474,13 @@ function initialsOf(name: string | null | undefined, email: string | null | unde
 }
 
 function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
-  const { user, accounts, active, activeAccount, switchAccount, signOut, onLinked } = useStore();
+  const { user, local, accounts, active, activeAccount, switchAccount, signOut, onLinked } = useStore();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const initials = initialsOf(user?.name, user?.email);
   const short = active ? `…${active.slice(-3)}` : initials;
+  const name = local ? 'Without Google' : (user?.name ?? 'Signed in');
 
   return (
     <div className="relative">
@@ -499,7 +507,7 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
             </span>
             <span className="min-w-0 flex-1">
               <span className="sr-only">Account </span>
-              <span className="block truncate text-[13.5px] font-semibold text-fg">{user?.name ?? 'Signed in'}</span>
+              <span className="block truncate text-[13.5px] font-semibold text-fg">{name}</span>
               <span className="mono block truncate text-[11.5px] text-fg-3">
                 {activeAccount ? (activeAccount.label ?? activeAccount.universityId) : 'No ERP account yet'}
               </span>
@@ -511,11 +519,15 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
       <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label="Account" placement={variant === 'side' ? 'up' : 'down'}>
         <div className="flex items-center gap-3 px-4 pb-3 pt-4">
           <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#3a3a40] to-[#1f1f23] text-[14px] font-bold hair">
-            {initials}
+            {local ? <IdentificationCard size={20} aria-hidden /> : initials}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold">{user?.name ?? 'Signed in'}</p>
-            {user?.email && <p className="truncate text-[13px] text-fg-2">{user.email}</p>}
+            <p className="truncate text-[15px] font-semibold">{local ? 'Signed in without Google' : name}</p>
+            {local ? (
+              <p className="truncate text-[13px] text-fg-2">Saved in this browser only</p>
+            ) : (
+              user?.email && <p className="truncate text-[13px] text-fg-2">{user.email}</p>
+            )}
           </div>
         </div>
         {accounts.length > 0 && (
@@ -537,7 +549,7 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
                       <span className="block truncate text-[15px] font-medium">{a.label ?? a.universityId}</span>
                       <span className="block truncate text-[12px] text-fg-3">
                         {a.label ? <span className="mono">{a.universityId}, </span> : ''}
-                        {a.needsPassword ? 'needs password' : a.primary ? 'primary' : 'linked'}
+                        {a.needsPassword ? 'needs password' : local ? 'on this device' : a.primary ? 'primary' : 'linked'}
                       </span>
                     </span>
                     {isActive && <Check size={18} weight="bold" className="shrink-0 text-safe" aria-label="Showing" />}
@@ -548,16 +560,18 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
           </ul>
         )}
         <div className="hair-t px-1.5 py-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setAdding(true);
-            }}
-            className="press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
-          >
-            <Plus size={18} aria-hidden className="text-fg-2" /> Link another ERP account
-          </button>
+          {!local && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setAdding(true);
+              }}
+              className="press flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left text-[15px] hover:bg-white/[0.05]"
+            >
+              <Plus size={18} aria-hidden className="text-fg-2" /> Link another ERP account
+            </button>
+          )}
           <Link
             href="/settings"
             onClick={() => setOpen(false)}
@@ -568,7 +582,7 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
         </div>
         <div className="hair-t p-3">
           <button type="button" onClick={() => void signOut()} className="btn btn-danger btn-sm press w-full">
-            <SignOut size={16} aria-hidden /> Sign out of Google
+            <SignOut size={16} aria-hidden /> {local ? 'Sign out' : 'Sign out of Google'}
           </button>
         </div>
       </Popover>
@@ -576,9 +590,9 @@ function AccountMenu({ variant }: { variant: 'bar' | 'side' }) {
         {adding && (
           <LinkForm
             mode="add"
-            onLinked={(id, snap) => {
+            onLinked={(linked) => {
               setAdding(false);
-              void onLinked(id, snap);
+              void onLinked(linked);
             }}
           />
         )}

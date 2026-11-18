@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import type { RecordData, RecordSet } from '@/lib/erp/records';
+import type { RecordData } from '@/lib/erp/records';
+import { RECORD_MAX_AGE, type RecordSet } from '@/lib/record-sets';
+import { localPost } from './local';
 import { useStore } from './store';
 
 export const RECORDS_PREFIX = 'attenly:rec:v1:';
@@ -43,10 +45,13 @@ function writeLocal(key: string, value: Stored<unknown>) {
  * One on-demand ERP set for the shown account. Paints from this device's last copy at
  * once, then asks the server, which answers from its cache or reads the ERP.
  * `refresh()` skips both caches.
+ *
+ * Signed in without Google the server keeps no cache, so this device's copy stands in
+ * for it: the ERP is only asked again once the copy is older than the set's max age.
  */
 export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; sem?: string } = {}, enabled = true) {
   type T = RecordData[S];
-  const { active } = useStore();
+  const { active, local } = useStore();
   const { ay, sem } = params;
   const key = `${RECORDS_PREFIX}${active ?? '-'}:${set}${ay && sem ? `:${ay}:${sem}` : ''}`;
   const [state, setState] = useState<RecordState<T>>({ data: null, fetchedAt: null, loading: false, error: null, code: null, stale: false });
@@ -55,6 +60,10 @@ export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; se
   const load = useCallback(
     async (fresh: boolean) => {
       if (!active || !enabled) return;
+      if (local && !fresh) {
+        const copy = readLocal<T>(key);
+        if (copy && Date.now() - Date.parse(copy.fetchedAt) < RECORD_MAX_AGE[set]) return;
+      }
       const mine = ++seq.current;
       setState((s) => ({ ...s, loading: true, error: null, code: null }));
       const q = new URLSearchParams({ set, account: active });
@@ -64,7 +73,9 @@ export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; se
       }
       if (fresh) q.set('fresh', '1');
       try {
-        const res = await fetch(api(`/api/erp/records?${q.toString()}`), { cache: 'no-store' });
+        const res = local
+          ? await localPost('/api/local/records', { set, ...(ay && sem ? { ay, sem } : {}) })
+          : await fetch(api(`/api/erp/records?${q.toString()}`), { cache: 'no-store' });
         const d = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           data?: T;
@@ -86,7 +97,7 @@ export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; se
         setState((s) => ({ ...s, loading: false, error: 'You look offline. Showing what this device last saw.', code: 'offline' }));
       }
     },
-    [active, enabled, set, ay, sem, key],
+    [active, local, enabled, set, ay, sem, key],
   );
 
   useEffect(() => {

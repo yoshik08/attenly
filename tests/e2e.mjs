@@ -133,6 +133,77 @@ test('a failed Google sign-in comes back with a readable message', async () => {
   await ctx.close();
 });
 
+test('without Google: the ERP login alone signs in; nothing reaches the database; it all stays in this browser', async () => {
+  const db = mongo.db('skipwise');
+  const countAll = async () =>
+    Object.fromEntries(await Promise.all(['users', 'snapshots', 'erpSessions', 'records'].map(async (c) => [c, await db.collection(c).countDocuments()])));
+  const before = await countAll();
+  const { ctx, page } = await ctxFor(null);
+  const calls = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith('/attenly/api/')) calls.push(u.pathname);
+  });
+  await page.goto(st.app);
+  await page.getByRole('button', { name: 'Sign in without Google' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Sign in without Google' });
+  await sheet.getByText('Attenly’s database keeps nothing').waitFor();
+  await linkVia(page, '9900000001', 'kl-test-pass');
+  await sheet.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('heading', { name: 'Attendance' }).waitFor();
+  await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
+  assert.deepEqual(await countAll(), before, 'nothing written to the database');
+  const stored = await page.evaluate(() => localStorage.getItem('attenly:local:v1'));
+  assert.ok(stored?.includes('"universityId":"9900000001"'), 'the account is kept in this browser');
+  assert.ok(!stored.includes('kl-test-pass'), 'the password is sealed, not readable');
+
+  // A reload paints from this browser: no Google data request, and nothing syncs on its own.
+  calls.length = 0;
+  await page.reload();
+  await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
+  await page.waitForTimeout(1500);
+  assert.deepEqual(calls, [], 'no API calls on reload');
+
+  // Sync now refreshes through the sealed login.
+  await page.getByRole('button', { name: /Synced|Not synced/ }).click();
+  const status = page.getByRole('dialog', { name: 'Sync status' });
+  await status.getByText('Signed in without Google, so nothing syncs on its own').waitFor();
+  const synced = page.waitForResponse((r) => r.url().endsWith('/api/local/sync'));
+  await status.getByRole('button', { name: 'Sync now' }).click();
+  assert.equal((await (await synced).json()).code, 'synced');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /Synced just now/ }).waitFor();
+
+  // ERP screens read on demand, documents open in a new tab through a form post.
+  await page.goto(`${st.app}/marks`);
+  await page.getByRole('article', { name: 'Design and Analysis of Algorithms' }).getByText('24.62', { exact: true }).waitFor();
+  await page.goto(`${st.app}/circulars`);
+  const doc = ctx.waitForEvent('response', (r) => r.url().endsWith('/api/local/circular'));
+  await page.getByRole('button', { name: /Mid-term examination schedule/ }).click();
+  const docRes = await doc;
+  assert.equal(docRes.status(), 200);
+  assert.equal(docRes.headers()['content-type'], 'application/pdf');
+  assert.ok(!docRes.url().includes('key='), 'the sealed login is not in the address');
+  await page.goto(`${st.app}/payments`);
+  await page.getByRole('button', { name: 'Receipt' }).first().click();
+  await page.getByRole('dialog', { name: 'Online payment receipt' }).getByText('TEST STUDENT').waitFor();
+  await page.keyboard.press('Escape');
+
+  // Settings speak for this mode, and pass the accessibility check.
+  await page.goto(`${st.app}/settings`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Signed in without Google' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Link another ERP account' }).count(), 0);
+  const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+  assert.deepEqual(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id), []);
+  assert.deepEqual(await countAll(), before, 'still nothing in the database');
+
+  // Signing out forgets it all on this device.
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await page.getByRole('heading', { name: 'Your KL attendance, without the ERP.' }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem('attenly:local:v1')), null);
+  await ctx.close();
+});
+
 test('privacy page says how credentials are stored', async () => {
   const { ctx, page } = await ctxFor(null);
   await page.goto(`${st.app}/privacy`);

@@ -2,16 +2,14 @@
  * ERP data read on demand, one screen at a time: marks, mid-term papers, profile,
  * fees and circulars. None of it changes minute to minute, so it stays out of the
  * five-minute attendance sync; /api/erp/records fetches a set when a screen asks
- * and caches it (lib/db/records.ts).
+ * and caches it (lib/db/records.ts), /api/local/records reads it for a browser
+ * signed in without Google and keeps nothing.
  *
  * Everything here only reads: GET pages, and search forms posted back to their own
- * page with a year and semester.
+ * page with a year and semester. No database: the session comes from the caller.
  */
-import { clearErpSession, loadErpSession, saveErpSession } from '../db/erp-session';
-import { resolvePassword, type ErpAccount } from '../db/users';
-import { erpDocument, erpPage, erpSearch, erpStream, isSessionExpiredError, type AuthedSession } from './client';
-import { autoLogin } from './full-sync';
-import { coded } from './errors';
+import { erpDocument, erpPage, erpSearch, erpStream, type AuthedSession } from './client';
+import type { RecordSet } from '../record-sets';
 import {
   circularDocumentHref,
   feeLedgerHref,
@@ -54,7 +52,7 @@ const ROUTES = {
   courses: 'studentinfo/studentcoursemappingmasterinfoview/tab_index_personal',
 } as const;
 
-export type RecordSet = 'marks' | 'papers' | 'profile' | 'fees' | 'circulars' | 'courses';
+export { RECORD_MAX_AGE, RECORD_SETS, type RecordSet } from '../record-sets';
 
 export interface MarksData {
   /** The year × semester pairs the ERP offers this student, newest first. */
@@ -92,16 +90,6 @@ export interface RecordData {
   courses: CoursesData;
 }
 
-/** How long a cached set is served without asking the ERP again. */
-export const RECORD_MAX_AGE: Record<RecordSet, number> = {
-  marks: 20 * 60_000,
-  papers: 6 * 3600_000,
-  profile: 6 * 3600_000,
-  fees: 60 * 60_000,
-  circulars: 30 * 60_000,
-  courses: 6 * 3600_000,
-};
-
 /** Runs `fn` over `items`, at most `n` at a time, keeping order. */
 async function pool<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
@@ -115,30 +103,6 @@ async function pool<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): P
     }),
   );
   return out;
-}
-
-/**
- * A logged-in ERP session for `account`: the saved one when it still works, else
- * one fresh login with the stored password. Saves whatever session it ends with.
- */
-export async function withErpSession<T>(account: ErpAccount, fn: (session: AuthedSession) => Promise<T>): Promise<T> {
-  const creds = resolvePassword(account);
-  let session = await loadErpSession(account.universityId);
-  if (!session) {
-    if (!creds) throw coded('Enter your ERP password once to read this from the ERP.', 'needs_password');
-    session = await autoLogin(account.universityId, creds.password);
-  }
-  let result: T;
-  try {
-    result = await fn(session);
-  } catch (e) {
-    if (!isSessionExpiredError(e) || !creds) throw e;
-    await clearErpSession(account.universityId);
-    session = await autoLogin(account.universityId, creds.password);
-    result = await fn(session);
-  }
-  await saveErpSession(account.universityId, session).catch(() => undefined);
-  return result;
 }
 
 const sameTerm = (t: FormTerm, ay?: string, sem?: string) => Boolean(ay && sem && t.academicyear === ay && t.semesterid === sem);
