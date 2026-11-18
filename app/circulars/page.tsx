@@ -67,7 +67,7 @@ function Circulars() {
           {months.map(([label, items]) => (
             <section key={label} aria-label={label}>
               <p className="mb-2.5 text-[13px] font-semibold text-fg-2">{label}</p>
-              <ul className="grouped lg lg-card lg-frost">
+              <ul className="grouped">
                 {items.map((c, i) => {
                   const body = (
                     <>

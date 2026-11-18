@@ -44,7 +44,7 @@ function Profile() {
       ) : (
         p && (
           <div className="mt-7 grid items-start gap-3 md:grid-cols-2 lg:gap-4">
-            <section className="card rise p-5 lg:p-6 lg lg-card lg-frost" aria-label="Academic" style={{ '--i': 0 } as CSSProperties}>
+            <section className="card rise p-5 lg:p-6" aria-label="Academic" style={{ '--i': 0 } as CSSProperties}>
               <p className="flex items-center gap-2 text-[13px] font-semibold text-fg-2">
                 <IdentificationCard size={17} weight="fill" aria-hidden /> Academic
               </p>
@@ -104,7 +104,7 @@ function BusCard({ seat }: { seat: BusSeat }) {
   return (
     <section
       data-tone="mark"
-      className="card glow rise p-5 lg:p-6 lg lg-card"
+      className="card glow rise p-5 lg:p-6"
       aria-label="Bus"
       style={{ '--i': 1, '--gs': '320px', '--gx': '-140px', '--gy': '-170px' } as CSSProperties}
     >
@@ -132,7 +132,7 @@ function BusCard({ seat }: { seat: BusSeat }) {
 
 function NoBus() {
   return (
-    <section className="card rise p-5 lg:p-6 lg lg-card lg-frost" style={{ '--i': 1 } as CSSProperties}>
+    <section className="card rise p-5 lg:p-6" style={{ '--i': 1 } as CSSProperties}>
       <p className="flex items-center gap-2 text-[13px] font-semibold text-fg-2">
         <Bus size={17} aria-hidden /> Bus
       </p>
@@ -144,17 +144,17 @@ function NoBus() {
 function Note({ note, index }: { note: CounsellingNote; index: number }) {
   const parent = /parent/i.test(note.with);
   return (
-    <li className="card rise p-4 sm:p-5 lg lg-card lg-frost" style={{ '--i': index } as CSSProperties}>
+    <li className="card rise p-4 sm:p-5" style={{ '--i': index } as CSSProperties}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
         <p className="text-[13px] font-semibold tnum">{fmtDate(note.date)}</p>
         <span className="flex items-center gap-1.5">
           {note.category && (
-            <span data-tone="none" className="chip lg lg-pill">
+            <span data-tone="none" className="chip">
               {note.category}
             </span>
           )}
           {note.with && (
-            <span data-tone={parent ? 'mark' : 'none'} className="chip lg lg-pill">
+            <span data-tone={parent ? 'mark' : 'none'} className="chip">
               {parent ? 'Spoke to parent' : 'With you'}
             </span>
           )}

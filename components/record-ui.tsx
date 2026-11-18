@@ -61,7 +61,7 @@ export function RecordLine({
           'Not read yet'
         )}
       </span>
-      <button type="button" onClick={onRefresh} disabled={loading} className="link inline-flex items-center gap-1 text-[13px] lg-press disabled:opacity-50">
+      <button type="button" onClick={onRefresh} disabled={loading} className="link inline-flex items-center gap-1 text-[13px] disabled:opacity-50">
         <ArrowsClockwise size={13} className={loading ? 'spin' : ''} aria-hidden /> Refresh
       </button>
     </span>
@@ -77,7 +77,7 @@ export function RecordProblem({ error, code, hasData }: { error: string | null; 
         className="mt-6"
         title="Attenly needs your ERP password again"
         action={
-          <Link href="/settings#accounts" className="btn btn-primary btn-sm press lg lg-btn">
+          <Link href="/settings#accounts" className="btn btn-primary btn-sm press">
             Enter password
           </Link>
         }
@@ -98,7 +98,7 @@ export function RecordSkeleton({ cards = 4, tall = false }: { cards?: number; ta
   return (
     <div className="mt-7 grid gap-3 md:grid-cols-2 lg:gap-4" aria-busy="true" aria-label="Loading">
       {Array.from({ length: cards }, (_, i) => (
-        <div key={i} className="card p-5 lg lg-card lg-frost">
+        <div key={i} className="card p-5">
           <div className="skel h-3 w-24" />
           <div className="skel mt-3 h-5 w-3/4" />
           <div className={cn('skel mt-5 w-full rounded-[12px]', tall ? 'h-28' : 'h-12')} />
