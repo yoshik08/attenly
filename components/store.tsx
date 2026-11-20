@@ -50,7 +50,7 @@ interface StoreState {
   phase: Phase;
   /**
    * Signed in without Google: the account and its data live in this browser only
-   * (components/local.ts), and nothing syncs unless the person asks.
+   * (components/local.ts), and it re-syncs quietly every five minutes while a tab is open.
    */
   local: boolean;
   googleConfigured: boolean;
@@ -95,6 +95,10 @@ const ACTIVE_KEY = 'attenly-active-account';
 const CACHE_KEY = 'attenly:cache:v2';
 const SEEN_KEY = 'attenly:seen:v1';
 const AUTO_RETRY_MS = 3 * 60 * 1000;
+/** Signed in without Google, an open tab (shown or hidden) re-syncs when its data is this old. */
+export const LOCAL_AUTO_MS = 5 * 60 * 1000;
+/** When a tab of this browser last started a quiet sync, so two open tabs don't both pull. */
+const LOCAL_AUTO_CLAIM = 'attenly:local:auto';
 
 const DEFAULT_SETTINGS: Settings = { target: DEFAULT_TARGET, weights: DEFAULT_WEIGHTS, tcbr: DEFAULT_TCBR };
 
@@ -125,6 +129,11 @@ function write(key: string, value: unknown) {
 }
 
 /** On-demand ERP sets this device keeps (components/records.tsx): dropped with the rest of the device's data. */
+/** The term the account signed in without Google syncs ('' for automatic). */
+function termOfLocal(): string {
+  return JSON.stringify(readLocalAccount()?.term ?? '');
+}
+
 function clearRecordCopies() {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -224,6 +233,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const stateRef = useRef(state);
   const syncing = useRef(false);
+  /** The running sync, and whether the person can see it (false for a quiet background one). */
+  const inflight = useRef<{ done: Promise<void>; term: string } | null>(null);
+  const shown = useRef(false);
   const lastAuto = useRef<Record<string, number>>({});
   useEffect(() => {
     stateRef.current = state;
@@ -360,7 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * pulls from the ERP and keeps nothing; this browser keeps the result, carrying over
    * whatever failed this time from its own last copy.
    */
-  const runLocalSync = useCallback(async (mode: 'auto' | 'force') => {
+  const runLocalSync = useCallback(async (mode: 'auto' | 'force', quiet: () => boolean) => {
     const loc = readLocalAccount();
     if (!loc) {
       // The browser didn't keep the login (storage blocked or cleared): only signing in again helps.
@@ -390,29 +402,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       const message: string = d.error ?? 'The sync didn’t finish. Try again.';
       const lastError = { code, message, at: new Date().toISOString() };
-      const next = patchLocalAccount(code === 'needs_password' || code === 'bad_credentials' ? { needsPassword: true, lastError } : { lastError });
+      const rejected = code === 'needs_password' || code === 'bad_credentials';
+      // A quiet sync that hit a passing problem (captcha, slow ERP) stays quiet and
+      // tries again later; only a rejected password is worth interrupting for.
+      if (!rejected && quiet()) return;
+      const next = patchLocalAccount(rejected ? { needsPassword: true, lastError } : { lastError });
       setState((p) => ({
         ...p,
         accounts: next ? [localAccountView(next)] : p.accounts,
         sync: { running: false, mode, code, message, at: Date.now() },
       }));
     } catch {
+      if (quiet()) return;
       setState((p) => ({ ...p, sync: { running: false, mode, code: 'offline', message: 'You look offline. Try again when you’re back online.', at: Date.now() } }));
     }
   }, []);
 
   const runSync = useCallback(
     async (mode: 'auto' | 'force') => {
-      const s = stateRef.current;
+      let s = stateRef.current;
       const id = s.active;
-      if (!id || syncing.current) return;
+      if (!id) return;
+      if (syncing.current) {
+        // Sync now (or a new term) while a quiet background sync runs: show that one,
+        // and pull again after it only if it was for a different term.
+        const run = inflight.current;
+        if (mode !== 'force' || !s.local || !run || shown.current) return;
+        shown.current = true;
+        setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
+        await run.done;
+        if (termOfLocal() === run.term || syncing.current) return;
+        s = stateRef.current;
+      }
       syncing.current = true;
-      setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
+      const quiet = s.local && mode === 'auto';
+      shown.current = !quiet;
+      if (!quiet) setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
       if (s.local) {
+        const done = runLocalSync(mode, () => !shown.current);
+        inflight.current = { done, term: termOfLocal() };
         try {
-          await runLocalSync(mode);
+          await done;
         } finally {
           syncing.current = false;
+          inflight.current = null;
         }
         return;
       }
@@ -458,7 +491,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Auto-sync: whenever this tab is visible and the cloud data is older than
   // ~5.5 minutes, quietly ask the server to re-sync (it re-checks freshness).
-  // Signed in without Google, nothing syncs until the person asks.
+  // Signed in without Google there's an effect of its own below.
   useEffect(() => {
     if (state.phase !== 'ready' || !state.active || state.local) return;
     const tick = () => {
@@ -482,6 +515,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [state.phase, state.active, state.local, state.accounts, ageOf, runSync]);
+
+  // Signed in without Google: while any tab is open, shown or hidden, re-sync quietly
+  // once the data in this browser is five minutes old. Hidden tabs have their timers
+  // slowed to about once a minute, which this cadence doesn't mind; a phone that froze
+  // the tab catches up the moment it's shown again. Tabs of one browser share the
+  // stored copy, so only one of them pulls.
+  useEffect(() => {
+    if (state.phase !== 'ready' || !state.active || !state.local) return;
+    const tick = () => {
+      const s = stateRef.current;
+      if (syncing.current || !navigator.onLine) return;
+      const loc = readLocalAccount();
+      if (!loc || loc.universityId !== s.active || loc.needsPassword) return;
+      // Another tab may have synced meanwhile: show its copy instead of pulling again.
+      const stored = loc.snapshot ? new Date(loc.snapshot.syncedAt).getTime() : 0;
+      if (stored > (s.snapshot ? new Date(s.snapshot.syncedAt).getTime() : 0)) {
+        setState((p) => ({ ...p, snapshot: loc.snapshot, accounts: [localAccountView(loc)] }));
+      }
+      if (ageOf(loc.snapshot) < LOCAL_AUTO_MS) return;
+      let claimed = 0;
+      try {
+        claimed = Number(localStorage.getItem(LOCAL_AUTO_CLAIM)) || 0;
+      } catch {}
+      const last = Math.max(lastAuto.current[loc.universityId] ?? 0, claimed);
+      if (Date.now() - last < AUTO_RETRY_MS) return;
+      lastAuto.current[loc.universityId] = Date.now();
+      try {
+        localStorage.setItem(LOCAL_AUTO_CLAIM, String(Date.now()));
+      } catch {}
+      void runSync('auto');
+    };
+    tick();
+    const iv = window.setInterval(tick, 15_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('online', tick);
+    window.addEventListener('pageshow', tick);
+    return () => {
+      window.clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', tick);
+      window.removeEventListener('pageshow', tick);
+    };
+  }, [state.phase, state.active, state.local, ageOf, runSync]);
 
   const forceSync = useCallback(() => runSync('force'), [runSync]);
 

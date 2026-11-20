@@ -28,7 +28,7 @@ import {
   WarningCircle,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
-import { useStore } from './store';
+import { LOCAL_AUTO_MS, useStore } from './store';
 import { Popover, Sheet } from './overlay';
 import { LinkForm } from './link-form';
 import { cn } from './cn';
@@ -414,8 +414,8 @@ function SyncPanel({ v, onDone }: { v: ReturnType<typeof useSyncView>; onDone: (
       </div>
       {local ? (
         <p className="mt-3 text-[13px] leading-relaxed text-fg-2 pretty">
-          Signed in without Google, so nothing syncs on its own and Attenly’s server keeps nothing. Sync now pulls fresh
-          numbers from the ERP straight to this browser.
+          Signed in without Google, so Attenly’s server keeps nothing. While this app is open, even in a background tab,
+          it quietly pulls fresh numbers from the ERP straight to this browser every {Math.round(LOCAL_AUTO_MS / 60000)} minutes.
         </p>
       ) : (
         <p className="mt-3 text-[13px] leading-relaxed text-fg-2 pretty">
