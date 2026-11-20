@@ -157,17 +157,18 @@ test('without Google: the ERP login alone signs in; nothing reaches the database
   assert.ok(stored?.includes('"universityId":"9900000001"'), 'the account is kept in this browser');
   assert.ok(!stored.includes('kl-test-pass'), 'the password is sealed, not readable');
 
-  // A reload paints from this browser: no Google data request, and nothing syncs on its own.
+  // A reload paints from this browser: no Google data request, and fresh data isn't pulled again.
   calls.length = 0;
   await page.reload();
   await page.getByRole('article', { name: 'Database Management Systems' }).waitFor();
   await page.waitForTimeout(1500);
-  assert.deepEqual(calls, [], 'no API calls on reload');
+  // next-auth's own session probe isn't a data request; anything else would be.
+  assert.deepEqual(calls.filter((c) => c !== '/attenly/api/auth/session'), [], 'no API calls on reload');
 
   // Sync now refreshes through the sealed login.
   await page.getByRole('button', { name: /Synced|Not synced/ }).click();
   const status = page.getByRole('dialog', { name: 'Sync status' });
-  await status.getByText('Signed in without Google, so nothing syncs on its own').waitFor();
+  await status.getByText('it quietly pulls fresh numbers from the ERP', { exact: false }).waitFor();
   const synced = page.waitForResponse((r) => r.url().endsWith('/api/local/sync'));
   await status.getByRole('button', { name: 'Sync now' }).click();
   assert.equal((await (await synced).json()).code, 'synced');
@@ -196,6 +197,27 @@ test('without Google: the ERP login alone signs in; nothing reaches the database
   const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   assert.deepEqual(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id), []);
   assert.deepEqual(await countAll(), before, 'still nothing in the database');
+
+  // Five minutes on, an open tab re-syncs on its own, quietly, even while hidden.
+  await page.evaluate(() => {
+    const a = JSON.parse(localStorage.getItem('attenly:local:v1'));
+    a.snapshot.syncedAt = new Date(Date.now() - 6 * 60_000).toISOString();
+    localStorage.setItem('attenly:local:v1', JSON.stringify(a));
+    localStorage.removeItem('attenly:local:auto');
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    window.__sawSyncing = false;
+    new MutationObserver(() => {
+      if (document.body?.textContent?.includes('Syncing with ERP')) window.__sawSyncing = true;
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  const quiet = page.waitForResponse((r) => r.url().endsWith('/api/local/sync'));
+  await page.goto(`${st.app}/settings`);
+  assert.equal(await page.evaluate(() => document.visibilityState), 'hidden');
+  assert.equal((await (await quiet).json()).code, 'synced');
+  await page.getByRole('button', { name: /Synced just now/ }).waitFor();
+  assert.equal(await page.evaluate(() => window.__sawSyncing), false, 'the background sync never showed a spinner');
 
   // Signing out forgets it all on this device.
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();

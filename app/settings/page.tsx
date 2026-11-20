@@ -254,7 +254,7 @@ function Settings() {
         title={local ? 'ERP account' : 'ERP accounts'}
         note={
           local
-            ? 'Signed in without Google: this account and its data live in this browser only. Nothing syncs in the background; tap Sync when you want fresh numbers.'
+            ? 'Signed in without Google: this account and its data live in this browser only. It re-syncs every 5 minutes while Attenly is open in a tab, even in the background.'
             : 'Each linked account syncs on its own. The primary one opens first.'
         }
       >

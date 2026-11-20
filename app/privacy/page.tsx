@@ -28,9 +28,10 @@ export default function PrivacyPage() {
         <li>Attenly’s database stores nothing about you: no account, no password, no synced data.</li>
         <li>
           Your University ID and ERP password are kept in your browser, sealed by Attenly’s server so the browser can’t
-          read them back. The server opens them only to sign into the ERP when you tap Sync, and forgets them after.
+          read them back. The server opens them only to sign into the ERP, every five minutes while Attenly is open in a tab or when you tap
+          Sync, and forgets them after.
         </li>
-        <li>Everything Attenly reads from the ERP is kept in your browser too. Nothing syncs in the background.</li>
+        <li>Everything Attenly reads from the ERP is kept in your browser too. Nothing syncs once every Attenly tab is closed.</li>
         <li>Signing out forgets all of it on that device.</li>
       </ul>
 

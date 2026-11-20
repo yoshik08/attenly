@@ -281,7 +281,7 @@ export function LinkForm({
       {local ? (
         <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
           Your University ID, password and data stay in this browser. The password is sealed so only Attenly’s server can
-          open it, and only when you tap Sync. Attenly’s database keeps nothing, and nothing syncs in the background.
+          open it, only to sync while Attenly is open in this browser. Attenly’s database keeps nothing.
         </p>
       ) : (
         <p className="text-[12.5px] leading-relaxed text-fg-3 pretty">
