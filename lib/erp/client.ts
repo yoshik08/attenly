@@ -81,14 +81,36 @@ export class ErpTimeout extends Error {
 /** Per-request cap (ms); ERP_TIMEOUT_MS overrides it. */
 export const ERP_TIMEOUT_MS = Number(process.env.ERP_TIMEOUT_MS ?? 8000);
 
+/**
+ * At most this many ERP requests in flight from one server instance. A sync asks for
+ * its pages at once (about twenty with the course registers); this keeps that a few
+ * short waves instead of one burst the ERP might read as abuse.
+ */
+const ERP_CONCURRENCY = 8;
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+
+async function slot(): Promise<() => void> {
+  if (inFlight >= ERP_CONCURRENCY) await new Promise<void>((resolve) => waiting.push(resolve));
+  inFlight++;
+  return () => {
+    inFlight--;
+    waiting.shift()?.();
+  };
+}
+
 /** fetch() with a hard cap, reported as a coded timeout rather than a bare abort. */
 async function fetchWithin(url: string, init: RequestInit, ms = ERP_TIMEOUT_MS): Promise<Response> {
+  // Held until the answer starts; the ERP's pages are small, so reading them is quick.
+  const release = await slot();
   try {
     return await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(ms) });
   } catch (e) {
     const name = (e as { name?: string })?.name;
     if (name === 'TimeoutError' || name === 'AbortError') throw new ErpTimeout(ms);
     throw e;
+  } finally {
+    release();
   }
 }
 
@@ -377,6 +399,8 @@ export interface AuthedSession {
   jar: CookieJar;
   csrf: string;
   exp: number;
+  /** When this session's login happened (epoch ms); absent on sessions saved before it was kept. */
+  loggedInAt?: number;
   term?: { academicyear: string; semesterid: string; semester: string };
   termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] };
 }

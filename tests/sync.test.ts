@@ -40,7 +40,7 @@ async function control(body: unknown) {
 }
 const counters = async () => (await control({})).counters;
 async function resetKnobs() {
-  await control({ knobs: { rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, strictReferer: false, attendanceDbDown: false } });
+  await control({ knobs: { rateLimitLogins: false, failDatasets: [], loginDelayMs: 0, registerDelayMs: 0, strictReferer: false, attendanceDbDown: false } });
   captcha.captchaReader.read = realRead;
 }
 /** The next `n` readings come back as `text` (a plausible misread unless given); then the real reader again. */
@@ -138,7 +138,9 @@ test('an attendance register that crashes in the ERP database still picks the ne
   assert.equal(r.code, 'synced');
   // The crash happens per registered course, so the first candidate (Even Sem, newest year) is the term.
   assert.deepEqual(r.snapshot?.term, { academicyear: '30', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' });
-  assert.equal(((await counters()).courselists ?? 0) - before, 1, 'no retries against a database error');
+  // The candidate terms (2 years × 2 semesters here) are asked at once, each exactly once:
+  // nothing is retried against a database error.
+  assert.equal(((await counters()).courselists ?? 0) - before, 4, 'one ask per candidate term, no retries');
   assert.equal(r.snapshot?.attendance.length, 0);
   assert.match(r.snapshot?.issues.attendance ?? '', /database error/);
   assert.equal(r.snapshot?.attendanceSyncedAt, null);
@@ -347,6 +349,29 @@ test('a manual sync reuses the saved ERP session: the second click logs in again
   assert.ok(!String(doc?.sealed).includes('PHPSESSID'), 'the jar is not stored in the clear');
 });
 
+test('the app’s background refresh reuses a recent login, and logs in again once it is half an hour old', async () => {
+  await resetKnobs();
+  const user = (await users.getUser(G))!;
+  await sync.syncAccount({ user, universityId: A, force: true, manual: true });
+  let before = await counters();
+  const quick = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, reuseSession: true });
+  assert.equal(quick.code, 'synced');
+  assert.equal((await counters()).logins, before.logins, 'a recent login is reused');
+  // Age the saved login past half an hour: the refresh logs in, which is what notices a changed password.
+  const doc = await db.collection('erpSessions').findOne({ universityId: A });
+  const open = erp.unsealSession<Record<string, unknown>>(String(doc?.sealed))!;
+  await db.collection('erpSessions').updateOne({ universityId: A }, { $set: { sealed: erp.sealSession({ ...open, loggedInAt: Date.now() - 31 * 60_000 }) } });
+  before = await counters();
+  const aged = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, reuseSession: true });
+  assert.equal(aged.code, 'synced');
+  assert.equal((await counters()).logins, before.logins + 1, 'an old login is renewed');
+  // The button never pays for that: it still reuses whatever works.
+  await db.collection('erpSessions').updateOne({ universityId: A }, { $set: { sealed: erp.sealSession({ ...open, loggedInAt: Date.now() - 31 * 60_000 }) } });
+  before = await counters();
+  await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  assert.equal((await counters()).logins, before.logins, 'the button reuses it');
+});
+
 test('a manual sync gives up inside five seconds and says the ERP is slow', async () => {
   // A login that never returns is the worst case: the button still answers.
   await control({ knobs: { loginDelayMs: 20_000 } });
@@ -388,12 +413,40 @@ test('a background sync also reads the fee orders and every course register', as
   assert.ok(sample.period.length > 0);
 });
 
-test('the manual sync leaves the day-by-day records alone: one register per course is too slow', async () => {
-  const before = await latest(A);
-  assert.ok((before?.classes.length ?? 0) > 0, 'there are records from the previous sync');
+test('the manual sync reads the course registers too, alongside everything else', async () => {
+  await db.collection('snapshots').updateMany({ universityId: A }, { $set: { classes: [] } });
   const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
   assert.equal(r.code, 'synced');
-  assert.equal(r.snapshot?.classes.length, before?.classes.length, 'kept, not wiped');
-  assert.equal(r.snapshot?.feeOrders.length, 3, 'the fee list is one request, so it is refreshed');
+  assert.equal(r.snapshot?.classes.length, 301, 'History refreshed by the button');
+  assert.equal(r.snapshot?.feeOrders.length, 3);
+});
+
+test('registers still out near the manual deadline keep their previous copy; the button still answers', async () => {
+  const before = await latest(A);
+  assert.equal(before?.classes.length, 301);
+  await control({ knobs: { registerDelayMs: 8_000 } });
+  const started = Date.now();
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  const took = Date.now() - started;
+  assert.equal(r.code, 'synced');
+  assert.ok(took < 5_000, `answered in ${took}ms`);
+  assert.equal(r.snapshot?.classes.length, 301, 'kept, not wiped');
+  assert.equal(r.snapshot?.attendance.length, 6, 'the rest is fresh');
+  await resetKnobs();
+});
+
+test('a term with a class in the last few days is pulled without asking about newer terms', async () => {
+  const { termIsRunning } = await import('../lib/terms');
+  const day = (ago: number) => new Date(Date.now() + 330 * 60_000 - ago * 86_400_000).toISOString().slice(0, 10);
+  assert.equal(termIsRunning([{ date: day(2) }]), true);
+  assert.equal(termIsRunning([{ date: day(30) }]), false);
+  assert.equal(termIsRunning([]), false);
+  // The mock's term has records months old, so a hinted sync still checks the newer terms;
+  // one with recent records skips them: a single course list, for the term itself.
+  await db.collection('snapshots').updateMany({ universityId: A }, { $set: { classes: [{ date: day(1), code: 'X', period: '1', component: 'L', present: true }] } });
+  const before = (await counters()).courselists ?? 0;
+  const r = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true, manual: true });
+  assert.equal(r.code, 'synced');
+  assert.equal(((await counters()).courselists ?? 0) - before, 1, 'only the running term');
 });
 

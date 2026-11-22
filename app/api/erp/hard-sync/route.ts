@@ -15,7 +15,8 @@ export const maxDuration = 300;
  * one, the term probe is skipped when the term has not changed, and whatever
  * the ERP has not answered by then is reported as 'erp_slow' instead of left
  * spinning. 'auto' (the app's background refresh) only does so when the latest
- * cloud snapshot is older than ~5.5 minutes, otherwise it returns that snapshot.
+ * cloud snapshot is older than three minutes, otherwise it returns that snapshot.
+ * Both reuse the saved ERP session; only the backend job logs in every time.
  */
 export async function POST(req: Request) {
   const me = await getGoogleUser();
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   try {
     const user = await getUser(me.googleId);
     if (!user) return Response.json({ ok: false, code: 'no_account', error: 'No ERP account is linked yet.' }, { status: 404 });
-    const result = await syncAccount({ user, universityId, force, manual: force });
+    const result = await syncAccount({ user, universityId, force, manual: force, reuseSession: true });
     return Response.json(
       { ok: result.ok, code: result.code, error: result.ok ? undefined : result.message, snapshot: result.snapshot },
       { status: result.ok ? 200 : (SYNC_STATUS[result.code] ?? 502) },

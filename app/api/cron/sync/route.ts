@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 /**
  * POST /api/cron/sync — the backend sync, triggered by GitHub Actions.
- * Syncs every linked ERP account whose data is older than ~5.5 minutes,
+ * Syncs every linked ERP account whose data is older than three minutes,
  * skipping accounts that are waiting for a new password.
  *
  * Auth: a GitHub Actions OIDC token (audience "attenly-cron", repository

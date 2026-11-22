@@ -435,6 +435,21 @@ test('plan the day: the strip answers each period as it is planned', async () =>
   // Attending counts on both sides.
   await cards.first().getByRole('group').getByRole('button', { name: 'Attended' }).click();
   assert.equal(await cards.first().getByRole('button', { name: 'Attended' }).getAttribute('aria-pressed'), 'true');
+  // The whole day at once: every period takes it; pressed again, the day clears.
+  const whole = page.getByRole('group', { name: /^Every period on / });
+  const pressed = (name) => cards.getByRole('button', { name, exact: true, pressed: true }).count();
+  await whole.getByRole('button', { name: 'Bunk all' }).click();
+  assert.equal(await pressed('Bunk'), count, 'every period bunked');
+  assert.equal(await whole.getByRole('button', { name: 'Bunk all' }).getAttribute('aria-pressed'), 'true');
+  await page.getByText(/^was \d+%$/).first().waitFor();
+  await whole.getByRole('button', { name: 'Attend all' }).click();
+  assert.equal(await pressed('Attended'), count, 'every period attended');
+  assert.equal(await pressed('Bunk'), 0);
+  await whole.getByRole('button', { name: 'None conducted' }).click();
+  assert.equal(await pressed('Not conducted'), count);
+  await whole.getByRole('button', { name: 'None conducted' }).click();
+  assert.equal(await pressed('Not conducted'), 0, 'pressed again, the day clears');
+  assert.match(await page.getByText(/ of \d+ planned/).innerText(), /^0 of /);
   await ctx.close();
 });
 
@@ -527,12 +542,24 @@ test('history: a month of days coloured by attendance, and one day’s periods',
   assert.equal(await red.count(), 1, 'a day with no attendance');
   await red.click();
   await page.getByText('Absent').first().waitFor();
+  // The day's dots are its periods, one each, in the list's order and states.
+  const dotsOf = async () =>
+    page.locator('section[aria-label="Attendance calendar"] button[aria-pressed="true"] > span[aria-hidden] > span').evaluateAll((els) =>
+      els.map((e) => (e.className.includes('bg-safe') ? 'P' : e.className.includes('bg-det') ? 'A' : '-')).join(''),
+    );
+  const listOf = async () =>
+    page.locator('section[aria-label^="Periods on"] ol > li').evaluateAll((els) =>
+      els.map((e) => ({ safe: 'P', detained: 'A' })[e.getAttribute('data-tone')] ?? '-').join(''),
+    );
+  assert.equal(await dotsOf(), await listOf(), 'dots match the day');
   assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /0 attended/);
   // A day where everything was attended.
   const green = page.locator('button[aria-label*=" attended"]').last();
   await green.click();
   await page.waitForTimeout(150);
   assert.match(await page.locator('section[aria-label^="Periods on"]').innerText(), /Attended/);
+  assert.equal(await dotsOf(), await listOf(), 'dots match the day');
+  assert.ok((await dotsOf()).length > 0);
   await ctx.close();
 });
 
@@ -814,10 +841,11 @@ test('accounts: add, switch, make primary, remove', async () => {
 
 test('a password changed on the ERP pauses syncing until it is re-entered', async () => {
   await control({ password: { id: '9900000001', value: 'new-erp-pass' } });
-  // A background sync is the one that logs in and notices; the button reuses
-  // the saved ERP session, so make the cloud data stale exactly as it is after
-  // five and a half minutes.
+  // The background refresh logs in again (and notices) once the saved session's login is
+  // half an hour old; the button reuses it. Make the cloud data stale and drop the saved
+  // session, exactly as it is then.
   await mongo.db('skipwise').collection('snapshots').updateMany({ googleId: st.users.main.sub }, { $set: { syncedAt: new Date(Date.now() - 10 * 60_000) } });
+  await mongo.db('skipwise').collection('erpSessions').deleteMany({});
   const { ctx, page } = await ctxFor('main');
   await page.goto(st.app);
   await page.getByRole('button', { name: 'Password needed' }).waitFor({ timeout: 30_000 });

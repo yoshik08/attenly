@@ -16,6 +16,7 @@ import type { AccountView } from '@/lib/db/users';
 import type { Dataset } from '@/lib/erp/full-sync';
 import { countsOf, type SeenCounts } from '@/lib/insights';
 import { keepFailed } from '@/lib/local-snapshot';
+import { termIsRunning } from '@/lib/terms';
 import { localAccountView, localPost, patchLocalAccount, readLocalAccount, writeLocalAccount, type LocalAccount } from './local';
 
 /**
@@ -50,7 +51,7 @@ interface StoreState {
   phase: Phase;
   /**
    * Signed in without Google: the account and its data live in this browser only
-   * (components/local.ts), and it re-syncs quietly every five minutes while a tab is open.
+   * (components/local.ts), and it re-syncs quietly every three minutes while a tab is open.
    */
   local: boolean;
   googleConfigured: boolean;
@@ -96,7 +97,7 @@ const CACHE_KEY = 'attenly:cache:v2';
 const SEEN_KEY = 'attenly:seen:v1';
 const AUTO_RETRY_MS = 3 * 60 * 1000;
 /** Signed in without Google, an open tab (shown or hidden) re-syncs when its data is this old. */
-export const LOCAL_AUTO_MS = 5 * 60 * 1000;
+export const LOCAL_AUTO_MS = 3 * 60 * 1000;
 /** When a tab of this browser last started a quiet sync, so two open tabs don't both pull. */
 const LOCAL_AUTO_CLAIM = 'attenly:local:auto';
 
@@ -213,7 +214,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     accounts: [],
     active: null,
     snapshot: null,
-    freshMs: 330_000,
+    freshMs: 180_000,
     skew: 0,
     loadError: null,
     sync: IDLE_SYNC,
@@ -385,6 +386,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const res = await localPost('/api/local/sync', {
         term: loc.term,
         reuse: prev && prev.attendance.length > 0 ? { academicyear: prev.term.academicyear, semesterid: prev.term.semesterid } : null,
+        running: !!prev && prev.attendance.length > 0 && termIsRunning(prev.classes),
       });
       const d = await res.json().catch(() => ({}));
       const code: string = d.code ?? (res.ok ? 'synced' : 'failed');
@@ -490,7 +492,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   // Auto-sync: whenever this tab is visible and the cloud data is older than
-  // ~5.5 minutes, quietly ask the server to re-sync (it re-checks freshness).
+  // three minutes, quietly ask the server to re-sync (it re-checks freshness).
   // Signed in without Google there's an effect of its own below.
   useEffect(() => {
     if (state.phase !== 'ready' || !state.active || state.local) return;
@@ -517,7 +519,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.phase, state.active, state.local, state.accounts, ageOf, runSync]);
 
   // Signed in without Google: while any tab is open, shown or hidden, re-sync quietly
-  // once the data in this browser is five minutes old. Hidden tabs have their timers
+  // once the data in this browser is three minutes old. Hidden tabs have their timers
   // slowed to about once a minute, which this cadence doesn't mind; a phone that froze
   // the tab catches up the moment it's shown again. Tabs of one browser share the
   // stored copy, so only one of them pulls.

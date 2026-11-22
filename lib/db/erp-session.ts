@@ -31,12 +31,17 @@ async function collection() {
   return col;
 }
 
-export async function loadErpSession(universityId: string): Promise<AuthedSession | null> {
+/**
+ * The saved session, or null. `maxLoginAgeMs` also refuses one whose login is older than
+ * that, so a caller that wants a password changed on the ERP noticed soon logs in again.
+ */
+export async function loadErpSession(universityId: string, maxLoginAgeMs?: number): Promise<AuthedSession | null> {
   const doc = await (await collection()).findOne({ universityId });
   if (!doc) return null;
   if (Date.now() - new Date(doc.savedAt).getTime() > SESSION_TTL_MS) return null;
   const session = unsealSession<Omit<AuthedSession, 'exp'>>(doc.sealed);
   if (!session || !session.jar || Object.keys(session.jar).length === 0 || !session.csrf) return null;
+  if (maxLoginAgeMs != null && Date.now() - (session.loggedInAt ?? 0) > maxLoginAgeMs) return null;
   return { ...session, exp: 0 };
 }
 
@@ -45,6 +50,7 @@ export async function saveErpSession(universityId: string, session: AuthedSessio
   const sealed = sealSession({
     jar: session.jar,
     csrf: session.csrf,
+    ...(session.loggedInAt ? { loggedInAt: session.loggedInAt } : {}),
     ...(session.term ? { term: session.term } : {}),
     ...(session.termOptions ? { termOptions: session.termOptions } : {}),
   });
