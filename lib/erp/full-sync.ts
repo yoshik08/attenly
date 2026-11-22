@@ -78,6 +78,7 @@ function sessionFrom(res: LoginResult, fallbackCsrf: string): AuthedSession {
     jar: res.jar ?? {},
     csrf: res.csrf ?? fallbackCsrf,
     exp: Date.now() + 7 * 24 * 3600 * 1000,
+    loggedInAt: Date.now(),
     termOptions: res.termOptions
       ? { years: res.termOptions.years ?? [], semesters: res.termOptions.semesters ?? [] }
       : undefined,
@@ -123,6 +124,11 @@ function fallbackTerm(now = new Date()): SyncTerm {
   return { academicyear: `${start}-${start + 1}`, semesterid: '1', semester: 'Odd Sem' };
 }
 
+/** The ERP ids of a term, for comparing two terms. */
+const termId = (t: { academicyear: string; semesterid: string }) => `${t.academicyear}:${t.semesterid}`;
+
+type Detected = { term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error; html?: string };
+
 /**
  * The term to show when nobody picked one: the newest term (two most recent
  * academic years, even before odd) that has courses on the ERP. Its
@@ -130,15 +136,23 @@ function fallbackTerm(now = new Date()): SyncTerm {
  * attendance register crashes in the ERP's database counts as having courses
  * (the crash happens per registered course); its attendance is reported down.
  *
+ * The candidates are asked at once, not one after another: the ERP lists
+ * academic years nobody has courses in yet, and walking them in turn cost a
+ * round trip each on every sync. `upTo` stops the list at a term known to have
+ * courses (the one shown now), so only it and the terms newer than it are asked.
+ *
  * Any other ERP error while probing never falls through to an emptier term:
  * when no candidate had courses and one of them failed, the error is thrown
  * so the last good data stays.
  */
-async function detectTerm(
-  session: AuthedSession,
-): Promise<{ term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error; html?: string }> {
-  const candidates = session.termOptions ? termCandidates(session.termOptions) : [];
+async function detectTerm(session: AuthedSession, upTo?: SyncTerm): Promise<Detected> {
+  let candidates = session.termOptions ? termCandidates(session.termOptions) : [];
   if (candidates.length === 0) return { term: session.term ?? fallbackTerm(), attendance: null };
+  if (upTo) {
+    const at = candidates.findIndex((c) => termId(c) === termId(upTo));
+    if (at >= 0) candidates = candidates.slice(0, at + 1);
+  }
+  const answers = await Promise.allSettled(candidates.map((term) => fetchAttendanceHtml(session, term)));
   let probeError: unknown = null;
   // One log line per sync: which terms were tried and what each returned (term ids, counts, no personal data).
   const tried: string[] = [];
@@ -146,27 +160,29 @@ async function detectTerm(
     console.info(
       `[full-sync] term ${chosen}; tried ${tried.join(', ')}; options years=${session.termOptions?.years.map((y) => `${y.id}:${y.label}`).join('|')} sems=${session.termOptions?.semesters.map((s) => `${s.id}:${s.label}`).join('|')}`,
     );
-  for (const term of candidates) {
-    const name = `${term.semester} ${term.yearLabel ?? term.academicyear} (${term.academicyear}:${term.semesterid})`;
-    try {
-      const { html } = await fetchAttendanceHtml(session, term);
-      const rows = parseAttendance(html);
+  for (let i = 0; i < candidates.length; i++) {
+    const term = candidates[i];
+    const answer = answers[i];
+    const name = `${term.semester} ${term.yearLabel ?? term.academicyear} (${termId(term)})`;
+    if (answer.status === 'fulfilled') {
+      const rows = parseAttendance(answer.value.html);
       tried.push(`${name}=${rows.length} rows`);
       if (rows.length > 0) {
         report(name);
         // The same page carries each course's register link, used for History.
-        return { term, attendance: rows, html };
+        return { term, attendance: rows, html: answer.value.html };
       }
-    } catch (e) {
-      if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
-      if (isAttendanceDown(e)) {
-        tried.push(`${name}=courses, attendance register down`);
-        report(name);
-        return { term, attendance: null, attendanceDown: e as Error };
-      }
-      tried.push(`${name}=${e instanceof Error ? e.message : 'error'}`);
-      probeError = e;
+      continue;
     }
+    const e = answer.reason;
+    if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
+    if (isAttendanceDown(e)) {
+      tried.push(`${name}=courses, attendance register down`);
+      report(name);
+      return { term, attendance: null, attendanceDown: e as Error };
+    }
+    tried.push(`${name}=${e instanceof Error ? e.message : 'error'}`);
+    probeError = e;
   }
   report('none with attendance');
   if (probeError) {
@@ -176,48 +192,94 @@ async function detectTerm(
   return { term: candidates[0], attendance: [] };
 }
 
+export interface PullOptions {
+  /** Read every course's attendance register too (History). */
+  registers?: boolean;
+  /**
+   * The term shown now, when it had courses. Its pages are pulled straight away while
+   * the newer terms are checked alongside; only when one of those turns out to have
+   * courses is everything pulled again for it.
+   */
+  hint?: SyncTerm;
+  /**
+   * The hinted term held a class in the last few days (termIsRunning), so no newer term
+   * has started: it is pulled without asking about the newer ones at all.
+   */
+  hintRunning?: boolean;
+  /** Registers still unanswered at this time (epoch ms) are left out and reported failed. */
+  registersBy?: number;
+}
+
 /**
  * Pull every dataset for the term (the chosen one, or the newest with
  * attendance). Each fetch is independent: one failing (internals not
  * published yet, a slow page) doesn't sink the others, and the failures are
- * reported so callers can keep previously synced values.
+ * reported so callers can keep previously synced values. The course registers
+ * start the moment the attendance page (which links them) is in, so a full pull
+ * is about two ERP round trips, not one per step.
  */
-export async function pullAll(
-  session: AuthedSession,
-  termOverride?: SyncTerm,
-  opts: { registers?: boolean } = {},
-): Promise<FullSyncData> {
-  let term: SyncTerm;
-  let detected: SubjectAttendance[] | null = null;
-  let detectedDown: Error | undefined;
-  let attendanceHtml = '';
-  if (termOverride) {
-    term = termOverride;
-  } else {
-    const d = await detectTerm(session);
-    term = d.term;
-    detected = d.attendance;
-    detectedDown = d.attendanceDown;
-    attendanceHtml = d.html ?? '';
+export async function pullAll(session: AuthedSession, termOverride?: SyncTerm, opts: PullOptions = {}): Promise<FullSyncData> {
+  if (termOverride) return pullTerm(session, termOverride, null, opts);
+  if (opts.hint && opts.hintRunning) return pullTerm(session, opts.hint, null, opts);
+  if (opts.hint) {
+    const probe = detectTerm(session, opts.hint);
+    // Awaited below; this only keeps an early throw elsewhere from leaving it unhandled.
+    probe.catch(() => undefined);
+    // Nothing on the hinted term's attendance until the probe answers: the probe reads it.
+    const attendance = probe.then((d) => (termId(d.term) === termId(opts.hint!) ? d : null));
+    const data = await pullTerm(session, opts.hint, attendance, opts);
+    const d = await probe;
+    if (termId(d.term) === termId(opts.hint)) return data;
+    // A newer term has courses now (a new semester began): pull that one instead.
+    return pullTerm(session, d.term, Promise.resolve(d), opts);
   }
+  const d = await detectTerm(session);
+  return pullTerm(session, d.term, Promise.resolve(d), opts);
+}
 
-  let attendance: SubjectAttendance[] = detected ?? [];
+/**
+ * One term's datasets. `detected` is the term probe's answer when it already read (or
+ * is reading) this term's attendance; null, or a probe that settled on another term,
+ * means the attendance is fetched here.
+ */
+async function pullTerm(
+  session: AuthedSession,
+  term: SyncTerm,
+  detected: Promise<Detected | null> | null,
+  opts: PullOptions,
+): Promise<FullSyncData> {
+  let attendance: SubjectAttendance[] = [];
   let timetable: TimetableDay[] = [];
   let internals: InternalRow[] = [];
   let results: ResultRow[] = [];
   let cgpaRows: CgpaRow[] = [];
   let feeOrders: FeeOrder[] = [];
 
+  // The attendance page, either the probe's copy or a fetch of its own.
+  const attendanceHtml: Promise<string> = (async () => {
+    const d = detected ? await detected : null;
+    if (d && d.attendanceDown) throw d.attendanceDown;
+    if (d && d.attendance) {
+      attendance = d.attendance;
+      return d.html ?? '';
+    }
+    const { html } = await fetchAttendanceHtml(session, term);
+    attendance = parseAttendance(html);
+    return html;
+  })();
+
+  // History: one request per course register, from the links the attendance page
+  // carries, started as soon as that page is in.
+  const registers: Promise<{ classes: ClassRecord[]; complete: boolean } | null> = opts.registers
+    ? attendanceHtml.then(
+        (html) => readRegisters(session, html, opts.registersBy),
+        () => null,
+      )
+    : Promise.resolve(null);
+
   const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa', 'fees'];
   const settled = await Promise.allSettled([
-    detectedDown
-      ? Promise.reject(detectedDown)
-      : detected
-        ? Promise.resolve()
-        : fetchAttendanceHtml(session, term).then(({ html }) => {
-            attendanceHtml = html;
-            attendance = parseAttendance(html);
-          }),
+    attendanceHtml,
     fetchTimetableHtml(session, term).then(({ html }) => {
       timetable = parseTimetable(html);
     }),
@@ -234,6 +296,10 @@ export async function pullAll(
       feeOrders = parseFeeOrders(html);
     }),
   ]);
+  const read = await registers.catch((e) => {
+    if (isSessionExpiredError(e) || e instanceof ErpRateLimited) throw e;
+    return null;
+  });
 
   const failed: Dataset[] = [];
   const issues: FullSyncData['issues'] = {};
@@ -246,27 +312,10 @@ export async function pullAll(
     else console.warn(`[full-sync] ${names[i]} pull failed:`, reason instanceof Error ? reason.message : reason);
   });
 
-  // History: one request per course register, from the links the attendance
-  // page carries. Not on a manual sync — that one has five seconds.
-  let classes: ClassRecord[] = [];
-  const links = attendanceHtml ? parseRegisterLinks(attendanceHtml) : [];
-  if (!opts.registers || failed.includes('attendance') || issues.attendance || links.length === 0) {
-    failed.push('registers');
-  } else {
-    const registers = await Promise.allSettled(links.map((l) => fetchRegisterHtml(session, l.href)));
-    let read = 0;
-    registers.forEach((r, i) => {
-      if (r.status !== 'fulfilled') {
-        const reason = r.reason as Error & { expired?: boolean };
-        if (isSessionExpiredError(reason) || reason instanceof ErpRateLimited) throw reason;
-        return;
-      }
-      read++;
-      classes = classes.concat(parseRegister(r.value.html, links[i].code, links[i].component));
-    });
-    if (read === 0) failed.push('registers');
-    else console.info(`[full-sync] registers: ${read}/${links.length} read, ${classes.length} classes`);
-  }
+  // A partial set of registers is reported failed, so a caller with a complete older
+  // copy keeps that one; with no older copy the partial one is still shown.
+  const classes = read?.classes ?? [];
+  if (!read || !read.complete || failed.includes('attendance')) failed.push('registers');
 
   const { cgpa, terms } = computeGpa(cgpaRows);
   return {
@@ -284,6 +333,46 @@ export async function pullAll(
     failed,
     issues,
   };
+}
+
+/** Every course register the attendance page links, read at once; null when there are none to read. */
+async function readRegisters(
+  session: AuthedSession,
+  attendanceHtml: string,
+  by?: number,
+): Promise<{ classes: ClassRecord[]; complete: boolean } | null> {
+  const links = attendanceHtml ? parseRegisterLinks(attendanceHtml) : [];
+  if (links.length === 0) return null;
+  const late = Symbol('late');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cutoff =
+    by != null
+      ? new Promise<typeof late>((resolve) => {
+          timer = setTimeout(() => resolve(late), Math.max(0, by - Date.now()));
+        })
+      : null;
+  const pages = await Promise.allSettled(
+    links.map((l) => {
+      const page = fetchRegisterHtml(session, l.href);
+      return cutoff ? Promise.race([page, cutoff]) : page;
+    }),
+  );
+  if (timer) clearTimeout(timer);
+  let classes: ClassRecord[] = [];
+  let ok = 0;
+  pages.forEach((r, i) => {
+    if (r.status !== 'fulfilled') {
+      const reason = r.reason as Error & { expired?: boolean };
+      if (isSessionExpiredError(reason) || reason instanceof ErpRateLimited) throw reason;
+      return;
+    }
+    if (r.value === late) return;
+    ok++;
+    classes = classes.concat(parseRegister(r.value.html, links[i].code, links[i].component));
+  });
+  console.info(`[full-sync] registers: ${ok}/${links.length} read, ${classes.length} classes`);
+  if (ok === 0) return null;
+  return { classes, complete: ok === links.length };
 }
 
 export { isSessionExpiredError, ErpRateLimited, ErpTimeout, coded };

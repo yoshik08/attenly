@@ -24,6 +24,8 @@ const knobs = {
   rateLimitLogins: false,
   failDatasets: [], // e.g. ['timetable']
   loginDelayMs: 0,
+  // Every course register answers this late.
+  registerDelayMs: 0,
   // The course list answers 500 for a term with rows unless the request comes from the filter page.
   strictReferer: false,
   // Like the real ERP on 3 Nov 2026: the course list crashes in its database (a
@@ -488,6 +490,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (r === 'studentattendance/studentdailyattendance/getindicregister') {
     if (failing('registers')) return send(res, 500, 'Internal Server Error');
+    if (knobs.registerDelayMs) await new Promise((ok) => setTimeout(ok, knobs.registerDelayMs));
     return send(res, 200, registerTable(url.searchParams.get('id')));
   }
   if (r === 'feepayments/studentfeeorderdetailsinfo/my_fee_orders') {

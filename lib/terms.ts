@@ -91,3 +91,19 @@ export function termText(term: { academicyear?: string; semester?: string; yearL
   if (!term) return '';
   return [term.semester, term.yearLabel ?? term.academicyear].filter(Boolean).join(' ');
 }
+
+/** A term with a class this recent is still running, so no newer term has begun. */
+export const RUNNING_DAYS = 10;
+
+/**
+ * Whether a term's day-by-day records show it still running: a class within the last
+ * RUNNING_DAYS days. Syncs then skip asking the ERP about newer terms.
+ */
+export function termIsRunning(classes: readonly { date: string }[] | null | undefined, now = Date.now()): boolean {
+  if (!classes || classes.length === 0) return false;
+  const since = new Date(now - RUNNING_DAYS * 86_400_000);
+  // Records are dated YYYY-MM-DD in IST; comparing day strings in UTC+5:30 keeps the edge stable.
+  const ist = new Date(since.getTime() + 330 * 60_000);
+  const floor = ist.toISOString().slice(0, 10);
+  return classes.some((c) => c.date >= floor);
+}

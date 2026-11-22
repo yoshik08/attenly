@@ -17,10 +17,10 @@ import { useNow } from '@/lib/time';
 
 type Decision = 'attended' | 'bunk' | 'not-conducted';
 
-const CHOICES: { value: Decision; label: string; Icon: typeof Check; on: string }[] = [
-  { value: 'attended', label: 'Attended', Icon: Check, on: 'bg-fg text-black' },
-  { value: 'bunk', label: 'Bunk', Icon: X, on: 'bg-det text-black' },
-  { value: 'not-conducted', label: 'Not conducted', Icon: Minus, on: 'bg-raised-2 text-fg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]' },
+const CHOICES: { value: Decision; label: string; all: string; Icon: typeof Check; on: string }[] = [
+  { value: 'attended', label: 'Attended', all: 'Attend all', Icon: Check, on: 'bg-fg text-black' },
+  { value: 'bunk', label: 'Bunk', all: 'Bunk all', Icon: X, on: 'bg-det text-black' },
+  { value: 'not-conducted', label: 'Not conducted', all: 'None conducted', Icon: Minus, on: 'bg-raised-2 text-fg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]' },
 ];
 
 export default function PlanTheDayPage() {
@@ -99,6 +99,16 @@ function PlanTheDay() {
   const decided = periods.filter((p) => decisions[slotKey(day, p)]).length;
   const resetDay = () =>
     setDecisions((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith(`${day}|`))));
+  /** The whole day at once; pressed again when every period already has it, it clears the day. */
+  const allSame = (v: Decision) => periods.length > 0 && periods.every((p) => decisions[slotKey(day, p)] === v);
+  const setDay = (v: Decision) => {
+    if (allSame(v)) return resetDay();
+    setDecisions((d) => {
+      const next = { ...d };
+      for (const p of periods) next[slotKey(day, p)] = v;
+      return next;
+    });
+  };
   const term = termText(snapshot?.term);
 
   if (days.length === 0) {
@@ -171,6 +181,31 @@ function PlanTheDay() {
             </button>
           )}
         </p>
+      </div>
+
+      <div
+        className="mt-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair sm:inline-flex"
+        role="group"
+        aria-label={`Every period on ${FULL_DAY[day]}`}
+      >
+        {CHOICES.map((c) => {
+          const on = allSame(c.value);
+          return (
+            <button
+              key={c.value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setDay(c.value)}
+              className={cn(
+                'press inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-semibold sm:h-9 sm:flex-none sm:px-3.5',
+                on ? c.on : 'text-fg-2 hover:bg-white/[0.06] hover:text-fg',
+              )}
+            >
+              <c.Icon size={13} weight="bold" aria-hidden className="hidden sm:block" />
+              {c.all}
+            </button>
+          );
+        })}
       </div>
 
       <ol className="mt-3 flex flex-col gap-2">

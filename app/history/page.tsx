@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ClockCounterClockwise } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
@@ -15,6 +15,9 @@ import { termText } from '@/lib/terms';
 
 type DayTone = 'all' | 'some' | 'none' | 'empty';
 type RowState = 'present' | 'absent' | 'not-taken';
+type DayRow = { key: string; period: string; time: string; code: string; title: string; component: string; state: RowState };
+
+const DOT: Record<RowState, string> = { present: 'bg-safe', absent: 'bg-det', 'not-taken': 'bg-fg-3/45' };
 
 function toneOf(records: ClassRecord[] | undefined): DayTone {
   if (!records || records.length === 0) return 'empty';
@@ -77,16 +80,19 @@ function History() {
   const pickedDate = picked ?? (byDate.has(dayKey(today)) ? dayKey(today) : latest);
   const firstClassDate = dates[0] ?? '';
 
-  /** The period rows of one day: what the register says, plus timetable slots it never saw. */
-  const dayRows = useMemo(() => {
-    const records = byDate.get(pickedDate) ?? [];
-    const date = new Date(`${pickedDate}T00:00:00`);
+  /**
+   * The period rows of one day: what the register says, plus timetable slots it never
+   * saw. The calendar's dots and the day's list are both drawn from this, so they agree.
+   */
+  const rowsOf = useCallback((day: string): DayRow[] => {
+    const records = byDate.get(day) ?? [];
+    const date = new Date(`${day}T00:00:00`);
     const slots = Number.isNaN(date.getTime()) ? [] : sortPeriods(timetable.find((t) => t.day === WEEK[date.getDay()])?.periods ?? []);
     const timeOf = (period: string) => {
       const slot = slots.find((p) => p.period.replace(/\D/g, '') === period);
       return slot ? startOf(slot) : '';
     };
-    const rows: { key: string; period: string; time: string; code: string; title: string; component: string; state: RowState }[] = [];
+    const rows: DayRow[] = [];
     for (const r of records) {
       rows.push({
         key: `r-${r.code}-${r.component}-${r.period}`,
@@ -99,7 +105,7 @@ function History() {
       });
     }
     // A period the timetable had that the register never recorded did not happen.
-    const inTerm = firstClassDate && pickedDate >= firstClassDate && date <= today;
+    const inTerm = firstClassDate && day >= firstClassDate && date <= today;
     if (inTerm) {
       for (const p of slots) {
         const period = p.period.replace(/\D/g, '');
@@ -116,7 +122,8 @@ function History() {
       }
     }
     return rows.sort((a, b) => (Number(a.period) || 99) - (Number(b.period) || 99) || a.code.localeCompare(b.code));
-  }, [byDate, byCode, pickedDate, timetable, firstClassDate, today]);
+  }, [byDate, byCode, timetable, firstClassDate, today]);
+  const dayRows = useMemo(() => rowsOf(pickedDate), [rowsOf, pickedDate]);
 
   const counts = dayRows.reduce(
     (n, r) => ({ ...n, [r.state]: n[r.state] + 1 }),
@@ -167,8 +174,15 @@ function History() {
               const t = toneOf(records);
               const isToday = key === dayKey(today);
               const selected = key === pickedDate;
-              const summary = records ? `${records.filter((r) => r.present).length} of ${records.length} attended` : 'no classes recorded';
-              const ordered = records ? [...records].sort((a, b) => Number(a.present) - Number(b.present) || (Number(a.period) || 99) - (Number(b.period) || 99)) : [];
+              // One dot per period, in period order, exactly as the day's list reads.
+              const rows = records ? rowsOf(key) : [];
+              const notTaken = rows.filter((r) => r.state === 'not-taken').length;
+              const summary = records
+                ? `${records.filter((r) => r.present).length} of ${records.length} attended${notTaken ? `, ${notTaken} not taken` : ''}`
+                : 'no classes recorded';
+              const n = rows.length;
+              // Phones fold a long day into two rows; wider cells keep one.
+              const dots = { '--n': n, '--m': n > 5 ? Math.ceil(n / 2) : n } as React.CSSProperties;
               return (
                 <button
                   key={key}
@@ -186,10 +200,17 @@ function History() {
                   )}
                 >
                   {date.getDate()}
-                  {ordered.length > 0 && (
-                    <span className="flex max-w-full justify-center gap-[2.5px] px-1" aria-hidden>
-                      {ordered.slice(0, 6).map((r, i) => (
-                        <span key={i} className={cn('h-[4.5px] w-[4.5px] shrink-0 rounded-full', r.present ? 'bg-safe' : 'bg-det')} />
+                  {n > 0 && (
+                    <span
+                      style={dots}
+                      className={cn(
+                        'grid max-w-full grid-cols-[repeat(var(--m),auto)] justify-center sm:grid-cols-[repeat(var(--n),auto)]',
+                        n > 6 ? 'gap-[2px]' : 'gap-[2.5px]',
+                      )}
+                      aria-hidden
+                    >
+                      {rows.map((r) => (
+                        <span key={r.key} className={cn('rounded-full', n > 6 ? 'size-[4px]' : 'size-[4.5px]', DOT[r.state])} />
                       ))}
                     </span>
                   )}
@@ -205,6 +226,9 @@ function History() {
               </li>
               <li className="inline-flex items-center gap-1.5">
                 <span className="h-[7px] w-[7px] rounded-full bg-det" aria-hidden /> missed
+              </li>
+              <li className="inline-flex items-center gap-1.5">
+                <span className={cn('h-[7px] w-[7px] rounded-full', DOT['not-taken'])} aria-hidden /> not taken
               </li>
               <li className="inline-flex items-center gap-1.5">
                 <span className="h-3.5 w-3.5 rounded-[5px] bg-cond/25" aria-hidden /> missed some

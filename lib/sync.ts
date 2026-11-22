@@ -1,13 +1,13 @@
 import { findAccount, recordSync, resolvePassword, type UserDoc } from './db/users';
-import { getLatestSnapshot, saveFullSnapshot, termKey, toClientSnapshot, type ClientSnapshot, type SnapshotDoc } from './db/snapshots';
+import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot, type ClientSnapshot, type SnapshotDoc } from './db/snapshots';
 import { withLock } from './db/locks';
 import { clearErpSession, loadErpSession, saveErpSession } from './db/erp-session';
 import { autoLogin, coded, pullAll, isSessionExpiredError, type AuthedSession } from './erp/full-sync';
 import { classifySyncError, CORE_DATASETS, SYNC_MESSAGES, type SyncCode } from './sync-codes';
-import { termFromIds, termCandidates } from './terms';
+import { termFromIds, termIsRunning, type Term } from './terms';
 
-/** Cloud data younger than this is served as-is; older data triggers a sync (~5.5 min). */
-export const FRESH_MS = 330_000;
+/** Cloud data younger than this is served as-is; older data triggers a sync (3 min). */
+export const FRESH_MS = 180_000;
 /** A crashed sync releases its lock after this long. */
 const LOCK_MS = 150_000;
 /**
@@ -16,6 +16,8 @@ const LOCK_MS = 150_000;
  * instead of leaving the button spinning.
  */
 export const MANUAL_BUDGET_MS = 4_500;
+/** The app's background refresh logs in again once the saved session's login is this old. */
+const REFRESH_LOGIN_MS = 30 * 60_000;
 
 export type { SyncCode } from './sync-codes';
 
@@ -48,15 +50,12 @@ function withDeadline<T>(p: Promise<T>, at: number): Promise<T> {
 }
 
 /**
- * The term to reuse instead of probing: the previous snapshot's term when it is
- * still the newest one the ERP offers and it had courses. Probing costs one
- * attendance fetch per candidate term, so skipping it is most of the saving.
+ * The term shown now, when it had courses: pulled straight away while only the terms
+ * newer than it are checked alongside (lib/erp/full-sync.ts pullAll `hint`).
  */
-function reusableTerm(previous: SnapshotDoc | null, session: { termOptions?: { years: { id: string; label: string }[]; semesters: { id: string; label: string }[] } }): ReturnType<typeof termCandidates>[number] | undefined {
-  if (!previous || (previous.attendance?.length ?? 0) === 0 || !session.termOptions) return undefined;
-  const newest = termCandidates(session.termOptions)[0];
-  if (!newest) return undefined;
-  return termKey(newest) === termKey(previous.term) ? newest : undefined;
+function termHint(previous: SnapshotDoc | null): Term | undefined {
+  if (!previous || (previous.attendance?.length ?? 0) === 0 || !previous.term) return undefined;
+  return previous.term;
 }
 
 /**
@@ -71,6 +70,11 @@ export async function syncAccount(opts: {
   force?: boolean;
   /** The sync button: reuses the saved ERP session and answers within MANUAL_BUDGET_MS. */
   manual?: boolean;
+  /**
+   * Reuse the saved ERP session (the app's own background refresh). Only the backend
+   * job logs in every time: that is what notices a password changed on the ERP.
+   */
+  reuseSession?: boolean;
 }): Promise<SyncResult> {
   const { user } = opts;
   const account = findAccount(user, opts.universityId);
@@ -103,17 +107,27 @@ export async function syncAccount(opts: {
       // that is the difference between a five-second sync and a twenty-second one.
       const login = async (): Promise<AuthedSession> =>
         autoLogin(universityId, creds.password);
-      // The button reuses the saved ERP session, so a click skips the captcha
-      // solve and the login. Background syncs keep logging in: that is what
-      // notices a password changed on the ERP and pauses the account.
-      let session: AuthedSession = (opts.manual ? await loadErpSession(universityId) : null) ?? (await withDeadline(login(), deadline));
+      // The button and the app's own refresh reuse the saved ERP session, so they
+      // skip the captcha solve and the login. The backend job keeps logging in: that
+      // is what notices a password changed on the ERP and pauses the account.
+      const reuse = opts.manual || opts.reuseSession;
+      // The background refresh takes only a session logged in within REFRESH_LOGIN_MS, so
+      // a password changed on the ERP still surfaces within that while the app is open.
+      const kept = reuse ? await loadErpSession(universityId, opts.manual ? undefined : REFRESH_LOGIN_MS) : null;
+      let session: AuthedSession = kept ?? (await withDeadline(login(), deadline));
 
-      // A term picked in Settings wins; otherwise the previous term is reused
-      // when it is still the newest, so no time goes on probing older terms.
+      // A term picked in Settings wins; otherwise the term shown now is pulled at once
+      // while only the newer terms are checked alongside.
       const pulled = (s: AuthedSession) => {
         const picked = account.term ? termFromIds(account.term, s.termOptions) : undefined;
-        // Course registers (History) are one request each: never on the button.
-        return pullAll(s, picked ?? reusableTerm(previous, s), { registers: !opts.manual });
+        // Course registers (History) start as soon as the attendance page is in; on the
+        // button, any still out shortly before its deadline keep their previous copy.
+        return pullAll(s, picked, {
+          registers: true,
+          hint: termHint(previous),
+          hintRunning: termIsRunning(previous?.classes),
+          ...(opts.manual ? { registersBy: deadline - 500 } : {}),
+        });
       };
 
       let data;
