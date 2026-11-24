@@ -226,3 +226,14 @@ test('a failed dataset keeps the previous copy for the same term, never for anot
   assert.equal(snap.keepFailed(first, otherTerm, ['attendance']).attendance.length, 0, 'another term starts clean');
   assert.equal(snap.keepFailed(null, next, ['attendance']), next);
 });
+
+test('CGPA and fee orders belong to the account: a failed read keeps them across a term change', () => {
+  assert.ok(first.cgpaRows.length > 0 && first.feeOrders.length > 0, 'the fixture has both');
+  const otherTerm: ClientSnapshot = { ...first, term: { ...first.term, semesterid: '1' }, cgpaRows: [], cgpa: null, sgpaTerms: [], feeOrders: [], attendance: [] };
+  const kept = snap.keepFailed(first, otherTerm, ['cgpa', 'fees']);
+  assert.equal(kept.cgpaRows, first.cgpaRows);
+  assert.equal(kept.cgpa, first.cgpa);
+  assert.equal(kept.feeOrders, first.feeOrders);
+  assert.equal(kept.attendance.length, 0, 'term data still starts clean');
+  assert.equal(snap.keepFailed(first, otherTerm, []).feeOrders.length, 0, 'what was read is taken as read');
+});

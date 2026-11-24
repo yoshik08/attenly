@@ -124,8 +124,11 @@ export async function saveFullSnapshot(input: {
 }): Promise<SnapshotDoc> {
   const { data, previous } = input;
   const sameTerm = !!previous && termKey(previous.term) === termKey(data.term);
+  // CGPA and fee orders belong to the account, not the term: a failed read keeps the last
+  // good copy even when the term changed (a new semester, or another one picked in Settings).
+  const accountWide = (dataset: FullSyncData['failed'][number]) => dataset === 'cgpa' || dataset === 'fees';
   const keep = <K extends keyof SnapshotDoc>(dataset: FullSyncData['failed'][number], key: K, fresh: SnapshotDoc[K]) =>
-    data.failed.includes(dataset) && sameTerm ? previous![key] : fresh;
+    data.failed.includes(dataset) && previous && (sameTerm || accountWide(dataset)) ? (previous[key] ?? fresh) : fresh;
   // Kept attendance is only as new as the sync that last read it.
   const attendanceSyncedAt = !data.failed.includes('attendance')
     ? new Date(data.syncedAt)

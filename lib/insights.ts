@@ -5,6 +5,9 @@
 import {
   COMPONENT_LABELS,
   COMPONENT_ORDER,
+  COMPONENT_PLURAL,
+  COMPONENT_SINGULAR,
+  STATUS_AT,
   componentBudget,
   countOf,
   courseTcbr,
@@ -97,6 +100,11 @@ export function courseTitle(title: string | null | undefined, code: string): str
 
 const cleanTitle = courseTitle;
 
+/** "next lecture" / "next 3 lectures". */
+function nextOf(n: number, k: ComponentKey): string {
+  return n === 1 ? `next ${COMPONENT_SINGULAR[k]}` : `next ${countOf(n, k)}`;
+}
+
 /** The single best move toward the target: fewest classes of one type. */
 function bestCatchUp(comps: ComponentSummary[], key: 'needed' | 'spare') {
   let best: { k: ComponentKey; n: number } | null = null;
@@ -108,12 +116,33 @@ function bestCatchUp(comps: ComponentSummary[], key: 'needed' | 'spare') {
   return best;
 }
 
-/** The type you can skip most of, and how many. */
+/**
+ * The type you can skip most of, and how many. A type whose weight is 0 never moves the
+ * figure (its spare is infinite); it only wins when no other type has room.
+ */
 function bestSpare(comps: ComponentSummary[]) {
   let best: { k: ComponentKey; n: number } | null = null;
+  let free: ComponentKey | null = null;
   for (const c of comps) {
     const n = c.budget?.spare ?? 0;
+    if (!Number.isFinite(n)) {
+      if (c.budget) free ??= c.k;
+      continue;
+    }
     if (!best || n > best.n) best = { k: c.k, n };
+  }
+  if ((!best || best.n <= 0) && free) return { k: free, n: Number.POSITIVE_INFINITY };
+  return best;
+}
+
+/** Classes of one type needed to reach `line`, fewest first (null when none gets there). */
+function catchUpTo(subj: SubjectAttendance, weights: Weights, line: number, comps: ComponentSummary[], tcbr: ReturnType<typeof courseTcbr>) {
+  let best: { k: ComponentKey; n: number } | null = null;
+  for (const c of comps) {
+    if (!c.budget) continue;
+    const n = componentBudget(subj, weights, line, c.k, tcbr)?.needed ?? 0;
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (!best || n < best.n) best = { k: c.k, n };
   }
   return best;
 }
@@ -151,28 +180,32 @@ export function summarize(subj: SubjectAttendance, settings: SummarySettings, ti
     verdict = 'No classes counted yet.';
     urgency = 1000;
   } else if (pct >= target) {
+    // The figure is rounded up, so sitting exactly on the line can still leave room to skip.
     const spare = bestSpare(components);
-    if (pct === target) {
+    if (spare && spare.n > 0) {
+      verdict = Number.isFinite(spare.n)
+        ? `${countOf(spare.n, spare.k)} to spare.`
+        : `Skipping ${COMPONENT_PLURAL[spare.k]} doesn’t move this figure.`;
+      urgency = 400 + (100 - pct) * 2;
+    } else if (pct === target) {
       verdict = `Right on the ${target}% line. Skipping any class drops you below it.`;
       urgency = 300;
-    } else if (!spare || spare.n <= 0) {
+    } else {
       verdict = `Holding ${target}%: there is no room to skip a class yet.`;
       urgency = 320;
-    } else {
-      verdict = `${countOf(spare.n, spare.k)} to spare.`;
-      urgency = 400 + (100 - pct) * 2;
     }
   } else {
-    const up = bestCatchUp(components, 'needed');
-    // Below the condonation line the message names the band, not the target.
-    const line = pct < 75 ? 75 : target;
+    // Below the condonation line the message names the band, not the target, and counts
+    // the classes to get back to it: the count to the target is far longer.
+    const line = pct < STATUS_AT.condonation ? STATUS_AT.condonation : target;
+    const up = line === target ? bestCatchUp(components, 'needed') : catchUpTo(subj, weights, line, components, tcbr);
     if (up) {
       verdict =
         line === target
-          ? `Attend the next ${countOf(up.n, up.k)} to reach ${target}%.`
-          : `Attend the next ${countOf(up.n, up.k)} to climb back above ${line}%.`;
+          ? `Attend the ${nextOf(up.n, up.k)} to reach ${target}%.`
+          : `Attend the ${nextOf(up.n, up.k)} to climb back to ${line}%.`;
     } else {
-      verdict = `${target}% is out of reach this term; stay above ${line}%.`;
+      verdict = line === target ? `${target}% is out of reach this term.` : `${line}% is out of reach this term; every class still counts.`;
     }
     urgency = pct < 75 ? 100 - (75 - pct) : 200 - (target - pct);
   }
@@ -252,7 +285,8 @@ export interface NextClass {
 /** The next scheduled class of a course, from `now`. Today's classes count only if their start time (ERP or bell schedule) is known and ahead. */
 export function nextClassOf(code: string, timetable: TimetableDay[], now = new Date()): NextClass | null {
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  for (let offset = 0; offset < 7; offset++) {
+  // Through the same weekday next week: a course that meets once a week, today, is next seen then.
+  for (let offset = 0; offset <= 7; offset++) {
     const day = WEEK[(now.getDay() + offset) % 7];
     const periods = sortPeriods(timetable.find((d) => d.day === day)?.periods ?? []).filter((p) => p.subjectCode === code);
     for (const p of periods) {
@@ -268,7 +302,7 @@ export function nextClassOf(code: string, timetable: TimetableDay[], now = new D
 
 /** Reads after "Next class": "today at 2:30 pm", "tomorrow at 9:50 am", "on Fri, period 3". */
 export function whenLabel(n: NextClass): string {
-  const day = n.inDays === 0 ? 'today' : n.inDays === 1 ? 'tomorrow' : `on ${n.day}`;
+  const day = n.inDays === 0 ? 'today' : n.inDays === 1 ? 'tomorrow' : n.inDays >= 7 ? `on ${n.day} next week` : `on ${n.day}`;
   const start = startOf(n.period);
   return start ? `${day} at ${clockOf(start)}` : `${day}, ${n.period.period.replace(/^P/, 'period ')}`;
 }
@@ -297,7 +331,8 @@ export const UNTIMED_DAY_ENDS = 17 * 60;
 
 export function agendaOf(timetable: TimetableDay[], now = new Date()): Agenda | null {
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  for (let offset = 0; offset < 7; offset++) {
+  // Through the same weekday next week, for a timetable whose only day of classes is today.
+  for (let offset = 0; offset <= 7; offset++) {
     const day = WEEK[(now.getDay() + offset) % 7];
     let periods = sortPeriods(timetable.find((d) => d.day === day)?.periods ?? []);
     if (offset === 0) {
@@ -338,6 +373,31 @@ export function skipCall(subj: SubjectAttendance, settings: SummarySettings, k: 
     needed = componentBudget(subj, settings.weights, settings.target, k, tcbr)?.needed ?? null;
   }
   return { now, after, skippable, needed };
+}
+
+/* ------------------------------------------------------------------ */
+/* Today's periods the register already has                            */
+/* ------------------------------------------------------------------ */
+
+/** "2026-11-24" for a local date, the way ClassRecord dates read. */
+export function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** One period of one course, as a key: "25CS2205E|5" (period numbers only, "P5" and "5" agree). */
+export function slotKeyOf(code: string, period: string): string {
+  return `${code}|${period.replace(/\D/g, '')}`;
+}
+
+/**
+ * The periods of `day` (YYYY-MM-DD) the course registers have already recorded. They are
+ * in the attendance counts already, so anything that projects forward (Plan the day,
+ * Forecast) leaves them out instead of counting them twice.
+ */
+export function recordedOn(classes: readonly { date: string; code: string; period: string }[] | null | undefined, day: string): Set<string> {
+  const out = new Set<string>();
+  for (const c of classes ?? []) if (c.date === day && c.period) out.add(slotKeyOf(c.code, c.period));
+  return out;
 }
 
 /* ------------------------------------------------------------------ */

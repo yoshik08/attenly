@@ -28,12 +28,15 @@ export async function POST(req: Request) {
   if (!openLogin(body.key)) return signedOut();
   const picked = termIdsOf(body.term);
   const reuse = termIdsOf(body.reuse);
+  // The year's label as the browser saw it, so a renumbered year id isn't trusted (pullAll).
+  const reuseLabel = (body.reuse as { yearLabel?: unknown } | null)?.yearLabel;
+  const seenLabel = typeof reuseLabel === 'string' && reuseLabel.length <= 32 ? reuseLabel : undefined;
 
   try {
     const { value, erp, universityId } = await withLocalErp(body, async (s) => {
       const term = picked ? termFromIds(picked, s.termOptions) : undefined;
       // The term shown now is pulled at once; only the terms newer than it are checked alongside.
-      const hint = !picked && reuse ? termFromIds(reuse, s.termOptions) : undefined;
+      const hint = !picked && reuse ? { ...termFromIds(reuse, s.termOptions), ...(seenLabel ? { yearLabel: seenLabel } : {}) } : undefined;
       return { data: await pullAll(s, term, { registers: true, hint, hintRunning: body.running === true }), termOptions: s.termOptions };
     });
     const { data, termOptions } = value;

@@ -1,7 +1,7 @@
 /** Per-course summaries, the plate, next class, and change badges. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, endOf, minutesOf, nextClassOf, PERIOD_TIMES, skipCall, startOf, summarize, whenLabel } from '../lib/insights';
+import { agendaOf, clockOf, countsOf, courseTitle, deltaOf, endOf, localDayKey, minutesOf, nextClassOf, PERIOD_TIMES, recordedOn, skipCall, slotKeyOf, startOf, summarize, whenLabel } from '../lib/insights';
 import { DEFAULT_TARGET, DEFAULT_TCBR, DEFAULT_WEIGHTS, emptyPlan, sandboxPct, type ComponentKey, type SubjectAttendance } from '../lib/math';
 import type { TimetableDay } from '../lib/erp/parsers';
 import { compareTerms, termCandidates, termFromIds, termText, yearStart, yearsNewestFirst } from '../lib/terms';
@@ -65,11 +65,40 @@ test('verdicts name the class type and count against the one target', () => {
 
   const red = summarize(course('C', 'Networks', { L: [25, 36], P: [12, 18] }), settings);
   assert.equal(red.status, 'medical');
-  assert.match(red.verdict, /^Attend the next \d+ (lectures|practicals) to climb back above 75%\.$/);
+  // 3100/4500 weighted = 69%: nine lectures make 4000/5400 = 75%. The count to 85% (43) is not the one named.
+  assert.equal(red.verdict, 'Attend the next 9 lectures to climb back to 75%.');
+  const plan = emptyPlan();
+  plan.L.attend = 9;
+  assert.equal(sandboxPct(course('C', '', { L: [25, 36], P: [12, 18] }), settings.weights, plan), 75);
+  plan.L.attend = 8;
+  assert.ok(sandboxPct(course('C', '', { L: [25, 36], P: [12, 18] }), settings.weights, plan)! < 75, 'eight is not enough');
 
   const line = summarize(course('D', 'Algorithms', { L: [34, 40], T: [10, 12], P: [18, 22] }), settings);
   assert.equal(line.pct, 85);
   assert.equal(line.verdict, 'Right on the 85% line. Skipping any class drops you below it.');
+});
+
+test('on the line but rounded up: the verdict agrees with the budget, never "skipping drops you"', () => {
+  // 170/200 = 85% exactly; 170/201 and 170/202 still round up to 85.
+  const s = summarize(course('L', 'Line', { L: [170, 200] }), settings);
+  assert.equal(s.pct, 85);
+  assert.equal(s.components[0].budget?.spare, 2);
+  assert.equal(s.verdict, '2 lectures to spare.');
+});
+
+test('a type weighted 0 never reads as "Infinity to spare"', () => {
+  const zeroS = { ...settings, weights: { ...settings.weights, S: 0 } };
+  const onlyS = summarize(course('Z', 'Zero', { L: [30, 30], S: [10, 10] }), zeroS);
+  assert.doesNotMatch(onlyS.verdict, /Infinity/);
+  assert.match(onlyS.verdict, /^\d+ lectures to spare\.$/, 'a real budget wins over the free type');
+  const free = summarize(course('Z', 'Zero', { L: [34, 40], S: [10, 10] }), zeroS);
+  assert.equal(free.pct, 85);
+  assert.equal(free.verdict, 'Skipping skilling sessions doesn’t move this figure.');
+});
+
+test('attended never counts for more than the classes that count (pre-registration set too high)', () => {
+  const s = summarize(course('T', 'Tcbr', { L: [10, 10] }), { ...settings, tcbr: { enabled: true, perCourse: { T: 4 } } });
+  assert.equal(s.pct, 100);
 });
 
 test('switching the one target changes the verdict, never the band', () => {
@@ -279,4 +308,46 @@ test('next class: an untimed class later today is found', () => {
   const fri = nextClassOf('A', twice, thu(14, 30))!;
   assert.equal(fri.day, 'Fri');
   assert.equal(whenLabel(fri), 'tomorrow at 9:00 am');
+});
+
+test('a course that meets once a week, today, is next seen the same day next week', () => {
+  // The real 25UC0032E: only Saturday P5 and P7.
+  const sat: TimetableDay[] = [
+    { day: 'Sat', periods: [untimed(5, 'SDG'), untimed(7, 'SDG')] },
+    { day: 'Mon', periods: [untimed(1, 'OTHER')] },
+  ];
+  const satEvening = new Date(2026, 10, 14, 18, 0); // Sat 14 Nov 2026
+  const n = nextClassOf('SDG', sat, satEvening)!;
+  assert.equal(n.inDays, 7);
+  assert.equal(n.period.period, 'P5');
+  assert.equal(whenLabel(n), 'on Sat next week at 11:50 am');
+  // Mid-afternoon the second period has started too.
+  assert.equal(nextClassOf('SDG', sat, new Date(2026, 10, 14, 13, 30))!.inDays, 7);
+  assert.equal(nextClassOf('SDG', sat, new Date(2026, 10, 14, 12, 0))!.period.period, 'P7');
+  // A timetable with a single day of classes: Up next is that day next week.
+  const only: TimetableDay[] = [{ day: 'Sat', periods: [untimed(5, 'SDG')] }];
+  const a = agendaOf(only, satEvening)!;
+  assert.equal(a.inDays, 7);
+  assert.equal(a.date.getDate(), 21);
+});
+
+test('today’s periods the registers already recorded', () => {
+  const classes = [
+    { date: '2026-11-24', code: 'A', period: '5', component: 'P', present: false },
+    { date: '2026-11-24', code: 'B', period: '1', component: 'S', present: true },
+    { date: '2026-11-23', code: 'A', period: '7', component: 'P', present: true },
+    { date: '2026-11-24', code: 'C', period: '', component: 'L', present: true },
+  ];
+  const done = recordedOn(classes, localDayKey(new Date(2026, 10, 24, 12, 54)));
+  assert.deepEqual([...done].sort(), ['A|5', 'B|1']);
+  assert.ok(done.has(slotKeyOf('A', 'P5')), 'the timetable says P5, the register says 5');
+  assert.equal(done.has(slotKeyOf('A', 'P7')), false, 'yesterday is not today');
+  assert.equal(recordedOn(null, '2026-11-24').size, 0);
+});
+
+test('one class to go reads "the next lecture", not "the next 1 lecture"', () => {
+  // The real 25CS2205E: L 4/4, P 2/5, S 8/12 = 700/950 → 74%; one lecture makes 800/1050 → 77%.
+  const s = summarize(course('AOOP', 'Advanced OOP', { L: [4, 4], P: [2, 5], S: [8, 12] }), settings);
+  assert.equal(s.pct, 74);
+  assert.equal(s.verdict, 'Attend the next lecture to climb back to 75%.');
 });

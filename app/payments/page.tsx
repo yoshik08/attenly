@@ -23,7 +23,10 @@ function statusOf(status: string): { label: string; tone: 'safe' | 'condonation'
   if (s === 'success' || s === 'successful' || s === 'paid') return { label: 'Paid', tone: 'safe' };
   if (s === 'pending' || s === 'initiated' || s === 'in progress') return { label: 'Pending', tone: 'condonation' };
   if (!s) return { label: 'Unknown', tone: 'none' };
-  return { label: status, tone: 'detained' };
+  // The ERP writes these in lower case ("fail", "aborted").
+  if (s === 'fail' || s === 'failed' || s === 'failure') return { label: 'Failed', tone: 'detained' };
+  if (s === 'aborted' || s === 'abort' || s === 'cancelled' || s === 'canceled') return { label: s.startsWith('abort') ? 'Aborted' : 'Cancelled', tone: 'detained' };
+  return { label: status.charAt(0).toUpperCase() + status.slice(1), tone: 'detained' };
 }
 
 export default function PaymentsPage() {

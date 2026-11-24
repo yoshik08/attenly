@@ -1,5 +1,5 @@
 import { getDb } from './mongo';
-import { resolvePassword, type ErpAccount } from './users';
+import { recordSync, resolvePassword, type ErpAccount } from './users';
 import { isSessionExpiredError, sealSession, unsealSession, type AuthedSession } from '../erp/client';
 import { autoLogin } from '../erp/full-sync';
 import { coded } from '../erp/errors';
@@ -74,21 +74,46 @@ export async function clearErpSessions(universityId: string): Promise<number> {
 /**
  * A logged-in ERP session for a linked `account`: the saved one when it still works,
  * else one fresh login with the stored password. Saves whatever session it ends with.
+ *
+ * A password the ERP already rejected (the account waits for a new one) is never tried
+ * again: every screen that opened would otherwise send the ERP another bad login. When
+ * this login is the one rejected, the account is paused the same way a sync pauses it.
  */
-export async function withErpSession<T>(account: ErpAccount, fn: (session: AuthedSession) => Promise<T>): Promise<T> {
-  const creds = resolvePassword(account);
+export async function withErpSession<T>(account: ErpAccount, fn: (session: AuthedSession) => Promise<T>, googleId?: string): Promise<T> {
+  const creds = account.needsPassword ? null : resolvePassword(account);
+  const missing = () =>
+    coded(
+      account.needsPassword
+        ? 'The ERP rejected the saved password. Enter your current ERP password to read this.'
+        : 'Enter your ERP password once to read this from the ERP.',
+      'needs_password',
+    );
+  const login = async (password: string) => {
+    try {
+      return await autoLogin(account.universityId, password);
+    } catch (e) {
+      if ((e as { code?: string })?.code !== 'bad_credentials') throw e;
+      await clearErpSession(account.universityId);
+      if (googleId) {
+        const message = 'The ERP rejected the saved password. Enter your current ERP password.';
+        await recordSync(googleId, account.universityId, { ok: false, code: 'bad_credentials', message, needsPassword: true }).catch(() => undefined);
+      }
+      throw coded('The ERP rejected the saved password. Enter your current ERP password to read this.', 'needs_password');
+    }
+  };
   let session = await loadErpSession(account.universityId);
   if (!session) {
-    if (!creds) throw coded('Enter your ERP password once to read this from the ERP.', 'needs_password');
-    session = await autoLogin(account.universityId, creds.password);
+    if (!creds) throw missing();
+    session = await login(creds.password);
   }
   let result: T;
   try {
     result = await fn(session);
   } catch (e) {
-    if (!isSessionExpiredError(e) || !creds) throw e;
+    if (!isSessionExpiredError(e)) throw e;
     await clearErpSession(account.universityId);
-    session = await autoLogin(account.universityId, creds.password);
+    if (!creds) throw missing();
+    session = await login(creds.password);
     result = await fn(session);
   }
   await saveErpSession(account.universityId, session).catch(() => undefined);

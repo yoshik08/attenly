@@ -215,8 +215,27 @@ test('a password the ERP rejects pauses the account; the backend sync then leave
   const body = (await res.json()) as { results: { account: string; code: string }[] };
   assert.deepEqual(body.results, [{ account: '…001', code: 'needs_password' }]);
   assert.equal((await counters()).logins, loginsBefore, 'no login attempt with a known-bad password');
+  // Screens read on demand (marks, profile, receipts…) never try the rejected password either.
+  const { withErpSession, clearErpSession } = await import('../lib/db/erp-session');
+  await clearErpSession(A);
+  const paused = users.findAccount((await users.getUser(G))!, A)!;
+  await assert.rejects(withErpSession(paused, async () => 'read', G), (e: { code?: string }) => e.code === 'needs_password');
+  assert.equal((await counters()).logins, loginsBefore, 'no on-demand login with a known-bad password');
   await control({ password: { id: A, value: 'kl-test-pass' } });
   await users.linkAccount({ googleId: G, email: 's@example.com', universityId: A, password: 'kl-test-pass' });
+});
+
+test('an on-demand read whose login the ERP rejects pauses the account like a sync does', async () => {
+  const { withErpSession, clearErpSession } = await import('../lib/db/erp-session');
+  await clearErpSession(A);
+  await control({ password: { id: A, value: 'changed-on-erp' } });
+  const account = users.findAccount((await users.getUser(G))!, A)!;
+  assert.equal(account.needsPassword ?? false, false);
+  await assert.rejects(withErpSession(account, async () => 'read', G), (e: { code?: string }) => e.code === 'needs_password');
+  assert.equal(users.viewAccounts((await users.getUser(G))!)[0].needsPassword, true, 'paused');
+  await control({ password: { id: A, value: 'kl-test-pass' } });
+  await users.linkAccount({ googleId: G, email: 's@example.com', universityId: A, password: 'kl-test-pass' });
+  assert.equal(users.viewAccounts((await users.getUser(G))!)[0].needsPassword, false);
 });
 
 test('captcha misreads are retried; three in a row is a captcha failure, not a password problem', async () => {
@@ -450,3 +469,34 @@ test('a term with a class in the last few days is pulled without asking about ne
   assert.equal(((await counters()).courselists ?? 0) - before, 1, 'only the running term');
 });
 
+
+test('a remembered term is trusted only while the ERP still lists its year id under the same label', async () => {
+  const session = await fullSync.autoLogin(A, 'kl-test-pass');
+  // The mock's id 29 is 2025-2026: a hint saying 29 is 2026-2027 came from a renumbered list.
+  const stale = { academicyear: '29', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' };
+  const data = await fullSync.pullAll(session, undefined, { hint: stale, hintRunning: true });
+  assert.deepEqual([data.term.academicyear, data.term.semesterid], ['30', '2'], 'the newest term with attendance, found again');
+  assert.equal(data.attendance.length, 6);
+  // A hint the list still agrees with is pulled straight away.
+  const good = { academicyear: '30', semesterid: '2', semester: 'Even Sem', yearLabel: '2026-2027' };
+  const before = (await counters()).courselists ?? 0;
+  const again = await fullSync.pullAll(session, undefined, { hint: good, hintRunning: true });
+  assert.equal(again.attendance.length, 6);
+  assert.equal(((await counters()).courselists ?? 0) - before, 1, 'one course list, for the hinted term');
+});
+
+test('CGPA and fee orders survive a term change when their read fails', async () => {
+  await resetKnobs();
+  const user = (await users.getUser(G))!;
+  const first = await sync.syncAccount({ user, universityId: A, force: true });
+  assert.ok(first.snapshot && first.snapshot.cgpa != null && first.snapshot.feeOrders.length > 0);
+  await users.setAccountTerm(G, A, { academicyear: '29', semesterid: '1' });
+  await control({ knobs: { failDatasets: ['cgpa', 'fees'] } });
+  const older = await sync.syncAccount({ user: (await users.getUser(G))!, universityId: A, force: true });
+  assert.equal(older.code, 'synced');
+  assert.equal(older.snapshot?.term.academicyear, '29');
+  assert.equal(older.snapshot?.cgpa, first.snapshot.cgpa, 'CGPA kept');
+  assert.equal(older.snapshot?.feeOrders.length, first.snapshot.feeOrders.length, 'fee orders kept');
+  await resetKnobs();
+  await users.setAccountTerm(G, A, null);
+});

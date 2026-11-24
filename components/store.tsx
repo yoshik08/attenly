@@ -129,11 +129,16 @@ function write(key: string, value: unknown) {
   }
 }
 
-/** On-demand ERP sets this device keeps (components/records.tsx): dropped with the rest of the device's data. */
-/** The term the account signed in without Google syncs ('' for automatic). */
-function termOfLocal(): string {
-  return JSON.stringify(readLocalAccount()?.term ?? '');
+/**
+ * The term the shown account syncs ('""' for automatic): the browser's own copy without
+ * Google, the account's pick otherwise. Two syncs for the same term need not both run.
+ */
+function termOf(s: Pick<StoreState, 'local' | 'accounts' | 'active'>): string {
+  if (s.local) return JSON.stringify(readLocalAccount()?.term ?? '');
+  return JSON.stringify(s.accounts.find((a) => a.universityId === s.active)?.term ?? '');
 }
+
+/** On-demand ERP sets this device keeps (components/records.tsx): dropped with the rest of the device's data. */
 
 function clearRecordCopies() {
   try {
@@ -385,7 +390,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const res = await localPost('/api/local/sync', {
         term: loc.term,
-        reuse: prev && prev.attendance.length > 0 ? { academicyear: prev.term.academicyear, semesterid: prev.term.semesterid } : null,
+        reuse:
+          prev && prev.attendance.length > 0
+            ? { academicyear: prev.term.academicyear, semesterid: prev.term.semesterid, ...(prev.term.yearLabel ? { yearLabel: prev.term.yearLabel } : {}) }
+            : null,
         running: !!prev && prev.attendance.length > 0 && termIsRunning(prev.classes),
       });
       const d = await res.json().catch(() => ({}));
@@ -426,14 +434,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const id = s.active;
       if (!id) return;
       if (syncing.current) {
-        // Sync now (or a new term) while a quiet background sync runs: show that one,
-        // and pull again after it only if it was for a different term.
+        // Sync now (or a new term) while a background sync runs: show that one, and pull
+        // again after it only if it was for a different term.
         const run = inflight.current;
-        if (mode !== 'force' || !s.local || !run || shown.current) return;
-        shown.current = true;
-        setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
+        if (mode !== 'force' || !run) return;
+        if (s.local) {
+          if (shown.current) return;
+          shown.current = true;
+          setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
+        }
         await run.done;
-        if (termOfLocal() === run.term || syncing.current) return;
+        if (termOf(stateRef.current) === run.term || syncing.current) return;
         s = stateRef.current;
       }
       syncing.current = true;
@@ -442,7 +453,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!quiet) setState((p) => ({ ...p, sync: { ...p.sync, running: true, mode } }));
       if (s.local) {
         const done = runLocalSync(mode, () => !shown.current);
-        inflight.current = { done, term: termOfLocal() };
+        inflight.current = { done, term: termOf(s) };
         try {
           await done;
         } finally {
@@ -451,6 +462,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
+      let finish!: () => void;
+      inflight.current = { done: new Promise<void>((resolve) => (finish = resolve)), term: termOf(s) };
       try {
         const res = await fetch(api('/api/erp/hard-sync'), {
           method: 'POST',
@@ -476,6 +489,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((p) => ({ ...p, sync: { running: false, mode, code: 'offline', message: 'You look offline. The sync will retry.', at: Date.now() } }));
       } finally {
         syncing.current = false;
+        inflight.current = null;
+        finish();
       }
     },
     [persistSnapshot, runLocalSync],
@@ -682,7 +697,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok) return { ok: false, error: d.error ?? 'Could not change the semester.' };
-        setState((p) => ({ ...p, accounts: Array.isArray(d.accounts) ? d.accounts : p.accounts }));
+        if (Array.isArray(d.accounts)) {
+          // The sync below reads the term from the ref before React renders the new accounts.
+          stateRef.current = { ...stateRef.current, accounts: d.accounts };
+          setState((p) => ({ ...p, accounts: d.accounts }));
+        }
         await runSync('force');
         return { ok: true };
       } catch {

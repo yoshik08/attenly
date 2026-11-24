@@ -23,8 +23,6 @@ export const ERP_BASE = process.env.ERP_BASE ?? 'https://newerp.kluniversity.in'
 const LOGIN_PATH = '/index.php?r=site%2Flogin';
 const ATTENDANCE_PAGE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fsearchgetinput';
 const ATTENDANCE_PATH = '/index.php?r=studentattendance%2Fstudentdailyattendance%2Fcourselist';
-const INTERNALS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fgetstudentinternalmarks';
-const RESULTS_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsemendresult';
 const CGPA_PATH = '/index.php?r=studentinfo%2Fstudentendexamresult%2Fsearchgetmycgpa';
 const FEE_ORDERS_PATH = '/index.php?r=feepayments%2Fstudentfeeorderdetailsinfo%2Fmy_fee_orders';
 
@@ -514,29 +512,6 @@ export async function fetchTimetableHtml(
     throw e;
   }
   return { html: res.text, jar: res.jar, csrf: extractCsrf(res.text) ?? session.csrf };
-}
-
-function termFields(session: AuthedSession, term: { academicyear: string; semesterid: string; semester: string }) {
-  return {
-    _csrf: session.csrf,
-    'DynamicModel[academicyear]': term.academicyear,
-    'DynamicModel[semester]': term.semesterid,
-    'DynamicModel[semesterid]': term.semesterid,
-  };
-}
-
-export async function fetchInternalsHtml(
-  session: AuthedSession,
-  term: { academicyear: string; semesterid: string; semester: string },
-): Promise<{ html: string; jar: CookieJar; csrf: string }> {
-  return postXhr(session, INTERNALS_PATH, termFields(session, term));
-}
-
-export async function fetchResultsHtml(
-  session: AuthedSession,
-  term: { academicyear: string; semesterid: string; semester: string },
-): Promise<{ html: string; jar: CookieJar; csrf: string }> {
-  return postXhr(session, RESULTS_PATH, termFields(session, term));
 }
 
 export async function fetchCgpaHtml(

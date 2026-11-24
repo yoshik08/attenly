@@ -118,7 +118,9 @@ export function weightedSums(
     // the component doesn't count. Planned classes of a type that hasn't started
     // yet do count, so a course's first practicals move the projection.
     if (eff <= 0 && attend + skip <= 0) continue;
-    attW += ((eff > 0 ? c.attended : 0) + attend) * w;
+    // A pre-registration count set too high can leave fewer classes than were attended;
+    // attending never counts for more than the classes that count.
+    attW += ((eff > 0 ? Math.min(Math.max(0, c.attended), eff) : 0) + attend) * w;
     condW += (eff + attend + skip) * w;
   }
   return { attW, condW };
