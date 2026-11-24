@@ -44,7 +44,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const data = await withErpSession(account, (s) => readRecord(s, set, { ay, sem }));
+    const data = await withErpSession(account, (s) => readRecord(s, set, { ay, sem }), me.googleId);
     // Marks asked without a term settle on one; cache under that term too.
     const fetchedAt = await putRecord(me.googleId, account.universityId, key, data);
     if (set === 'marks' && key === 'marks') {

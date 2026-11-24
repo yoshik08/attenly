@@ -51,7 +51,10 @@ function writeLocal(key: string, value: Stored<unknown>) {
  */
 export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; sem?: string } = {}, enabled = true) {
   type T = RecordData[S];
-  const { active, local } = useStore();
+  const { active, local, activeAccount } = useStore();
+  // Signed in without Google the server can't tell a rejected password from a good one,
+  // so this browser never sends the ERP a login it already turned down.
+  const paused = local && Boolean(activeAccount?.needsPassword);
   const { ay, sem } = params;
   const key = `${RECORDS_PREFIX}${active ?? '-'}:${set}${ay && sem ? `:${ay}:${sem}` : ''}`;
   const [state, setState] = useState<RecordState<T>>({ data: null, fetchedAt: null, loading: false, error: null, code: null, stale: false });
@@ -63,6 +66,10 @@ export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; se
       if (local && !fresh) {
         const copy = readLocal<T>(key);
         if (copy && Date.now() - Date.parse(copy.fetchedAt) < RECORD_MAX_AGE[set]) return;
+      }
+      if (paused) {
+        setState((s) => ({ ...s, loading: false, error: 'The ERP rejected the saved password. Enter your current ERP password on the Attendance tab.', code: 'needs_password' }));
+        return;
       }
       const mine = ++seq.current;
       setState((s) => ({ ...s, loading: true, error: null, code: null }));
@@ -97,7 +104,7 @@ export function useRecord<S extends RecordSet>(set: S, params: { ay?: string; se
         setState((s) => ({ ...s, loading: false, error: 'You look offline. Showing what this device last saw.', code: 'offline' }));
       }
     },
-    [active, local, enabled, set, ay, sem, key],
+    [active, local, enabled, set, ay, sem, key, paused],
   );
 
   useEffect(() => {

@@ -8,7 +8,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { MonthCalendar, dayCellClass, dayKey, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, type ComponentKey } from '@/lib/math';
-import { clockOf, courseTitle, sortPeriods, startOf, WEEK } from '@/lib/insights';
+import { clockOf, courseTitle, endOf, minutesOf, sortPeriods, startOf, WEEK } from '@/lib/insights';
 import type { ClassRecord } from '@/lib/erp/parsers';
 import { useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
@@ -104,12 +104,20 @@ function History() {
         state: r.present ? 'present' : 'absent',
       });
     }
-    // A period the timetable had that the register never recorded did not happen.
+    // A period the timetable had that the register never recorded did not happen. Today,
+    // only periods that are over count: the rest of the day hasn't happened yet.
     const inTerm = firstClassDate && day >= firstClassDate && date <= today;
+    const isToday = day === dayKey(today);
+    const nowMin = today.getHours() * 60 + today.getMinutes();
+    const over = (p: (typeof slots)[number]) => {
+      const end = minutesOf(endOf(p)) ?? minutesOf(startOf(p));
+      return end != null && end <= nowMin;
+    };
     if (inTerm) {
       for (const p of slots) {
         const period = p.period.replace(/\D/g, '');
         if (rows.some((r) => r.code === p.subjectCode && r.period === period)) continue;
+        if (isToday && !over(p)) continue;
         rows.push({
           key: `t-${p.period}-${p.subjectCode}`,
           period,
@@ -148,9 +156,8 @@ function History() {
       <section className="page-in">
         <PageHeader title="History" sub={<TermLine term={termText(snapshot?.term)} />} />
         <Empty icon={ClockCounterClockwise} title="No day-by-day records yet.">
-          History is read from each course&rsquo;s attendance register in the ERP. Those pages are fetched on a background
-          sync (about every five minutes) because there is one per course; the manual sync button skips them to stay quick.
-          It fills in on its own.
+          History is read from each course&rsquo;s attendance register in the ERP, one page per course, on every sync.
+          It fills in once the ERP has recorded a class this semester.
         </Empty>
       </section>
     );

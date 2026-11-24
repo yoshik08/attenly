@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ArrowCounterClockwise, ArrowRight, CalendarBlank } from '@phosphor-icons/react';
 import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
@@ -12,7 +12,7 @@ import { Footnote, PageHeader } from '@/components/page';
 import { MonthCalendar, dayCellClass, dayKey, MONTHS } from '@/components/month-calendar';
 import { cn } from '@/components/cn';
 import { courseTcbr, emptyPlan, sandboxPct, statusOf, TARGETS, type ComponentKey, type SandboxPlan } from '@/lib/math';
-import { summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { localDayKey, recordedOn, slotKeyOf, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import { useNow } from '@/lib/time';
 
 type DayMark = 'absent' | 'holiday';
@@ -42,12 +42,17 @@ function Forecast() {
     return m;
   }, [subjects, settings]);
   const startOfToday = useMemo(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()), [today]);
-  /** Periods per weekday, for the dots under each day. */
-  const perDay = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const d of timetable) m.set(d.day, d.periods.length);
-    return m;
-  }, [timetable]);
+  /** Today's periods the registers already hold: they are in the counts, so the window leaves them out. */
+  const todayKey = localDayKey(today);
+  const recordedToday = useMemo(() => recordedOn(snapshot?.classes, todayKey), [snapshot, todayKey]);
+  /** The periods of one date that are still to come: all of them, except today's already recorded. */
+  const periodsOn = useCallback(
+    (date: Date) => {
+      const periods = timetable.find((t) => t.day === WEEK[date.getDay()])?.periods ?? [];
+      return dayKey(date) === todayKey ? periods.filter((p) => !recordedToday.has(slotKeyOf(p.subjectCode, p.period))) : periods;
+    },
+    [timetable, todayKey, recordedToday],
+  );
 
   /**
    * The projection window ends on the last instruction day when one is set, and
@@ -81,8 +86,7 @@ function Forecast() {
     const m = new Map<string, SandboxPlan>();
     for (const day of days) {
       if (day.state === 'holiday') continue;
-      const weekday = WEEK[day.date.getDay()];
-      for (const p of timetable.find((t) => t.day === weekday)?.periods ?? []) {
+      for (const p of periodsOn(day.date)) {
         const plan = m.get(p.subjectCode) ?? emptyPlan();
         const k: ComponentKey = p.type ?? 'L';
         if (day.state === 'present') plan[k].attend += 1;
@@ -91,7 +95,7 @@ function Forecast() {
       }
     }
     return m;
-  }, [days, timetable]);
+  }, [days, periodsOn]);
 
   const projectedOf = (code: string): number | null => {
     const subj = subjects.find((s) => s.code === code);
@@ -137,7 +141,7 @@ function Forecast() {
   const fmtDay = (key: string) =>
     new Date(`${key}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   const target = settings.target;
-  const counted = days.filter((d) => d.state !== 'holiday' && (perDay.get(WEEK[d.date.getDay()]) ?? 0) > 0);
+  const counted = days.filter((d) => d.state !== 'holiday' && periodsOn(d.date).length > 0);
   const absent = counted.filter((d) => d.state === 'absent').length;
   const endLabel = lastInstructionDay ? fmtDay(lastInstructionDay) : `the end of ${MONTHS[windowEnd.getMonth()]}`;
 
@@ -186,7 +190,7 @@ function Forecast() {
               const markable = inWindow(date) && !sunday;
               const past = date < startOfToday;
               const isToday = key === dayKey(today);
-              const classes = sunday ? 0 : (perDay.get(WEEK[date.getDay()]) ?? 0);
+              const classes = sunday ? 0 : periodsOn(date).length;
               const live = !beyond && !past;
               return (
                 <button

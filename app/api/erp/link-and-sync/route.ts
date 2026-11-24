@@ -4,6 +4,7 @@ import { getLatestSnapshot, saveFullSnapshot, toClientSnapshot } from '@/lib/db/
 import { findAccount, getUser, linkAccount } from '@/lib/db/users';
 import { saveErpSession } from '@/lib/db/erp-session';
 import { termFromIds } from '@/lib/terms';
+import { CORE_DATASETS } from '@/lib/sync-codes';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     const existing = await getUser(me.googleId);
     const chosen = existing ? findAccount(existing, universityId)?.term : null;
     const data = await pullAll(session, chosen ? termFromIds(chosen, session.termOptions) : undefined, { registers: true });
-    if (['attendance', 'timetable', 'internals', 'results', 'cgpa'].every((d) => data.failed.includes(d as never))) {
+    if (CORE_DATASETS.every((d) => data.failed.includes(d))) {
       return fail(502, 'erp_unreachable', 'The ERP accepted the login but returned no data. Try again in a moment.');
     }
     const previous = await getLatestSnapshot(me.googleId, universityId);

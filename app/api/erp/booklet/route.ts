@@ -26,9 +26,12 @@ export async function GET(req: Request) {
   if (!account) return new Response('That account isn’t linked.', { status: 404 });
 
   try {
-    return await scanResponse(await withErpSession(account, (s) => readPaperScan(s, key)), key);
+    return await scanResponse(await withErpSession(account, (s) => readPaperScan(s, key), me.googleId), key);
   } catch (e) {
     console.error('[api/erp/booklet]', e instanceof Error ? e.message : e);
+    if ((e as { code?: string })?.code === 'needs_password') {
+      return new Response('Attenly can’t sign into the ERP with the saved password. Open Attenly and enter your ERP password again.', { status: 409 });
+    }
     return new Response('The ERP didn’t hand over that scan. Try again in a moment.', { status: 502 });
   }
 }

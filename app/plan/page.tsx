@@ -10,7 +10,7 @@ import { Empty, Footnote, PageHeader, TermLine } from '@/components/page';
 import { Ring } from '@/components/ring';
 import { cn } from '@/components/cn';
 import { COMPONENT_LABELS, courseTcbr, emptyPlan, sandboxPct, statusOf, type ComponentKey, type SandboxPlan } from '@/lib/math';
-import { clockOf, courseTitle, sortPeriods, startOf, summarize, WEEK, type CourseSummary } from '@/lib/insights';
+import { clockOf, courseTitle, localDayKey, slotKeyOf, sortPeriods, startOf, summarize, WEEK, type CourseSummary } from '@/lib/insights';
 import type { TimetablePeriod } from '@/lib/erp/parsers';
 import { termText } from '@/lib/terms';
 import { useNow } from '@/lib/time';
@@ -71,10 +71,25 @@ function PlanTheDay() {
   const periods = useMemo(() => sortPeriods(timetable.find((t) => t.day === day)?.periods ?? []), [timetable, day]);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
 
+  /**
+   * Planning today: the periods the registers already recorded are in the counts, so they
+   * show what was recorded and stay out of the plan instead of being counted twice.
+   */
+  const todayKey = localDayKey(date);
+  const recorded = useMemo(() => {
+    const m = new Map<string, boolean>();
+    if (day !== today) return m;
+    for (const c of snapshot?.classes ?? []) if (c.date === todayKey && c.period) m.set(slotKeyOf(c.code, c.period), c.present);
+    return m;
+  }, [snapshot, day, today, todayKey]);
+  const recordedOf = (p: TimetablePeriod) => recorded.get(slotKeyOf(p.subjectCode, p.period));
+  const open = periods.filter((p) => recordedOf(p) === undefined);
+
   // What the day would add, per course, as a what-if plan (in memory only).
   const plans = useMemo(() => {
     const m = new Map<string, SandboxPlan>();
     for (const p of periods) {
+      if (recorded.has(slotKeyOf(p.subjectCode, p.period))) continue;
       const d = decisions[slotKey(day, p)];
       if (!d || d === 'not-conducted') continue;
       const plan = m.get(p.subjectCode) ?? emptyPlan();
@@ -84,7 +99,7 @@ function PlanTheDay() {
       m.set(p.subjectCode, plan);
     }
     return m;
-  }, [periods, decisions, day]);
+  }, [periods, decisions, day, recorded]);
 
   /** The course's percentage once the day's plan is applied. */
   const afterFor = (code: string): number | null => {
@@ -96,16 +111,16 @@ function PlanTheDay() {
     return sandboxPct(subj, settings.weights, plan, courseTcbr(code, settings.tcbr));
   };
 
-  const decided = periods.filter((p) => decisions[slotKey(day, p)]).length;
+  const decided = open.filter((p) => decisions[slotKey(day, p)]).length;
   const resetDay = () =>
     setDecisions((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith(`${day}|`))));
   /** The whole day at once; pressed again when every period already has it, it clears the day. */
-  const allSame = (v: Decision) => periods.length > 0 && periods.every((p) => decisions[slotKey(day, p)] === v);
+  const allSame = (v: Decision) => open.length > 0 && open.every((p) => decisions[slotKey(day, p)] === v);
   const setDay = (v: Decision) => {
     if (allSame(v)) return resetDay();
     setDecisions((d) => {
       const next = { ...d };
-      for (const p of periods) next[slotKey(day, p)] = v;
+      for (const p of open) next[slotKey(day, p)] = v;
       return next;
     });
   };
@@ -174,7 +189,8 @@ function PlanTheDay() {
           </span>
         </h2>
         <p className="flex items-center gap-3 text-[13px] text-fg-3 tnum">
-          {decided} of {periods.length} planned
+          {open.length < periods.length && `${periods.length - open.length} recorded · `}
+          {decided} of {open.length} planned
           {decided > 0 && (
             <button type="button" className="btn btn-ghost btn-sm press !min-h-8 !px-3" onClick={resetDay}>
               <ArrowCounterClockwise size={14} aria-hidden /> Reset the day
@@ -195,6 +211,7 @@ function PlanTheDay() {
               key={c.value}
               type="button"
               aria-pressed={on}
+              disabled={open.length === 0}
               onClick={() => setDay(c.value)}
               className={cn(
                 'press inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-semibold sm:h-9 sm:flex-none sm:px-3.5',
@@ -211,7 +228,8 @@ function PlanTheDay() {
       <ol className="mt-3 flex flex-col gap-2">
         {periods.map((p, i) => {
           const key = slotKey(day, p);
-          const choice = decisions[key];
+          const done = recordedOf(p);
+          const choice = done === undefined ? decisions[key] : undefined;
           const summary = byCode.get(p.subjectCode);
           const name = summary?.title ?? courseTitle(p.subjectTitle, p.subjectCode);
           const after = afterFor(p.subjectCode);
@@ -255,13 +273,23 @@ function PlanTheDay() {
                   )}
                 </span>
 
-                <div
-                  className="col-span-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair lg:col-span-1 lg:inline-flex"
-                  role="group"
-                  aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
-                >
-                  <Choices choice={choice} onPick={(v) => setDecisions((d) => toggle(d, key, v))} />
-                </div>
+                {done !== undefined ? (
+                  <p
+                    data-tone={done ? 'safe' : 'detained'}
+                    className="col-span-3 flex h-12 items-center justify-center gap-2 rounded-[14px] bg-black/40 px-3 text-[12.5px] font-semibold text-tone hair lg:col-span-1 lg:h-11"
+                  >
+                    {done ? <Check size={13} weight="bold" aria-hidden /> : <X size={13} weight="bold" aria-hidden />}
+                    {done ? 'Recorded: attended' : 'Recorded: absent'}
+                  </p>
+                ) : (
+                  <div
+                    className="col-span-3 flex gap-1 rounded-[14px] bg-black/40 p-1 hair lg:col-span-1 lg:inline-flex"
+                    role="group"
+                    aria-label={`${name}, period ${p.period.replace(/\D/g, '')}`}
+                  >
+                    <Choices choice={choice} onPick={(v) => setDecisions((d) => toggle(d, key, v))} />
+                  </div>
+                )}
               </div>
             </li>
           );
@@ -270,7 +298,8 @@ function PlanTheDay() {
 
       <Footnote>
         A planner only: attended, bunked and not-conducted periods change the percentages above, never your recorded
-        attendance. “Not conducted” counts for neither side.
+        attendance. “Not conducted” counts for neither side. Today&rsquo;s periods the ERP has already recorded are in
+        the figures and can&rsquo;t be planned again.
       </Footnote>
     </div>
   );

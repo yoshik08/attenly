@@ -59,8 +59,19 @@ export function snapshotFromPull(universityId: string, data: FullSyncData, termO
  * previous one when both are the same term, so a flaky ERP page never blanks good data.
  */
 export function keepFailed(previous: ClientSnapshot | null, next: ClientSnapshot, failed: readonly Dataset[]): ClientSnapshot {
-  if (!previous || previous.universityId !== next.universityId || !sameTerm(previous.term, next.term)) return next;
+  if (!previous || previous.universityId !== next.universityId) return next;
   const kept = (d: Dataset) => failed.includes(d);
+  if (!sameTerm(previous.term, next.term)) {
+    // CGPA and fee orders belong to the account, not the term: keep them across a term change.
+    return {
+      ...next,
+      cgpaRows: kept('cgpa') ? previous.cgpaRows : next.cgpaRows,
+      cgpa: kept('cgpa') ? previous.cgpa : next.cgpa,
+      sgpaTerms: kept('cgpa') ? previous.sgpaTerms : next.sgpaTerms,
+      feeOrders: kept('fees') ? previous.feeOrders : next.feeOrders,
+      termOptions: next.termOptions ?? previous.termOptions,
+    };
+  }
   return {
     ...next,
     attendance: kept('attendance') ? previous.attendance : next.attendance,

@@ -1,6 +1,6 @@
 /**
- * Server-side ERP sync: log in once, then pull attendance, timetable,
- * internals, results and CGPA for the current term and parse everything.
+ * Server-side ERP sync: log in once, then pull attendance, timetable, CGPA,
+ * fee orders and the course registers for the current term and parse everything.
  *
  * Used by the link flow (/api/erp/link-and-sync), force/auto sync
  * (/api/erp/hard-sync) and the backend job (/api/cron/sync).
@@ -10,8 +10,6 @@ import {
   unsealSession,
   fetchAttendanceHtml,
   fetchTimetableHtml,
-  fetchInternalsHtml,
-  fetchResultsHtml,
   fetchCgpaHtml,
   fetchFeeOrdersHtml,
   fetchRegisterHtml,
@@ -26,8 +24,6 @@ import {
 import {
   parseAttendance,
   parseTimetable,
-  parseInternals,
-  parseResults,
   parseCgpa,
   parseFeeOrders,
   parseRegister,
@@ -127,6 +123,15 @@ function fallbackTerm(now = new Date()): SyncTerm {
 /** The ERP ids of a term, for comparing two terms. */
 const termId = (t: { academicyear: string; semesterid: string }) => `${t.academicyear}:${t.semesterid}`;
 
+/** Whether the ERP's own lists (when the session has them) still carry this term's year and semester ids. */
+function termListed(session: AuthedSession, term: SyncTerm): boolean {
+  const options = session.termOptions;
+  if (!options || options.years.length === 0) return true;
+  const year = options.years.find((y) => y.id === term.academicyear);
+  if (!year || (term.yearLabel && year.label !== term.yearLabel)) return false;
+  return options.semesters.length === 0 || options.semesters.some((s) => s.id === term.semesterid);
+}
+
 type Detected = { term: SyncTerm; attendance: SubjectAttendance[] | null; attendanceDown?: Error; html?: string };
 
 /**
@@ -220,6 +225,10 @@ export interface PullOptions {
  */
 export async function pullAll(session: AuthedSession, termOverride?: SyncTerm, opts: PullOptions = {}): Promise<FullSyncData> {
   if (termOverride) return pullTerm(session, termOverride, null, opts);
+  // The hint is the term the last sync showed, by the ERP's ids. Trusted only while the ERP
+  // still lists that year id with the same label: the ids are internal and could be
+  // renumbered, and pulling a stale id straight away would show another year's (empty) term.
+  if (opts.hint && !termListed(session, opts.hint)) opts = { ...opts, hint: undefined, hintRunning: false };
   if (opts.hint && opts.hintRunning) return pullTerm(session, opts.hint, null, opts);
   if (opts.hint) {
     const probe = detectTerm(session, opts.hint);
@@ -250,8 +259,11 @@ async function pullTerm(
 ): Promise<FullSyncData> {
   let attendance: SubjectAttendance[] = [];
   let timetable: TimetableDay[] = [];
-  let internals: InternalRow[] = [];
-  let results: ResultRow[] = [];
+  // Internal marks and results are read on demand (Marks, lib/erp/records.ts), never on a
+  // sync: nothing shows the sync's copy, the real ERP's results page answers with a broken
+  // redirect, and every request a sync skips keeps it further from the ERP's rate limit.
+  const internals: InternalRow[] = [];
+  const results: ResultRow[] = [];
   let cgpaRows: CgpaRow[] = [];
   let feeOrders: FeeOrder[] = [];
 
@@ -277,17 +289,11 @@ async function pullTerm(
       )
     : Promise.resolve(null);
 
-  const names: Dataset[] = ['attendance', 'timetable', 'internals', 'results', 'cgpa', 'fees'];
+  const names: Dataset[] = ['attendance', 'timetable', 'cgpa', 'fees'];
   const settled = await Promise.allSettled([
     attendanceHtml,
     fetchTimetableHtml(session, term).then(({ html }) => {
       timetable = parseTimetable(html);
-    }),
-    fetchInternalsHtml(session, term).then(({ html }) => {
-      internals = parseInternals(html);
-    }),
-    fetchResultsHtml(session, term).then(({ html }) => {
-      results = parseResults(html);
     }),
     fetchCgpaHtml(session).then(({ html }) => {
       cgpaRows = parseCgpa(html);

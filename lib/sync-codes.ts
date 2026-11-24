@@ -65,4 +65,4 @@ export function classifySyncError(e: unknown): Exclude<SyncCode, 'synced' | 'fre
 }
 
 /** The datasets whose failure means the ERP answered nothing usable at all. */
-export const CORE_DATASETS = ['attendance', 'timetable', 'internals', 'results', 'cgpa'] as const;
+export const CORE_DATASETS = ['attendance', 'timetable', 'cgpa'] as const;

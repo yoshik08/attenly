@@ -11,6 +11,8 @@ import { agendaOf, clockOf, courseTitle, endOf, minutesOf, skipCall, startOf, ty
 import type { TimetableDay, TimetablePeriod } from '@/lib/erp/parsers';
 
 const dateFmt = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+/** After a weekday's own name ("Monday"), the date alone: "30 Nov", not "Mon, 30 Nov". */
+const plainDateFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' });
 
 interface Call {
   tone: Status | 'none';
@@ -156,7 +158,7 @@ export function UpNext({
         <div className="flex flex-col p-5 pt-0 lg:border-l lg:border-line lg:p-7">
           <div className="flex items-baseline justify-between gap-3 hair-t pt-4 lg:pt-0 lg:shadow-none">
             <p className="text-[15px] font-semibold">
-              {dayWord} <span className="font-normal text-fg-2">{dateFmt.format(agenda.date)}</span>
+              {dayWord} <span className="font-normal text-fg-2">{(agenda.inDays > 1 ? plainDateFmt : dateFmt).format(agenda.date)}</span>
             </p>
             <p className="text-[13px] text-fg-3 tnum">{left}</p>
           </div>
