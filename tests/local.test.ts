@@ -29,6 +29,7 @@ let records: typeof import('../app/api/local/records/route');
 let receipt: typeof import('../app/api/local/fee-receipt/route');
 let booklet: typeof import('../app/api/local/booklet/route');
 let circular: typeof import('../app/api/local/circular/route');
+let feedback: typeof import('../app/api/local/feedback/route');
 
 async function control(body: unknown) {
   const r = await fetch(`${MOCK}/__mock/control`, { method: 'POST', body: JSON.stringify(body) });
@@ -72,6 +73,7 @@ before(async () => {
   receipt = await import('../app/api/local/fee-receipt/route');
   booklet = await import('../app/api/local/booklet/route');
   circular = await import('../app/api/local/circular/route');
+  feedback = await import('../app/api/local/feedback/route');
 });
 
 after(() => {
@@ -213,6 +215,36 @@ test('records, a fee receipt, a booklet scan and a circular are read for a seale
 
   const noLogin = await booklet.POST(form({ key: 'x', code: p.courseCode, exam: p.exam, ay: p.academicYear, sem: p.semester }));
   assert.equal(noLogin.status, 401);
+});
+
+test('force submit files every pending feedback form with Good, once', async () => {
+  type Run = { ok: boolean; run: { term: string; results: { code: string; component: string; faculty: string; status: string; questions: { text: string; answer: string }[]; shared?: boolean }[]; stopped?: string } };
+  const first = (await (await feedback.POST(json({ key, erp: erpToken }))).json()) as Run;
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(first.run.term, '2026-2027 · Even Sem');
+  assert.equal(first.run.results.length, 4, 'every faculty link, including two on one row');
+  assert.deepEqual(first.run.results.map((r) => r.status), ['submitted', 'submitted', 'submitted', 'submitted']);
+  assert.ok(first.run.results.every((r) => r.questions.length > 0 && r.questions.every((q) => q.answer === 'Good')));
+  assert.equal(first.run.results[0].questions[0].text, 'Faculty demonstrate a strong command of the subject matter.');
+  assert.equal(first.run.stopped, undefined);
+
+  // Pressing again files nothing: the ERP refuses filed forms and they show what is on file.
+  const again = (await (await feedback.POST(json({ key, erp: erpToken }))).json()) as Run;
+  assert.deepEqual(again.run.results.map((r) => r.status), ['already', 'already', 'already', 'already']);
+  const alphaL = again.run.results[0];
+  assert.equal(alphaL.shared, true, 'Alpha holds two forms of 24CS2201, so the answers are the pair of them');
+  assert.equal(alphaL.questions.length, 3);
+  assert.ok(alphaL.questions.every((q) => q.answer === 'Good'));
+  assert.equal(again.run.results[2].shared, undefined);
+
+  await control({ knobs: { failDatasets: ['feedback'] } });
+  try {
+    const down = await feedback.POST(json({ key, erp: erpToken }));
+    assert.equal(down.status, 502);
+    assert.equal(((await down.json()) as { ok: boolean }).ok, false);
+  } finally {
+    await control({ knobs: { failDatasets: [] } });
+  }
 });
 
 test('a failed dataset keeps the previous copy for the same term, never for another', () => {

@@ -611,6 +611,37 @@ export async function erpSearch(
   return { html: res.text, jar: res.jar };
 }
 
+/**
+ * Posts one of the ERP's own forms exactly as a browser would: `fields` in document
+ * order (duplicate names allowed), to the form's same-origin action. The only ERP
+ * write Attenly makes; lib/erp/feedback.ts uses it for course feedback.
+ */
+export async function erpPostForm(
+  session: AuthedSession,
+  action: string,
+  fields: [string, string][],
+  referer: string,
+): Promise<{ html: string; jar: CookieJar; finalUrl: string; status: number }> {
+  const path = sameOriginPath(action);
+  const body = new URLSearchParams();
+  for (const [k, v] of fields) body.append(k, v);
+  const res = await erpFetch(
+    path,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Origin: new URL(ERP_BASE).origin,
+        Referer: new URL(sameOriginPath(referer), ERP_BASE).toString(),
+      },
+      body: body.toString(),
+    },
+    session.jar,
+  );
+  if (detectLoginForm(res.text)) throw expired();
+  return { html: res.text, jar: res.jar, finalUrl: res.finalUrl, status: res.status };
+}
+
 /** A document the ERP serves (a circular's PDF), as bytes. Same-origin links only. */
 export async function erpDocument(session: AuthedSession, href: string): Promise<{ bytes: Buffer; contentType: string; filename: string | null }> {
   let url = new URL(sameOriginPath(href), ERP_BASE).toString();

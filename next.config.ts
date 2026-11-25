@@ -35,6 +35,7 @@ const ROUTES_THAT_LOG_IN = [
   '/api/erp/booklet',
   '/api/erp/circular',
   '/api/erp/fee-receipt',
+  '/api/erp/feedback',
   '/api/health',
   // Signed in without Google: each logs in again (reading the captcha) when the ERP session it is handed has expired.
   '/api/local/sync',
@@ -42,6 +43,7 @@ const ROUTES_THAT_LOG_IN = [
   '/api/local/booklet',
   '/api/local/circular',
   '/api/local/fee-receipt',
+  '/api/local/feedback',
 ];
 
 const nextConfig: NextConfig = {
