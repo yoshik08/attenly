@@ -13,6 +13,7 @@ import {
   CalendarCheck,
   CaretUpDown,
   ChartLineUp,
+  ChatCircleText,
   Check,
   ClockCounterClockwise,
   Exam,
@@ -59,6 +60,7 @@ const RECORDS: Section[] = [
   { href: '/cgpa', label: 'CGPA', Icon: GraduationCap, blurb: 'Grades and SGPA by semester' },
   { href: '/payments', label: 'Payments', Icon: Receipt, blurb: 'Semester fees and receipts' },
   { href: '/circulars', label: 'Circulars', Icon: Megaphone, blurb: 'From the registrar' },
+  { href: '/feedback', label: 'Feedback', Icon: ChatCircleText, blurb: 'File every faculty form at once' },
   { href: '/calculator', label: 'Calculator', Icon: Calculator, blurb: 'Numbers you have in your head' },
 ];
 const PROFILE: Section = { href: '/profile', label: 'Profile', Icon: IdentificationCard, blurb: 'Bus, counselling diary' };

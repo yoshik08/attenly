@@ -206,6 +206,56 @@ const PDF = Buffer.from(
 );
 
 /**
+ * Course feedback (Feedback → Submit): forms per faculty, each with five-point
+ * questions. Filed answers are kept per student for the life of the mock; a filed form
+ * answers with the real ERP's one-line refusal instead of the form.
+ */
+const FEEDBACK_FORMS = [
+  { id: 'fb1', code: '24CS2201', title: 'DATA STRUCTURES', comp: 'L', sec: 'S-1', fac: 'Test Faculty  Alpha', facId: '701', qs: ['Faculty demonstrate a strong command of the subject matter.', 'Lectures are well-structured, organized, and easy to follow.'] },
+  { id: 'fb2', code: '24CS2201', title: 'DATA STRUCTURES', comp: 'P', sec: 'S-1', fac: 'Test Faculty  Alpha', facId: '701', qs: ['How well is the teacher able to explain the practical problems to be solved?'] },
+  { id: 'fb3', code: '24CS2202', title: 'DISCRETE MATHEMATICS', comp: 'L', sec: 'S-2', fac: 'Test Faculty  Beta', facId: '702', qs: ['Faculty demonstrate a strong command of the subject matter.'] },
+  { id: 'fb4', code: '24CS2202', title: 'DISCRETE MATHEMATICS', comp: 'L', sec: 'S-2', fac: 'Test Faculty  Gamma', facId: '703', qs: ['Faculty demonstrate a strong command of the subject matter.'] },
+];
+const feedbackFiled = new Map(); // user -> [{ formId, code, fac, question, option }]
+const OPTIONS = ['Excellent', 'Very good', 'Good', 'Satisfactory', 'Unsatisfactory'];
+
+function feedbackList() {
+  const rows = [];
+  for (const f of FEEDBACK_FORMS) {
+    // Real links carry encrypted binary ids; the mock keeps the form id at the end.
+    const link = `<a class="crudjax2" href="/index.php?r=feedback%2Ffeedbackstudentresultinfo%2Fstudentfeedback&amp;id=%C2%0A${f.id}">${esc(f.fac)}</a>`;
+    const last = rows[rows.length - 1];
+    if (last && last.key === `${f.code}${f.comp}`) last.cells[9] += `<br/><br/>${link}`;
+    else rows.push({ key: `${f.code}${f.comp}`, cells: [rows.length + 1, f.code, f.title, f.sec, 'MA', f.comp, '2026-2027', 'Even Sem', '2', link] });
+  }
+  return `<h4 class="redflag">Feedback Student Schedule Infos</h4>${grid(
+    ['#', 'Course Code', 'Course Desc', 'Main Section', 'Associative Sectionno', 'Course Component', 'Academic Year', 'Semester', 'Offering Year', 'Click'],
+    rows.map((r) => r.cells),
+  )}`;
+}
+
+function feedbackForm(f, csrf, user) {
+  const hidden = (i, k, v) =>
+    `<div class="form-group field-feedbackstudentresultinfo-${i}-${k} required"><input type="hidden" id="feedbackstudentresultinfo-${i}-${k}" class="form-control" name="FeedbackStudentResultInfo[${i}][${k}]" value="${esc(v)}"><div class="help-block"></div></div>`;
+  const qs = f.qs
+    .map((q, i) => {
+      const qid = `${f.id}${i}`;
+      const radios = OPTIONS.map((o, n) => `<label><input type="radio" name="DynamicModel[${i}][fsri_student_questionaire_answer_option]" value="${qid}:::${n + 1}"> ${o}</label>`).join('\n');
+      return `${hidden(i, 'fsri_student_profile_id', '96000')}${i + 1} ${esc(q)}${hidden(i, 'fsri_student_questionaire_info_id', qid)}<div class="form-group field-dynamicmodel-${i}-fsri_student_questionaire_answer_option required"><label class="control-label">Options</label><input type="hidden" name="DynamicModel[${i}][fsri_student_questionaire_answer_option]" value=""><div role="radiogroup">${radios}</div><div class="help-block"></div></div>${hidden(i, 'fsri_coursecode', f.code)}${hidden(i, 'fsri_fac_profileid', f.facId)}${hidden(i, 'fsri_course_del_comp', f.comp)}${hidden(i, 'createby', user)}`;
+    })
+    .join('');
+  return `<div class="feedback-student-result-info-form"><form id="studentfeedbackform" action="/index.php?r=feedback%2Ffeedbackstudentresultinfo%2Fsavestudentfeedback" method="POST" data-pjax><input type="hidden" name="_csrf" value="${csrf}"><h5><b></b></h5>${qs}<div class="form-group text-center"><button type="submit" class="btn btn-success">Save</button></div></form></div>`;
+}
+
+function feedbackResults(user) {
+  const rows = [...(feedbackFiled.get(user) ?? [])].reverse();
+  return `<h4>Student Feedback</h4>${grid(
+    ['#', 'Fsriid', 'Academic Year', 'Offering Year', 'Semester', 'Extension Name', 'Question', 'Answer Option', 'Course Code', 'Faculty Name'],
+    rows.map((r, i) => [i + 1, 1000 + rows.length - i, '2026-2027', '2', 'Even Sem', 'Normal', esc(r.question), r.option, r.code, esc(r.fac)]),
+  )}`;
+}
+
+/**
  * Handles one of the on-demand routes, or returns false. `term(ay, sem)` gives the
  * student's term data; `years`/`semesters` are the form's option lists.
  */
@@ -247,6 +297,33 @@ export async function handleRecords({ r, req, url, s, user, st, readBody, send, 
   if (r === 'nodues/noduesstudentdocumentsinfo/my_dues_fines_student') return ok(duesPage());
   if (r === 'feepayments/feereports/student_fee_dues') return ok(ledgerPage());
   if (r === 'registraroffice/registrarofficecircularsvisibilitylistinfo/tab_index_personal') return ok(circularsPage());
+  if (r.startsWith('feedback/feedbackstudentresultinfo/')) {
+    if (failing('feedback')) return send(500, 'Internal Server Error'), true;
+    const filed = feedbackFiled.get(user) ?? [];
+    if (r.endsWith('/createstudentfeedback')) return ok(feedbackList());
+    if (r.endsWith('/indexindi')) return ok(feedbackResults(user));
+    if (r.endsWith('/studentfeedback')) {
+      const id = (url.searchParams.get('id') ?? '').slice(-3);
+      const f = FEEDBACK_FORMS.find((x) => x.id === id);
+      if (!f) return send(404, 'Not found'), true;
+      if (filed.some((x) => x.formId === f.id)) return send(200, 'Feedback is already taken for this subject vs faculty'), true;
+      return send(200, feedbackForm(f, s.csrf, user)), true;
+    }
+    if (r.endsWith('/savestudentfeedback') && req.method === 'POST') {
+      const form = new URLSearchParams(await readBody());
+      const f = FEEDBACK_FORMS.find((x) => x.code === form.get('FeedbackStudentResultInfo[0][fsri_coursecode]') && x.facId === form.get('FeedbackStudentResultInfo[0][fsri_fac_profileid]') && x.comp === form.get('FeedbackStudentResultInfo[0][fsri_course_del_comp]'));
+      if (!f || filed.some((x) => x.formId === f.id)) return send(200, 'Feedback is already taken for this subject vs faculty'), true;
+      const rows = [];
+      for (let i = 0; i < f.qs.length; i++) {
+        const v = form.getAll(`DynamicModel[${i}][fsri_student_questionaire_answer_option]`).pop() ?? '';
+        const option = v.split(':::')[1];
+        if (!option) return ok('<div class="has-error"><div class="help-block">Fsri Student Questionaire Answer Option cannot be blank.</div></div>');
+        rows.push({ formId: f.id, code: f.code, fac: f.fac, question: f.qs[i], option });
+      }
+      feedbackFiled.set(user, [...filed, ...rows]);
+      return send(302, '', { Location: '/index.php?r=feedback%2Ffeedbackstudentresultinfo%2Findexindi' }), true;
+    }
+  }
   if (r === 'registraroffice/registrarofficecircularsvisibilitylistinfo/circular_documents') {
     return send(200, PDF, { 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="circular.pdf"' }), true;
   }
