@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowsClockwise, Books } from '@phosphor-icons/react';
+import { ArrowsClockwise, Books, ClockCounterClockwise } from '@phosphor-icons/react';
 import { useStore, type Linked } from '@/components/store';
 import { SignIn, FirstLink } from '@/components/gate';
 import { CourseRow } from '@/components/course';
@@ -15,6 +15,13 @@ import { Empty, Footnote, Notice, PageHeader, TermLine } from '@/components/page
 import { deltaOf, nextClassOf, summarize, type CourseSummary } from '@/lib/insights';
 import { ago, useNow } from '@/lib/time';
 import { termText } from '@/lib/terms';
+
+/** Phone-only: History lives under More in the dock, so the Attendance screen gets a one-tap way in. */
+const HISTORY_SHORTCUT = (
+  <Link href="/history" className="btn btn-secondary btn-sm press -my-px shrink-0 !gap-1.5 !px-3 lg:!hidden">
+    <ClockCounterClockwise size={16} aria-hidden /> History
+  </Link>
+);
 
 export default function AttendancePage() {
   const store = useStore();
@@ -98,7 +105,7 @@ function Attendance() {
 
   return (
     <div className="page-in">
-      <PageHeader title="Attendance" sub={sub} />
+      <PageHeader title="Attendance" sub={sub} aside={HISTORY_SHORTCUT} />
 
       {(activeAccount?.needsPassword || snapshot.issues?.attendance) && (
         <div className="mt-6 flex flex-col gap-3">
