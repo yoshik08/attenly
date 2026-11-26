@@ -563,6 +563,51 @@ test('history: a month of days coloured by attendance, and one day’s periods',
   await ctx.close();
 });
 
+test('history shortcut: phones get a pill beside the Attendance title, desktop keeps its sidebar only', async () => {
+  for (const width of [320, 390]) {
+    const { ctx, page } = await ctxFor('main', { viewport: { width, height: 760 } });
+    await page.goto(st.app);
+    const title = page.getByRole('heading', { name: 'Attendance', level: 1 });
+    await title.waitFor();
+    const pill = page.getByRole('main').getByRole('link', { name: 'History', exact: true });
+    await pill.waitFor();
+    const [h, b] = [await title.boundingBox(), await pill.boundingBox()];
+    assert.ok(Math.abs(h.y + h.height / 2 - (b.y + b.height / 2)) <= 1.5, `centred on the title at ${width}px`);
+    assert.ok(b.x >= h.x + h.width, `beside the title, not under it, at ${width}px`);
+    assert.ok(b.x + b.width <= width - 15, `inside the gutter at ${width}px`);
+    assert.equal(await pill.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().height < 40), true, 'one line');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no sideways scroll at ${width}px`);
+    if (width === 390) {
+      // The dock is untouched: four sections plus More, and History is still in the More sheet.
+      const dock = page.getByRole('navigation', { name: 'Sections' });
+      assert.deepEqual(
+        (await dock.locator('li').allInnerTexts()).map((t) => t.trim()),
+        ['Attendance', 'Timetable', 'Plan', 'Forecast', 'More'],
+      );
+      await dock.getByRole('button', { name: 'More' }).click();
+      const more = page.getByRole('dialog', { name: 'More' });
+      await more.getByRole('link', { name: /History/ }).waitFor();
+      await page.keyboard.press('Escape');
+      await more.waitFor({ state: 'detached' });
+      // It opens the existing History page; More lights up there and Back returns to Attendance.
+      await pill.click();
+      await page.waitForURL(/\/attenly\/history$/);
+      await page.getByRole('heading', { name: 'History', level: 1 }).waitFor();
+      assert.equal(await dock.locator('li[data-active="true"]').innerText(), 'More');
+      await page.goBack();
+      await title.waitFor();
+      assert.equal(await dock.locator('li[data-active="true"]').innerText(), 'Attendance');
+    }
+    await ctx.close();
+  }
+  const { ctx, page } = await ctxFor('main', { viewport: { width: 1440, height: 900 } });
+  await page.goto(st.app);
+  await page.getByRole('heading', { name: 'Attendance', level: 1 }).waitFor();
+  assert.equal(await page.getByRole('main').getByRole('link', { name: 'History', exact: true }).isVisible(), false, 'no shortcut on desktop');
+  await page.getByRole('complementary').getByRole('link', { name: 'History' }).waitFor();
+  await ctx.close();
+});
+
 test('nav: the sync pill never overlaps a nav item at any width', async () => {
   for (const width of [1024, 1152, 1280, 1440, 1920]) {
     const { ctx, page } = await ctxFor('main', { viewport: { width, height: 900 } });

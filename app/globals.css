@@ -139,6 +139,12 @@ button:disabled {
   line-height: 1;
   font-size: 34px;
 }
+/* A phone title sharing its line with a shortcut pill (~104px with its gap): it keeps 34px wherever
+   both fit and only gives way on the narrowest phones (~28px at 320) instead of running under the pill.
+   "Attendance" sets about 6.55em wide. The desktop rule below still wins at 1024px and up. */
+.display-fit {
+  font-size: min(34px, calc((100vw - 32px - 106px) / 6.55));
+}
 @media (min-width: 1024px) {
   .display {
     font-size: 44px;

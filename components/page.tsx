@@ -9,18 +9,28 @@ import { cn } from './cn';
 export function PageHeader({
   title,
   sub,
+  aside,
   actions,
   className,
 }: {
   title: ReactNode;
   sub?: ReactNode;
+  /** Sits on the title's own line, centred against it (e.g. a phone-only shortcut). */
+  aside?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }) {
   return (
     <header className={cn('flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-5 lg:pt-12', className)}>
-      <div className="min-w-0">
-        <h1 className="display balance">{title}</h1>
+      <div className={cn('min-w-0', aside != null && 'max-lg:flex-1')}>
+        {aside ? (
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="display display-fit min-w-0 whitespace-nowrap">{title}</h1>
+            {aside}
+          </div>
+        ) : (
+          <h1 className="display balance">{title}</h1>
+        )}
         {sub && <div className="mt-2.5 text-[14px] text-fg-2">{sub}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
