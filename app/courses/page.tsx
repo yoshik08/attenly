@@ -113,6 +113,13 @@ function Courses() {
     return m;
   }, [isSynced, snapshot]);
 
+  // Credits the CGPA grid prints for courses with a result.
+  const credits = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of snapshot?.cgpaRows ?? []) if (r.courseCode && r.credits > 0) m.set(r.courseCode.trim(), r.credits);
+    return m;
+  }, [snapshot]);
+
   const pickYear = (year: string) => {
     const y = years.find((x) => x.studyYear === year);
     if (!y) return;
@@ -172,36 +179,76 @@ function Courses() {
           )}
           <div className="mt-3 grid grid-cols-[minmax(0,1fr)] items-start gap-3 md:grid-cols-2 lg:gap-4">
             {groups.map((g, i) => (
-              <CourseCard key={g.code} group={g} index={i} weekly={weekly.get(g.code)} />
+              <CourseCard key={g.code} group={g} index={i} weekly={weekly.get(g.code)} credits={credits.get(g.code)} />
             ))}
           </div>
         </>
       )}
 
-      <Footnote>From the Courses tab of your ERP profile, read when you open this screen. Periods a week come from your synced timetable.</Footnote>
+      <Footnote>From the Courses tab of your ERP profile, read when you open this screen. L-T-P-S hours come from your synced timetable; credits from your results, or worked out from those hours (≈) until a result is out.</Footnote>
     </div>
   );
 }
 
-function CourseCard({ group, index, weekly }: { group: CourseGroup; index: number; weekly?: Map<string, number> }) {
+/** Credits from the weekly hours, KL style: a credit per lecture or tutorial hour, per 2 practical hours, per 4 skilling hours. */
+function creditsFrom(weekly: Map<string, number>): number {
+  const h = (t: string) => weekly.get(t) ?? 0;
+  return h('L') + h('T') + h('P') / 2 + h('S') / 4;
+}
+
+const fmtCredits = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, ''));
+
+function CourseCard({
+  group,
+  index,
+  weekly,
+  credits,
+}: {
+  group: CourseGroup;
+  index: number;
+  weekly?: Map<string, number>;
+  /** From the CGPA grid, once the course has a result. */
+  credits?: number;
+}) {
   const title = nameCase(group.title);
-  const split = weekly
-    ? TYPE_ORDER.filter((t) => weekly.get(t)).map((t) => ({ t, n: weekly.get(t)! }))
-    : [];
-  const total = split.reduce((a, x) => a + x.n, 0);
+  const hours = weekly ? TYPE_ORDER.map((t) => weekly.get(t) ?? 0) : null;
+  const total = hours ? hours.reduce((a, n) => a + n, 0) : 0;
+  const worked = weekly && total > 0 ? creditsFrom(weekly) : null;
+  const shownCredits = credits ?? worked;
   return (
     <article className="card rise min-w-0 p-5" style={{ '--i': index } as CSSProperties} aria-label={title}>
       <p className="mono text-[12px] text-fg-3">{group.code}</p>
       <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] pretty">{title}</h3>
-      {total > 0 && (
-        <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[12px] text-fg-3">
-          <span className="tnum font-semibold text-fg-2">{total}/week</span>
-          {split.map(({ t, n }) => (
-            <span key={t} className="mono tnum" title={`${n} ${TYPE_LABEL[t] ?? t} period${n === 1 ? '' : 's'} a week`}>
-              {t} {n}
-            </span>
-          ))}
-        </p>
+      {(total > 0 || shownCredits != null) && (
+        <dl className="mt-3 flex flex-wrap gap-1.5 text-[12px]">
+          {hours && total > 0 && (
+            <div
+              className="flex items-baseline gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1"
+              title={TYPE_ORDER.map((t, i) => `${TYPE_LABEL[t]} ${hours[i]}`).join(' · ') + ' periods a week'}
+            >
+              <dt className="text-fg-3">L-T-P-S</dt>
+              <dd className="mono tnum font-semibold text-fg">{hours.join('-')}</dd>
+            </div>
+          )}
+          {total > 0 && (
+            <div className="flex items-baseline gap-1 rounded-full bg-white/[0.06] px-2.5 py-1">
+              <dd className="tnum font-semibold text-fg">{total}</dd>
+              <dt className="text-fg-3">a week</dt>
+            </div>
+          )}
+          {shownCredits != null && (
+            <div
+              className="flex items-baseline gap-1 rounded-full bg-white/[0.06] px-2.5 py-1"
+              title={credits != null ? 'From your results' : 'Worked out from the weekly hours: L + T + P/2 + S/4'}
+            >
+              <dd className="tnum font-semibold text-fg">
+                {credits == null && '≈'}
+                {fmtCredits(shownCredits)}
+              </dd>
+              <dt className="text-fg-3">credit{shownCredits === 1 ? '' : 's'}</dt>
+            </div>
+          )}
+        </dl>
       )}
       <ul className="mt-4 flex flex-col gap-1" aria-label={`${title}: classes`}>
         {group.classes.map((c, i) => (
