@@ -6,7 +6,7 @@ import { useStore } from '@/components/store';
 import { DataGate } from '@/components/states';
 import { Empty, Footnote, PageHeader } from '@/components/page';
 import { useRecord } from '@/components/records';
-import { Meter, QuestionChip, RecordLine, RecordProblem, RecordSkeleton, marks, nameCase } from '@/components/record-ui';
+import { QuestionChip, RecordLine, RecordProblem, RecordSkeleton, nameCase } from '@/components/record-ui';
 import { openLocalDocument } from '@/components/local';
 import { api } from '@/lib/api';
 import type { Paper } from '@/lib/erp/records-parse';
@@ -97,18 +97,11 @@ function Booklet({ paper: p, index }: { paper: Paper; index: number }) {
   const scan = p.hasScan && active && !local ? api(`/api/erp/booklet?${new URLSearchParams({ account: active, ...paper }).toString()}`) : null;
   return (
     <li className="card rise p-4 sm:p-5" style={{ '--i': index } as CSSProperties}>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
-        <div className="min-w-0">
-          <p className="mono text-[12px] text-fg-3">{p.courseCode}</p>
-          <h3 className="mt-1 line-clamp-2 text-[16px] font-semibold leading-snug pretty">{nameCase(p.courseName)}</h3>
-          <p className="mt-0.5 truncate text-[12.5px] text-fg-2">{p.exam}</p>
-        </div>
-        <p className="text-right">
-          <span className="figure text-[28px]">{marks(p.got)}</span>
-          <span className="text-[13px] text-fg-3 tnum">/{marks(p.max)}</span>
-        </p>
+      <div className="min-w-0">
+        <p className="mono text-[12px] text-fg-3">{p.courseCode}</p>
+        <h3 className="mt-1 line-clamp-2 text-[16px] font-semibold leading-snug pretty">{nameCase(p.courseName)}</h3>
+        <p className="mt-0.5 truncate text-[12.5px] text-fg-2">{p.exam}</p>
       </div>
-      <Meter value={p.got} max={p.max} className="mt-3" />
       <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"

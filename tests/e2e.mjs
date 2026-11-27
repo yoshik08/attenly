@@ -712,8 +712,7 @@ test('booklets: marks question by question, and the scan read from the ERP', asy
   await page.getByRole('heading', { name: 'Booklets', exact: true }).waitFor();
   const card = (name) => page.getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) });
   const daa = card('Design and Analysis of Algorithms');
-  await daa.getByText('18', { exact: true }).waitFor();
-  await daa.getByText('/24', { exact: true }).waitFor();
+  // Booklets show per-question marks only — no reconstructed paper total or meter.
   await daa.getByRole('button', { name: '4 questions' }).click();
   // The button now reads "Hide questions" and says it is expanded.
   assert.equal(await daa.getByRole('button', { name: 'Hide questions' }).getAttribute('aria-expanded'), 'true');
@@ -724,10 +723,9 @@ test('booklets: marks question by question, and the scan read from the ERP', asy
   assert.equal(res.status(), 200);
   assert.equal(res.headers()['content-type'], 'application/pdf');
   assert.equal((await res.body()).subarray(0, 4).toString(), '%PDF');
-  // A paper the ERP has no scan for says so. Its unwritten 2.B counts as 0 in the total.
+  // A paper the ERP has no scan for says so; its questions still list, including an unwritten one.
   const os = card('Operating Systems');
   await os.getByText('No scan on the ERP').waitFor();
-  await os.getByText('12', { exact: true }).waitFor();
   await os.getByRole('button', { name: '4 questions' }).click();
   await os.getByText('Not written').waitFor();
   await ctx.close();

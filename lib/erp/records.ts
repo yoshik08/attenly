@@ -135,10 +135,8 @@ async function readPapers(session: AuthedSession): Promise<PapersData> {
   const papers = await pool(refs, 6, async ({ href, ...ref }) => {
     const html = href ? (await erpPage(session, href)).html : '';
     const questions = parsePaperQuestions(html);
-    // An unwritten question counts as 0, as in the ERP's own totals.
-    const sum = (k: 'got' | 'max') =>
-      questions.some((q) => q[k] != null || (k === 'got' && q.notWritten)) ? questions.reduce((n, q) => n + (q[k] ?? 0), 0) : null;
-    return { ...ref, questions, got: sum('got'), max: sum('max'), hasScan: Boolean(paperScanHref(html)) };
+    // Only the ERP's real per-question marks are shown; no reconstructed paper total.
+    return { ...ref, questions, hasScan: Boolean(paperScanHref(html)) };
   });
   return { papers };
 }

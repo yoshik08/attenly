@@ -542,8 +542,6 @@ export function parsePaperQuestions(html: string): PaperQuestion[] {
 
 export interface Paper extends Omit<PaperRef, 'href'> {
   questions: PaperQuestion[];
-  got: number | null;
-  max: number | null;
   /** The ERP has the scanned script (opened through /api/erp/booklet). */
   hasScan: boolean;
 }
