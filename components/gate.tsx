@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { ArrowsClockwise, Calculator, GoogleLogo, IdentificationCard, Key } from '@phosphor-icons/react';
-import { BASE_PATH, CANONICAL_ORIGIN } from '@/lib/api';
+import { CANONICAL_ORIGIN, HOME } from '@/lib/api';
 import { LinkForm } from './link-form';
 import { Sheet } from './overlay';
 import { useStore } from './store';
@@ -106,14 +106,14 @@ export function SignIn() {
       // Arrived from the other domain's sign-in button: carry on straight away.
       if (wantsSignIn && !off && !started.current) {
         started.current = true;
-        void signIn('google', { callbackUrl: BASE_PATH });
+        void signIn('google', { callbackUrl: HOME });
       }
     }
   }, []);
 
   const start = () => {
     setBusy(true);
-    void signIn('google', { callbackUrl: BASE_PATH });
+    void signIn('google', { callbackUrl: HOME });
   };
 
   return (
@@ -132,8 +132,8 @@ export function SignIn() {
         )}
         <div className="mt-8 flex flex-col gap-3 sm:max-w-[320px]">
           {offCanonical ? (
-            // Google only returns to yoshik.xyz (NEXTAUTH_URL), so sign in there.
-            <a href={`${CANONICAL_ORIGIN}${BASE_PATH}?signin=1`} className="btn btn-primary btn-lg press w-full">
+            // Google only returns to this deployment's own origin (NEXTAUTH_URL), so sign in there.
+            <a href={`${CANONICAL_ORIGIN}${HOME}?signin=1`} className="btn btn-primary btn-lg press w-full">
               <GoogleLogo size={19} weight="bold" aria-hidden />
               Continue with Google
             </a>

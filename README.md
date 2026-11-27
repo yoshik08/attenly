@@ -6,12 +6,15 @@ still skip before 85% (or must attend to get back above it).
 
 > Unofficial student project, not affiliated with KL University.
 
-Live at [yoshik.xyz/attenly](https://yoshik.xyz/attenly) (canonical) and [attenly-pi.vercel.app](https://attenly-pi.vercel.app).
+Live at [attenly-kl.vercel.app](https://attenly-kl.vercel.app) and [yoshik.xyz/attenly](https://yoshik.xyz/attenly): the same
+app, built twice from `main` by two Vercel projects that share the database, the Google client and the secrets.
+Only `NEXTAUTH_URL` differs, and it sets where each build is served (`lib/site.ts`): at the root on attenly-kl,
+under `/attenly` for yoshik.xyz. The backend sync (GitHub Actions) calls the yoshik.xyz one only.
 
 ## How it works
 
-- **Sign-in:** Google (NextAuth v4). Google only returns to `NEXTAUTH_URL` (yoshik.xyz), so sign-in started on another
-  host hops there first.
+- **Sign-in:** Google (NextAuth v4). Google only returns to each project's `NEXTAUTH_URL`, so sign-in started on
+  another host of that deployment (a preview URL, attenly-pi.vercel.app) hops there first.
 - **ERP accounts:** linked once per Google user (several allowed). University ID and password are stored as typed —
   `erpUid` / `erpPass` for the primary account and `accounts[].erpPass` for each — in MongoDB `skipwise.users`.
 - **Sync:** one routine (`lib/sync.ts`) behind the sync button, the app's own refresh (whenever the cloud copy is older

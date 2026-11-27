@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { BASE_PATH } from '@/lib/api';
+import { BASE_PATH, HOME } from '@/lib/api';
 
 /** Lets students add Attenly to their home screen as a standalone app. */
 export default function manifest(): MetadataRoute.Manifest {
@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Attenly',
     short_name: 'Attenly',
     description: 'KL University attendance, synced for you, with how many classes you can still skip.',
-    start_url: BASE_PATH,
+    start_url: HOME,
     scope: `${BASE_PATH}/`,
     display: 'standalone',
     background_color: '#000000',

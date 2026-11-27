@@ -1,14 +1,14 @@
 import { getServerSession, type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { BASE_PATH } from './api';
+import { HOME } from './api';
 
 /**
  * Google sign-in (NextAuth v4). The Google account is the user's identity;
  * their ERP accounts are stored against it in the `users` collection.
  *
  * Required env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_SECRET and
- * NEXTAUTH_URL (https://yoshik.xyz/attenly/api/auth in production).
- * Google Cloud redirect URI: https://yoshik.xyz/attenly/api/auth/callback/google
+ * NEXTAUTH_URL, which is <origin><basePath>/api/auth for each project (lib/site.ts).
+ * The Google client has one redirect URI per project: NEXTAUTH_URL + /callback/google.
  */
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -19,7 +19,7 @@ export const authOptions: NextAuthOptions = {
   ],
   // Failures and stray visits to NextAuth's own pages land back in the app,
   // which explains the problem in its own words.
-  pages: { signIn: BASE_PATH, error: BASE_PATH },
+  pages: { signIn: HOME, error: HOME },
   callbacks: {
     async session({ session, token }) {
       if (session.user && token.sub) {

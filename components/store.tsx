@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { signOut as nextAuthSignOut } from 'next-auth/react';
-import { api, BASE_PATH } from '@/lib/api';
+import { api, HOME } from '@/lib/api';
 import {
   DEFAULT_TCBR,
   DEFAULT_TARGET,
@@ -785,7 +785,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     write(CACHE_KEY, null);
     write(ACTIVE_KEY, null);
     clearRecordCopies();
-    await nextAuthSignOut({ callbackUrl: `${BASE_PATH}` });
+    await nextAuthSignOut({ callbackUrl: HOME });
   }, [signOutLocal]);
 
   const refresh = useCallback(() => load(stateRef.current.active), [load]);

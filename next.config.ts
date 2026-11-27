@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
-import { BASE_PATH } from "./lib/api";
+import { siteOf } from "./lib/site";
+
+/** '/attenly' for the yoshik.xyz project, '' (root) for attenly-kl: read from NEXTAUTH_URL (lib/site.ts). */
+const SITE = siteOf(process.env.NEXTAUTH_URL);
 
 /**
  * The built-in captcha reader (lib/erp/solve.ts) loads its model and onnxruntime-web's
@@ -47,9 +50,14 @@ const ROUTES_THAT_LOG_IN = [
 ];
 
 const nextConfig: NextConfig = {
-  // Served at yoshik.xyz/attenly via a rewrite on the main site — all routes
-  // and assets live under the subpath. Client API calls use api() from lib/api.
-  basePath: BASE_PATH,
+  // The yoshik.xyz project is served at yoshik.xyz/attenly via a rewrite on the main site, so
+  // all its routes and assets live under the subpath; attenly-kl serves the same app at the root.
+  // Client API calls use api() from lib/api, which reads the same value through `env`.
+  basePath: SITE.basePath,
+  env: {
+    ATTENLY_BASE_PATH: SITE.basePath,
+    ATTENLY_AUTH_ORIGIN: SITE.authOrigin,
+  },
   // Loaded with Node's own import at run time (it finds its WASM next to itself).
   serverExternalPackages: ['onnxruntime-web'],
   outputFileTracingIncludes: Object.fromEntries(ROUTES_THAT_LOG_IN.map((route) => [route, CAPTCHA_READER_FILES])),
@@ -62,11 +70,10 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
   async redirects() {
-    return [
-      // With a basePath nothing answers at "/", so the bare deployment URL
-      // (attenly-pi.vercel.app) used to 404. Send it to the app instead.
-      { source: "/", destination: BASE_PATH, basePath: false, permanent: false },
-    ];
+    // With a basePath nothing answers at "/", so the bare deployment URL
+    // (attenly-pi.vercel.app) used to 404. Send it to the app instead.
+    // At the root (attenly-kl) the app is already there.
+    return SITE.basePath ? [{ source: "/", destination: SITE.basePath, basePath: false, permanent: false }] : [];
   },
 };
 
