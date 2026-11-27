@@ -57,17 +57,21 @@ function Courses() {
       .sort((a, b) => Number(a.studyYear) - Number(b.studyYear) || a.studyYear.localeCompare(b.studyYear));
   }, [classes]);
 
-  // The synced term when the data has it, else the newest.
-  const fallback = useMemo(() => {
+  // The synced term, when the course data has it.
+  const synced = useMemo(() => {
     const t = snapshot?.term;
     const label = t?.yearLabel || snapshot?.termOptions?.years.find((y) => y.id === t?.academicyear)?.label || '';
-    if (t && label) {
-      const y = years.find((x) => x.academicYear === label && x.terms.includes(t.semester));
-      if (y) return { year: y.studyYear, term: t.semester };
-    }
+    if (!t || !label) return null;
+    const y = years.find((x) => x.academicYear === label && x.terms.includes(t.semester));
+    return y ? { year: y.studyYear, term: t.semester } : null;
+  }, [snapshot, years]);
+
+  // The synced term when the data has it, else the newest.
+  const fallback = useMemo(() => {
+    if (synced) return synced;
     const newest = years[years.length - 1];
     return newest ? { year: newest.studyYear, term: newest.terms[newest.terms.length - 1] ?? '' } : null;
-  }, [snapshot, years]);
+  }, [synced, years]);
 
   const [picked, setPicked] = useState<{ year: string; term: string } | null>(null);
   const valid = picked && years.some((y) => y.studyYear === picked.year && y.terms.includes(picked.term)) ? picked : null;
@@ -92,6 +96,22 @@ function Courses() {
     }
     return [...by.values()];
   }, [classes, sel]);
+
+  // Periods a week per course and component, from the timetable — which is only the synced term's.
+  const isSynced = Boolean(sel && synced && sel.year === synced.year && sel.term === synced.term);
+  const weekly = useMemo(() => {
+    const m = new Map<string, Map<string, number>>();
+    if (!isSynced) return m;
+    for (const d of snapshot?.timetable ?? []) {
+      for (const p of d.periods) {
+        if (!p.subjectCode || !p.type) continue;
+        const c = m.get(p.subjectCode) ?? new Map<string, number>();
+        c.set(p.type, (c.get(p.type) ?? 0) + 1);
+        m.set(p.subjectCode, c);
+      }
+    }
+    return m;
+  }, [isSynced, snapshot]);
 
   const pickYear = (year: string) => {
     const y = years.find((x) => x.studyYear === year);
@@ -152,23 +172,37 @@ function Courses() {
           )}
           <div className="mt-3 grid grid-cols-[minmax(0,1fr)] items-start gap-3 md:grid-cols-2 lg:gap-4">
             {groups.map((g, i) => (
-              <CourseCard key={g.code} group={g} index={i} />
+              <CourseCard key={g.code} group={g} index={i} weekly={weekly.get(g.code)} />
             ))}
           </div>
         </>
       )}
 
-      <Footnote>From the Courses tab of your ERP profile, read when you open this screen.</Footnote>
+      <Footnote>From the Courses tab of your ERP profile, read when you open this screen. Periods a week come from your synced timetable.</Footnote>
     </div>
   );
 }
 
-function CourseCard({ group, index }: { group: CourseGroup; index: number }) {
+function CourseCard({ group, index, weekly }: { group: CourseGroup; index: number; weekly?: Map<string, number> }) {
   const title = nameCase(group.title);
+  const split = weekly
+    ? TYPE_ORDER.filter((t) => weekly.get(t)).map((t) => ({ t, n: weekly.get(t)! }))
+    : [];
+  const total = split.reduce((a, x) => a + x.n, 0);
   return (
     <article className="card rise min-w-0 p-5" style={{ '--i': index } as CSSProperties} aria-label={title}>
       <p className="mono text-[12px] text-fg-3">{group.code}</p>
       <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] pretty">{title}</h3>
+      {total > 0 && (
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[12px] text-fg-3">
+          <span className="tnum font-semibold text-fg-2">{total}/week</span>
+          {split.map(({ t, n }) => (
+            <span key={t} className="mono tnum" title={`${n} ${TYPE_LABEL[t] ?? t} period${n === 1 ? '' : 's'} a week`}>
+              {t} {n}
+            </span>
+          ))}
+        </p>
+      )}
       <ul className="mt-4 flex flex-col gap-1" aria-label={`${title}: classes`}>
         {group.classes.map((c, i) => (
           <li
